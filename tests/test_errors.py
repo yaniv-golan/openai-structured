@@ -10,7 +10,7 @@ from openai_structured.errors import (
 )
 
 
-def test_custom_errors():
+def test_custom_errors() -> None:
     with pytest.raises(OpenAIClientError):
         raise OpenAIClientError("Test client error")
 

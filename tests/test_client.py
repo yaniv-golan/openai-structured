@@ -50,7 +50,7 @@ def mock_stream_client(mock_response: Dict[str, Any]) -> MagicMock:
         MagicMock(delta=MagicMock(content=json.dumps(mock_response)))
     ]
 
-    async def async_iter():
+    async def async_iter() -> AsyncIterator[MagicMock]:
         yield mock_chunk
 
     mock.chat.completions.create = AsyncMock(return_value=async_iter())
