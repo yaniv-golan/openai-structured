@@ -2,8 +2,9 @@
 import asyncio
 
 from openai import OpenAI
-from openai_structured import openai_structured_stream
 from pydantic import BaseModel
+
+from openai_structured import openai_structured_stream
 
 
 class TodoItem(BaseModel):

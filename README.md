@@ -3,20 +3,32 @@
 [![PyPI version](https://badge.fury.io/py/openai-structured.svg)](https://badge.fury.io/py/openai-structured)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Versions](https://img.shields.io/pypi/pyversions/openai-structured)](https://pypi.org/project/openai-structured/)
-[![Code style: flake8](https://img.shields.io/badge/code%20style-flake8-informational)](https://flake8.pycqa.org/en/latest/)
-[![Documentation Status](https://readthedocs.org/projects/your-project-slug/badge/?version=latest)](https://your-project-slug.readthedocs.io/en/latest/)
-[![Build Status](https://github.com/your-username/openai-structured/actions/workflows/python-package.yml/badge.svg)](https://github.com/your-username/openai-structured/actions/workflows/python-package.yml)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Documentation Status](https://readthedocs.org/projects/openai-structured/badge/?version=latest)](https://openai-structured.readthedocs.io/en/latest/)
+[![Build Status](https://github.com/yaniv-golan/openai-structured/actions/workflows/python-package.yml/badge.svg)](https://github.com/yaniv-golan/openai-structured/actions/workflows/python-package.yml)
 
-A Python library for seamless interaction with the OpenAI API, focusing on structured output using Pydantic models.
+A Python library for structured output from OpenAI's API using Pydantic models.
 
 ## Key Features
 
-* **Simplified Structured Calls:** Effortlessly fetch structured data from OpenAI using Pydantic models.
-* **Asynchronous Streaming Support:** Process large responses efficiently with asynchronous streaming.
-* **Clear Error Handling:** Well-defined exceptions for API and client-related issues.
-* **Type Hinting:** Enhanced code readability and maintainability with comprehensive type hints.
-* **Lightweight and Focused:** Designed specifically for structured output, minimizing unnecessary overhead.
-* **Easy to Integrate:** Clean and intuitive API for seamless integration into your projects.
+* **Structured Output:** Get structured data from OpenAI using Pydantic models
+* **Async Streaming:** Process responses efficiently with async streaming support
+* **Type Safety:** Full type hints and Pydantic validation
+* **Simple API:** Clean and intuitive interface
+* **Error Handling:** Well-defined exceptions for better error management
+* **Modern:** Built for OpenAI's latest API and Python 3.9+
+
+## Requirements
+
+* Python 3.9 or higher
+* OpenAI API key
+
+### Dependencies
+
+These will be installed automatically:
+
+* `openai>=1.12.0`: OpenAI Python SDK
+* `pydantic>=2.6.3`: Data validation
 
 ## Installation
 
@@ -27,7 +39,6 @@ pip install openai-structured
 ## Quick Start
 
 ```python
-import os
 from openai import OpenAI
 from openai_structured import openai_structured_call
 from pydantic import BaseModel
@@ -36,28 +47,20 @@ class UserInfo(BaseModel):
     name: str
     age: int
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-user_prompt = "Tell me about a user named Alice who is 25 years old."
-system_prompt = "Extract user information."
-
-try:
-    user_info = openai_structured_call(
-        client=client,
-        model="gpt-4o-2024-08-06",
-        output_schema=UserInfo,
-        user_prompt=user_prompt,
-        system_prompt=system_prompt
-    )
-    print(user_info)
-except Exception as e:
-    print(f"Error: {e}")
+client = OpenAI()  # Uses OPENAI_API_KEY environment variable
+result = openai_structured_call(
+    client=client,
+    model="gpt-4",
+    output_schema=UserInfo,
+    user_prompt="Tell me about John who is 30 years old",
+    system_prompt="Extract user information"
+)
+print(f"Name: {result.name}, Age: {result.age}")
 ```
 
-## Asynchronous Streaming Example
+## Streaming Example
 
 ```python
-import os
 import asyncio
 from openai import OpenAI
 from openai_structured import openai_structured_stream
@@ -67,40 +70,65 @@ class TodoItem(BaseModel):
     task: str
     priority: str
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-user_prompt = "Create a list of two todo items."
-system_prompt = "Generate a list of tasks with their priorities in JSON format."
-
 async def main():
-    try:
-        async for item in openai_structured_stream(
-            client=client,
-            model="gpt-4o-2024-08-06",
-            output_schema=TodoItem,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt
-        ):
-            print(f"Received item: {item}")
-    except Exception as e:
-        print(f"Error: {e}")
+    client = OpenAI()
+    async for item in openai_structured_stream(
+        client=client,
+        model="gpt-4",
+        output_schema=TodoItem,
+        user_prompt=(
+            "Create a list of 3 tasks for a software developer "
+            "with different priorities"
+        ),
+        system_prompt="Generate tasks with priorities (high/medium/low)"
+    ):
+        print(f"Task: {item.task}, Priority: {item.priority}")
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+## Supported Models
+
+* `gpt-3.5-turbo`
+* `gpt-4`
+* `gpt-4-turbo-preview`
+
+## Error Handling
+
+The library provides several exception classes for better error handling:
+
+* `OpenAIClientError`: Base class for all errors
+* `APIResponseError`: When the API call fails
+* `ModelNotSupportedError`: When using an unsupported model
+* `EmptyResponseError`: When receiving an empty response
+* `InvalidResponseFormatError`: When the response can't be parsed
+
+Example:
+
+```python
+from openai_structured import openai_structured_call, OpenAIClientError
+
+try:
+    result = openai_structured_call(...)
+except OpenAIClientError as error:
+    print(f"Error occurred: {error}")
+```
+
+## Python Version Support
+
+* Python 3.9+
+* Tested on CPython implementations
+* Compatible with Linux, macOS, and Windows
+
 ## Documentation
 
-The full documentation is available at [Read the Docs link (replace with your actual link)].
+For full documentation, visit [openai-structured.readthedocs.io](https://openai-structured.readthedocs.io/).
 
 ## Contributing
 
-We welcome contributions! Please see the [`CONTRIBUTING.md`](CONTRIBUTING.md) for details on how to get involved.
+Contributions are welcome! Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidelines.
 
 ## License
 
 This project is licensed under the MIT License - see the [`LICENSE`](LICENSE) file for details.
-
-## Support
-
-If you encounter any issues or have questions, please open an issue on GitHub.

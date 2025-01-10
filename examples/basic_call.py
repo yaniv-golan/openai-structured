@@ -1,7 +1,8 @@
 # examples/basic_call.py
 from openai import OpenAI
-from openai_structured import openai_structured_call
 from pydantic import BaseModel
+
+from openai_structured import openai_structured_call
 
 
 class UserInfo(BaseModel):

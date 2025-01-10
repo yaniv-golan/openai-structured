@@ -1,10 +1,8 @@
 # examples/advanced_usage.py
 from openai import OpenAI
-from openai_structured import (
-    openai_structured_call,
-    OpenAIClientError,
-)
 from pydantic import BaseModel
+
+from openai_structured import OpenAIClientError, openai_structured_call
 
 
 class ProductInfo(BaseModel):
