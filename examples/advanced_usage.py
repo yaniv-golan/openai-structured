@@ -21,9 +21,7 @@ class ProductInfo(BaseModel):
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 user_prompt = "Tell me about a new laptop."
-system_prompt = (
-    "Extract product information including name, price, and a brief description."
-)
+system_prompt = "Extract product information including name, price, and a brief description."
 
 try:
     product_info = openai_structured_call(

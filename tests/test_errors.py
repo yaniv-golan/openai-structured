@@ -1,10 +1,13 @@
 # tests/test_errors.py
 import pytest
 
-from openai_structured.errors import (APIResponseError, EmptyResponseError,
-                                      InvalidResponseFormatError,
-                                      ModelNotSupportedError,
-                                      OpenAIClientError)
+from openai_structured.errors import (
+    APIResponseError,
+    EmptyResponseError,
+    InvalidResponseFormatError,
+    ModelNotSupportedError,
+    OpenAIClientError,
+)
 
 
 def test_custom_errors():

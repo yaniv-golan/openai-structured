@@ -1,33 +1,54 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[project]
-authors = [
-  { name="Yaniv Golan" },
-]
-description = "Structured output for OpenAI API"
-requires-python = ">=3.8"
-dependencies = [
-    "openai>=1.0.0",
-]
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "openai-structured"
 version = "0.1.0"
 description = "Structured output for OpenAI API"
-authors = ["Yaniv Golan <your.email@example.com>"]
+authors = ["Yaniv Golan <yaniv@golan.name>"]
 readme = "README.md"
-packages = [{include = "openai_structured"}]
+packages = [{include = "openai_structured", from = "src"}]
+include = ["src/openai_structured/py.typed"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
 openai = "^1.12.0"
-pydantic = "^2.6.3" 
+pydantic = "^2.6.3"
+
 [tool.poetry.group.dev.dependencies]
-isort = "^5.13.2"
+pytest = "^7.0"
+flake8 = "^6.0"
+black = "^24.2"
+isort = "^5.13"
+sphinx = "^7.0"
+sphinx-rtd-theme = "^1.0"
+mypy = "^1.0"
+pytest-asyncio = "^0.23.5"
+pytest-mock = "^3.14.0"
+myst-parser = "^2.0.0"
+build = "^1.2.2.post1"
+twine = "^6.0.1"
+
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203"]
+
+[tool.mypy]
+strict = true
+exclude = [
+    "tests/",
+    "docs/",
+    "examples/"
+]
+
+[tool.black]
+line-length = 120
+target-version = ['py39']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 120
 

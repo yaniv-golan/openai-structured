@@ -1,0 +1,9 @@
+pytest>=7.0
+flake8>=6.0
+black>=24.2
+isort>=5.13
+sphinx>=7.0
+sphinx-rtd-theme>=1.0
+mypy>=1.0
+pytest-asyncio>=0.23.5
+pytest-mock>=3.14.0 

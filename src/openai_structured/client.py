@@ -3,9 +3,15 @@ import json
 import logging
 from typing import Any, AsyncIterable, Dict, List, Optional, Type
 
-from openai import (APIConnectionError, APIError, AuthenticationError,
-                    BadRequestError, InternalServerError, OpenAI,
-                    RateLimitError)
+from openai import (
+    APIConnectionError,
+    APIError,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    OpenAI,
+    RateLimitError,
+)
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, ValidationError
 
@@ -20,9 +26,13 @@ OPENAI_API_SUPPORTED_MODELS = {
 DEFAULT_TEMPERATURE = 0.2
 
 # Import custom exceptions from errors.py
-from .errors import (APIResponseError, EmptyResponseError,
-                     InvalidResponseFormatError, ModelNotSupportedError,
-                     OpenAIClientError)
+from .errors import (
+    APIResponseError,
+    EmptyResponseError,
+    InvalidResponseFormatError,
+    ModelNotSupportedError,
+    OpenAIClientError,
+)
 
 
 # Helper Functions
@@ -37,9 +47,7 @@ def _is_model_supported(model_name: str) -> bool:
     return False
 
 
-def _create_chat_messages(
-    system_prompt: str, user_prompt: str
-) -> List[ChatCompletionMessageParam]:
+def _create_chat_messages(system_prompt: str, user_prompt: str) -> List[ChatCompletionMessageParam]:
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -74,9 +82,7 @@ def _log_response(logger_opt: Optional[logging.Logger], **kwargs: Any) -> None:
         )
 
 
-def _log_error(
-    logger_opt: Optional[logging.Logger], message: str, error: Exception, **kwargs: Any
-) -> None:
+def _log_error(logger_opt: Optional[logging.Logger], message: str, error: Exception, **kwargs: Any) -> None:
     if logger_opt:
         logger_opt.error(
             message,
@@ -92,17 +98,13 @@ def _log_error(
         )
 
 
-def _parse_json_response(
-    content: Optional[str], output_schema: Type[BaseModel]
-) -> BaseModel:
+def _parse_json_response(content: Optional[str], output_schema: Type[BaseModel]) -> BaseModel:
     if not content:
         raise EmptyResponseError("OpenAI API returned empty response")
     try:
         return output_schema.model_validate_json(content)
     except (ValidationError, json.JSONDecodeError) as e:
-        raise InvalidResponseFormatError(
-            f"Invalid response format from OpenAI API: {e}"
-        ) from e
+        raise InvalidResponseFormatError(f"Invalid response format from OpenAI API: {e}") from e
 
 
 def openai_structured_call(
@@ -144,9 +146,7 @@ def openai_structured_call(
     """
 
     if not _is_model_supported(model):
-        raise ModelNotSupportedError(
-            f"Model '{model}' does not support structured output."
-        )
+        raise ModelNotSupportedError(f"Model '{model}' does not support structured output.")
 
     messages = _create_chat_messages(system_prompt, user_prompt)
 
@@ -184,9 +184,7 @@ def openai_structured_call(
 
     except RateLimitError as e:
         _log_error(logger, "OpenAI API rate limit exceeded.", e)
-        raise APIResponseError(
-            f"OpenAI API rate limit exceeded.", response_id=getattr(e, "response", None)
-        ) from e
+        raise APIResponseError(f"OpenAI API rate limit exceeded.", response_id=getattr(e, "response", None)) from e
     except (
         AuthenticationError,
         BadRequestError,
@@ -194,9 +192,7 @@ def openai_structured_call(
         InternalServerError,
     ) as e:
         _log_error(logger, f"OpenAI API error.", e)
-        raise APIResponseError(
-            f"OpenAI API error: {e}", response_id=getattr(e, "response", None)
-        ) from e
+        raise APIResponseError(f"OpenAI API error: {e}", response_id=getattr(e, "response", None)) from e
     except Exception as e:
         _log_error(logger, f"An unexpected error occurred.", e)
         raise OpenAIClientError(f"Unexpected error during OpenAI API call: {e}") from e
@@ -241,9 +237,7 @@ async def openai_structured_stream(
     """
 
     if not _is_model_supported(model):
-        raise ModelNotSupportedError(
-            f"Model '{model}' does not support structured output."
-        )
+        raise ModelNotSupportedError(f"Model '{model}' does not support structured output.")
 
     messages = _create_chat_messages(system_prompt, user_prompt)
     collected_content = ""
@@ -278,9 +272,7 @@ async def openai_structured_stream(
                 collected_content += delta
                 # Attempt to parse and yield if valid JSON is formed
                 try:
-                    model_instance = output_schema.model_validate_json(
-                        collected_content
-                    )
+                    model_instance = output_schema.model_validate_json(collected_content)
                     yield model_instance
                     collected_content = ""  # Reset after yielding
                 except (ValidationError, json.JSONDecodeError):
@@ -299,6 +291,4 @@ async def openai_structured_stream(
         ) from e
     except Exception as e:
         _log_error(logger, f"An unexpected error occurred during streaming.", e)
-        raise OpenAIClientError(
-            f"Unexpected error during OpenAI API streaming call: {e}"
-        ) from e
+        raise OpenAIClientError(f"Unexpected error during OpenAI API streaming call: {e}") from e
