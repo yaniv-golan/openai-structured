@@ -1,4 +1,5 @@
 """Test models for structured output."""
+
 from pydantic import BaseModel
 
 

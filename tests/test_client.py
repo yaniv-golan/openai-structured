@@ -1,4 +1,5 @@
 """Tests for the openai_structured client module."""
+
 import json
 from typing import Any, AsyncIterator, Dict, cast
 from unittest.mock import AsyncMock, MagicMock
