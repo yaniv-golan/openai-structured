@@ -1,15 +1,10 @@
 # examples/advanced_usage.py
-import logging
-import os
-
 from openai import OpenAI
+from openai_structured import (
+    openai_structured_call,
+    OpenAIClientError,
+)
 from pydantic import BaseModel
-
-from openai_structured.client import openai_structured_call
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
 
 
 class ProductInfo(BaseModel):
@@ -18,20 +13,23 @@ class ProductInfo(BaseModel):
     description: str
 
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+def main():
+    client = OpenAI()
+    try:
+        result = openai_structured_call(
+            client=client,
+            model="gpt-4",
+            output_schema=ProductInfo,
+            user_prompt=(
+                "Tell me about a high-end laptop with detailed specifications"
+            ),
+            system_prompt="Extract product details with exact pricing",
+        )
+        print(f"{result.name}: ${result.price}")
+        print(f"Description: {result.description}")
+    except OpenAIClientError as error:
+        print(f"Error occurred: {error}")
 
-user_prompt = "Tell me about a new laptop."
-system_prompt = "Extract product information including name, price, and a brief description."
 
-try:
-    product_info = openai_structured_call(
-        client=client,
-        model="gpt-4o-2024-08-06",
-        output_schema=ProductInfo,
-        user_prompt=user_prompt,
-        system_prompt=system_prompt,
-        logger=logger,  # Pass the logger
-    )
-    print(product_info)
-except Exception as e:
-    logger.error("An error occurred:", exc_info=True)
+if __name__ == "__main__":
+    main()

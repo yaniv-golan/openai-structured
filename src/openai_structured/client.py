@@ -1,294 +1,184 @@
-# src/openai_structured/client.py
+"""Client for making structured OpenAI API calls."""
+
 import json
-import logging
-from typing import Any, AsyncIterable, Dict, List, Optional, Type
+from typing import AsyncGenerator, Optional, Type, TypeVar
 
-from openai import (
-    APIConnectionError,
-    APIError,
-    AuthenticationError,
-    BadRequestError,
-    InternalServerError,
-    OpenAI,
-    RateLimitError,
-)
-from openai.types.chat import ChatCompletionMessageParam
-from pydantic import BaseModel, ValidationError
+from openai import OpenAI
+from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
-
-# Constants
-OPENAI_API_SUPPORTED_MODELS = {
-    "gpt-4o": "2024-08-06",
-    "gpt-4o-mini": "2024-07-18",
-    "o1": "2024-12-17",
-}
-DEFAULT_TEMPERATURE = 0.2
-
-# Import custom exceptions from errors.py
 from .errors import (
     APIResponseError,
     EmptyResponseError,
     InvalidResponseFormatError,
     ModelNotSupportedError,
-    OpenAIClientError,
 )
 
+T = TypeVar("T", bound=BaseModel)
 
-# Helper Functions
-def _is_model_supported(model_name: str) -> bool:
-    for base_model, min_version in OPENAI_API_SUPPORTED_MODELS.items():
-        if base_model in model_name:
-            try:
-                version = model_name.split(f"{base_model}-")[-1]
-                return version >= min_version
-            except IndexError:
-                return False
-    return False
+SUPPORTED_MODELS = [
+    "gpt-3.5-turbo",
+    "gpt-4",
+    "gpt-4-turbo-preview",
+]
 
-
-def _create_chat_messages(system_prompt: str, user_prompt: str) -> List[ChatCompletionMessageParam]:
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-
-def _log_request(logger_opt: Optional[logging.Logger], **kwargs: Any) -> None:
-    if logger_opt:
-        logger_opt.debug(
-            "OpenAI API Request",
-            extra={
-                "payload": {
-                    "component": "openai",
-                    "operation": "structured_call",
-                    **kwargs,
-                }
-            },
-        )
-
-
-def _log_response(logger_opt: Optional[logging.Logger], **kwargs: Any) -> None:
-    if logger_opt:
-        logger_opt.debug(
-            "OpenAI API Response",
-            extra={
-                "payload": {
-                    "component": "openai",
-                    "operation": "structured_call",
-                    **kwargs,
-                }
-            },
-        )
-
-
-def _log_error(logger_opt: Optional[logging.Logger], message: str, error: Exception, **kwargs: Any) -> None:
-    if logger_opt:
-        logger_opt.error(
-            message,
-            exc_info=True,
-            extra={
-                "payload": {
-                    "component": "openai",
-                    "operation": "structured_call",
-                    "error": str(error),
-                    **kwargs,
-                }
-            },
-        )
-
-
-def _parse_json_response(content: Optional[str], output_schema: Type[BaseModel]) -> BaseModel:
-    if not content:
-        raise EmptyResponseError("OpenAI API returned empty response")
-    try:
-        return output_schema.model_validate_json(content)
-    except (ValidationError, json.JSONDecodeError) as e:
-        raise InvalidResponseFormatError(f"Invalid response format from OpenAI API: {e}") from e
+DEFAULT_SYSTEM_PROMPT = """
+Extract structured information from the user's input.
+Respond with valid JSON that matches the specified schema.
+Do not include any other text in your response.
+"""
 
 
 def openai_structured_call(
     client: OpenAI,
     model: str,
-    output_schema: Type[BaseModel],
+    output_schema: Type[T],
     user_prompt: str,
-    system_prompt: str,
-    temperature: float = DEFAULT_TEMPERATURE,
+    system_prompt: Optional[str] = None,
+    temperature: float = 0.7,
     max_tokens: Optional[int] = None,
-    top_p: float = 1.0,
-    frequency_penalty: float = 0.0,
-    presence_penalty: float = 0.0,
-    logger: Optional[logging.Logger] = None,
-) -> BaseModel:
-    """
-    Effortlessly call the OpenAI API for structured output.
+) -> T:
+    """Make a structured OpenAI API call.
 
     Args:
-        client: Initialized OpenAI client.
-        model: OpenAI model name (e.g., "gpt-4o-2024-08-06").
-        output_schema: Pydantic model defining the expected output structure.
-        user_prompt: The user's request.
-        system_prompt: System instructions for the model.
-        temperature: Sampling temperature.
-        max_tokens: Maximum tokens in the response.
-        top_p: Top-p sampling.
-        frequency_penalty: Frequency penalty.
-        presence_penalty: Presence penalty.
-        logger: Optional custom logger.
+        client: OpenAI client instance
+        model: Model to use (e.g., "gpt-4")
+        output_schema: Pydantic model class for output structure
+        user_prompt: User input to process
+        system_prompt: Optional system prompt (default: schema-focused prompt)
+        temperature: Sampling temperature (default: 0.7)
+        max_tokens: Maximum tokens in response (default: None)
 
     Returns:
-        An instance of the `output_schema` Pydantic model.
+        Instance of output_schema containing structured response
 
     Raises:
-        ModelNotSupportedError: If the model doesn't support structured output.
-        APIResponseError: For errors from the OpenAI API.
-        OpenAIClientError: For general client-related errors.
+        ModelNotSupportedError: If model is not supported
+        APIResponseError: If API call fails
+        InvalidResponseFormatError: If response is not valid JSON
+        EmptyResponseError: If response is empty
     """
-
-    if not _is_model_supported(model):
-        raise ModelNotSupportedError(f"Model '{model}' does not support structured output.")
-
-    messages = _create_chat_messages(system_prompt, user_prompt)
-
-    try:
-        _log_request(
-            logger,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=top_p,
-            frequency_penalty=frequency_penalty,
-            presence_penalty=presence_penalty,
-            output_schema=output_schema.__name__,
+    if model not in SUPPORTED_MODELS:
+        raise ModelNotSupportedError(
+            f"Model {model} not supported. Use one of: {SUPPORTED_MODELS}"
         )
 
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                system_prompt
+                or DEFAULT_SYSTEM_PROMPT
+                + f"\nSchema: {output_schema.model_json_schema()}"
+            ),
+        },
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
         response = client.chat.completions.create(
             model=model,
             messages=messages,
-            response_format={"type": "json_object"},
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=top_p,
-            frequency_penalty=frequency_penalty,
-            presence_penalty=presence_penalty,
+            response_format={"type": "json_object"},
         )
-
-        _log_response(
-            logger,
-            response_id=response.id,
-            model=response.model,
-            usage=response.usage.dict() if response.usage else None,
-        )
-
-        return _parse_json_response(response.choices[0].message.content, output_schema)
-
-    except RateLimitError as e:
-        _log_error(logger, "OpenAI API rate limit exceeded.", e)
-        raise APIResponseError(f"OpenAI API rate limit exceeded.", response_id=getattr(e, "response", None)) from e
-    except (
-        AuthenticationError,
-        BadRequestError,
-        APIConnectionError,
-        InternalServerError,
-    ) as e:
-        _log_error(logger, f"OpenAI API error.", e)
-        raise APIResponseError(f"OpenAI API error: {e}", response_id=getattr(e, "response", None)) from e
     except Exception as e:
-        _log_error(logger, f"An unexpected error occurred.", e)
-        raise OpenAIClientError(f"Unexpected error during OpenAI API call: {e}") from e
+        raise APIResponseError(f"API call failed: {str(e)}") from e
+
+    if not response.choices:
+        raise EmptyResponseError("No choices in response")
+
+    try:
+        content = response.choices[0].message.content
+        if not content:
+            raise EmptyResponseError("Empty response content")
+
+        data = json.loads(content)
+        return output_schema.model_validate(data)
+    except json.JSONDecodeError as e:
+        raise InvalidResponseFormatError(
+            f"Invalid JSON in response: {str(e)}"
+        ) from e
+    except Exception as e:
+        raise InvalidResponseFormatError(
+            f"Failed to parse response: {str(e)}"
+        ) from e
 
 
 async def openai_structured_stream(
     client: OpenAI,
     model: str,
-    output_schema: Type[BaseModel],
+    output_schema: Type[T],
     user_prompt: str,
-    system_prompt: str,
-    temperature: float = DEFAULT_TEMPERATURE,
+    system_prompt: Optional[str] = None,
+    temperature: float = 0.7,
     max_tokens: Optional[int] = None,
-    top_p: float = 1.0,
-    frequency_penalty: float = 0.0,
-    presence_penalty: float = 0.0,
-    logger: Optional[logging.Logger] = None,
-) -> AsyncIterable[BaseModel]:
-    """
-    Asynchronously stream structured output from the OpenAI API.
+) -> AsyncGenerator[T, None]:
+    """Stream structured responses from OpenAI API.
 
     Args:
-        client: Initialized OpenAI client.
-        model: OpenAI model name (e.g., "gpt-4o-2024-08-06").
-        output_schema: Pydantic model defining the expected output structure.
-        user_prompt: The user's request.
-        system_prompt: System instructions for the model.
-        temperature: Sampling temperature.
-        max_tokens: Maximum tokens in the response.
-        top_p: Top-p sampling.
-        frequency_penalty: Frequency penalty.
-        presence_penalty: Presence penalty.
-        logger: Optional custom logger.
+        client: OpenAI client instance
+        model: Model to use (e.g., "gpt-4")
+        output_schema: Pydantic model class for output structure
+        user_prompt: User input to process
+        system_prompt: Optional system prompt (default: schema-focused)
+        temperature: Sampling temperature (default: 0.7)
+        max_tokens: Maximum tokens in response (default: None)
 
     Yields:
-        Instances of the `output_schema` Pydantic model as they become available.
+        Instances of output_schema containing structured responses
 
     Raises:
-        ModelNotSupportedError: If the model doesn't support structured output.
-        APIResponseError: For errors from the OpenAI API.
-        OpenAIClientError: For general client-related errors.
+        ModelNotSupportedError: If model is not supported
+        APIResponseError: If API call fails
+        InvalidResponseFormatError: If response is not valid JSON
     """
+    if model not in SUPPORTED_MODELS:
+        raise ModelNotSupportedError(
+            f"Model {model} not supported. Use one of: {SUPPORTED_MODELS}"
+        )
 
-    if not _is_model_supported(model):
-        raise ModelNotSupportedError(f"Model '{model}' does not support structured output.")
-
-    messages = _create_chat_messages(system_prompt, user_prompt)
-    collected_content = ""
-
-    _log_request(
-        logger,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        top_p=top_p,
-        frequency_penalty=frequency_penalty,
-        presence_penalty=presence_penalty,
-        streaming=True,
-        output_schema=output_schema.__name__,
-    )
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                system_prompt
+                or DEFAULT_SYSTEM_PROMPT
+                + f"\nSchema: {output_schema.model_json_schema()}"
+            ),
+        },
+        {"role": "user", "content": user_prompt},
+    ]
 
     try:
-        stream = client.chat.completions.create(
+        stream = await client.chat.completions.create(
             model=model,
             messages=messages,
-            response_format={"type": "json_object"},
             temperature=temperature,
             max_tokens=max_tokens,
-            top_p=top_p,
-            frequency_penalty=frequency_penalty,
-            presence_penalty=presence_penalty,
+            response_format={"type": "json_object"},
             stream=True,
         )
-        async for chunk in stream:
-            if chunk.choices:
-                delta = chunk.choices[0].delta.content or ""
-                collected_content += delta
-                # Attempt to parse and yield if valid JSON is formed
-                try:
-                    model_instance = output_schema.model_validate_json(collected_content)
-                    yield model_instance
-                    collected_content = ""  # Reset after yielding
-                except (ValidationError, json.JSONDecodeError):
-                    pass  # Continue accumulating content
-
-    except (
-        AuthenticationError,
-        BadRequestError,
-        APIConnectionError,
-        InternalServerError,
-    ) as e:
-        _log_error(logger, f"OpenAI API error during streaming.", e)
-        raise APIResponseError(
-            f"OpenAI API error during streaming: {e}",
-            response_id=getattr(e, "response", None),
-        ) from e
     except Exception as e:
-        _log_error(logger, f"An unexpected error occurred during streaming.", e)
-        raise OpenAIClientError(f"Unexpected error during OpenAI API streaming call: {e}") from e
+        raise APIResponseError(f"API call failed: {str(e)}") from e
+
+    buffer = ""
+    async for chunk in stream:
+        if not chunk.choices:
+            continue
+
+        content = chunk.choices[0].delta.content
+        if not content:
+            continue
+
+        buffer += content
+        try:
+            data = json.loads(buffer)
+            yield output_schema.model_validate(data)
+            buffer = ""
+        except json.JSONDecodeError:
+            continue
+        except Exception as e:
+            raise InvalidResponseFormatError(
+                f"Failed to parse response: {str(e)}"
+            ) from e

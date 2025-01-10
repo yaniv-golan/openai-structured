@@ -1,12 +1,9 @@
 # examples/streaming_example.py
 import asyncio
-import os
-from typing import List
 
 from openai import OpenAI
+from openai_structured import openai_structured_stream
 from pydantic import BaseModel
-
-from openai_structured.client import openai_structured_stream
 
 
 class TodoItem(BaseModel):
@@ -14,24 +11,19 @@ class TodoItem(BaseModel):
     priority: str
 
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-user_prompt = "Create a list of three todo items."
-system_prompt = "Generate a list of tasks with their priorities in JSON format."
-
-
 async def main():
-    try:
-        async for item in openai_structured_stream(
-            client=client,
-            model="gpt-4o-2024-08-06",
-            output_schema=TodoItem,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
-        ):
-            print(f"Received item: {item}")
-    except Exception as e:
-        print(f"Error: {e}")
+    client = OpenAI()
+    async for item in openai_structured_stream(
+        client=client,
+        model="gpt-4",
+        output_schema=TodoItem,
+        user_prompt=(
+            "Create a list of 3 tasks for a software developer "
+            "with different priorities"
+        ),
+        system_prompt="Generate tasks with priorities (high/medium/low)",
+    ):
+        print(f"Task: {item.task}, Priority: {item.priority}")
 
 
 if __name__ == "__main__":

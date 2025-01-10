@@ -43,12 +43,12 @@ exclude = [
 ]
 
 [tool.black]
-line-length = 120
+line-length = 79
 target-version = ['py39']
 include = '\.pyi?$'
 
 [tool.isort]
 profile = "black"
 multi_line_output = 3
-line_length = 120
+line_length = 79
 

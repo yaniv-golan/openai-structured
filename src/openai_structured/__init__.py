@@ -17,3 +17,13 @@ from .errors import (
     ModelNotSupportedError,
     OpenAIClientError,
 )
+
+__all__ = [
+    "openai_structured_call",
+    "openai_structured_stream",
+    "APIResponseError",
+    "EmptyResponseError",
+    "InvalidResponseFormatError",
+    "ModelNotSupportedError",
+    "OpenAIClientError",
+]
