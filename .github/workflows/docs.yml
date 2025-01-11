@@ -24,24 +24,20 @@ jobs:
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
           poetry config virtualenvs.create false
+          
+      - name: Set up environment
+        run: |
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/lib/python${{ matrix.python-version }}/site-packages" >> $PYTHONPATH
           
       - name: Install dependencies
         run: |
-          poetry --version
-          which poetry
-          poetry env info
           poetry install --with dev,docs
           pip install --user sphinx sphinx-rtd-theme myst-parser
-          export PATH="$HOME/.local/bin:$PATH"
-          echo "PATH=$PATH"
-          echo "PYTHONPATH=$PYTHONPATH"
           which sphinx-build || true
           python -m sphinx --version || true
           
       - name: Build documentation
         working-directory: docs
         run: |
-          which sphinx-build || true
-          python -m sphinx --version || true
           python -m sphinx -b html source build/html 
