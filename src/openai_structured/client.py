@@ -13,7 +13,6 @@ from openai import (
     AuthenticationError,
     BadRequestError,
     InternalServerError,
-    OpenAI,
 )
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.completion_create_params import ResponseFormat
