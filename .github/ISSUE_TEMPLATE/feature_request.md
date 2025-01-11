@@ -1,20 +1,25 @@
 ---
 name: Feature Request
 about: Suggest an idea for this project
-title: "[FEATURE] - Short description of the feature"
+title: '[FEATURE] '
 labels: enhancement
 assignees: ''
-
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is that your requested feature would solve.
+## Problem Statement
+<!-- A clear and concise description of what problem this feature would solve -->
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+## Proposed Solution
+<!-- A clear and concise description of what you want to happen -->
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+## Alternative Solutions
+<!-- A clear and concise description of any alternative solutions or features you've considered -->
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+## Example Usage
+<!-- If applicable, provide example code or usage scenarios -->
+```python
+# Example code showing how the feature would be used
+```
+
+## Additional Context
+<!-- Add any other context or screenshots about the feature request here -->

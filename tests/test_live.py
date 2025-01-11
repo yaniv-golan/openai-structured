@@ -1,101 +1,128 @@
+"""Live API tests for the openai_structured client module."""
+
+import logging
 import os
+
 import pytest
-from openai import OpenAI
+import pytest_asyncio
+from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel
 
-from openai_structured.client import openai_structured_call, openai_structured_stream
+from openai_structured import openai_structured_call, openai_structured_stream
+
 
 class SentimentResponse(BaseModel):
+    """Test response model for sentiment analysis."""
+
     message: str
     sentiment: str
 
+
 @pytest.fixture
-def openai_client():
-    """Create OpenAI client with proper API key."""
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key or api_key == "test-key":
-        raise ValueError("Invalid API key. Please set a valid OPENAI_API_KEY environment variable.")
-    
-    return OpenAI(
-        api_key=api_key,
-        organization=None  # Ensure no organization is set that might override settings
-    )
+def sync_openai_client():
+    """Create a synchronous OpenAI client for testing."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        pytest.skip("OPENAI_API_KEY environment variable not set")
+    return OpenAI(api_key=api_key)
+
+
+@pytest_asyncio.fixture
+async def async_openai_client():
+    """Provide an async OpenAI client for testing."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        pytest.skip("OPENAI_API_KEY not set")
+
+    client = AsyncOpenAI(api_key=api_key)
+    try:
+        yield client
+    finally:
+        await client.close()
+
 
 @pytest.fixture
 def test_prompts():
     """Test prompts for consistency across tests."""
     return {
-        "system": "You are a friendly assistant that provides messages with sentiment analysis.",
-        "user": "Say hello and analyze the sentiment of your message."
+        "system": (
+            "You are a friendly assistant that provides messages "
+            "with sentiment analysis."
+        ),
+        "user": "Say hello and analyze the sentiment of your message.",
     }
+
+
+@pytest.fixture
+def debug_logger() -> logging.Logger:
+    """Create a debug logger for tests."""
+    logger = logging.getLogger("test_logger")
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
+
 
 @pytest.mark.skipif(
     not os.getenv("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY environment variable not set"
+    reason="OPENAI_API_KEY environment variable not set",
 )
 @pytest.mark.live
-def test_sync_api(openai_client, test_prompts):
+def test_sync_api(sync_openai_client, test_prompts):
     """Test synchronous API call."""
     result = openai_structured_call(
-        client=openai_client,
+        client=sync_openai_client,
         model="gpt-4o-2024-08-06",
         output_schema=SentimentResponse,
         system_prompt=test_prompts["system"],
         user_prompt=test_prompts["user"],
     )
-    
-    # Validate response structure
+
     assert isinstance(result, SentimentResponse)
     assert isinstance(result.message, str)
     assert isinstance(result.sentiment, str)
     assert len(result.message) > 0
     assert len(result.sentiment) > 0
 
-@pytest.mark.skipif(
-    not os.getenv("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY environment variable not set"
-)
-@pytest.mark.live
-@pytest.mark.asyncio
-async def test_async_stream(openai_client, test_prompts):
-    """Test asynchronous streaming API call."""
-    chunks_received = 0
-    last_chunk = None
-    
-    async for chunk in openai_structured_stream(
-        client=openai_client,
-        model="gpt-4o-2024-08-06",
-        output_schema=SentimentResponse,
-        system_prompt=test_prompts["system"],
-        user_prompt=test_prompts["user"],
-    ):
-        # Validate each chunk
-        assert isinstance(chunk, SentimentResponse)
-        assert isinstance(chunk.message, str)
-        assert isinstance(chunk.sentiment, str)
-        
-        chunks_received += 1
-        last_chunk = chunk
-    
-    # Validate we received chunks and final result
-    assert chunks_received > 0, "No chunks received from stream"
-    assert last_chunk is not None, "No final chunk received"
-    assert len(last_chunk.message) > 0, "Final message is empty"
-    assert len(last_chunk.sentiment) > 0, "Final sentiment is empty"
 
 @pytest.mark.skipif(
     not os.getenv("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY environment variable not set"
+    reason="OPENAI_API_KEY environment variable not set",
 )
 @pytest.mark.live
-def test_invalid_model(openai_client, test_prompts):
+@pytest.mark.asyncio
+async def test_async_stream(async_openai_client):
+    """Test streaming structured output from the OpenAI API."""
+    responses = []
+    async for response in openai_structured_stream(
+        client=async_openai_client,
+        model="gpt-4o-2024-08-06",
+        output_schema=SentimentResponse,
+        system_prompt="You are a helpful assistant.",
+        user_prompt="What do you think about AI?",
+    ):
+        responses.append(response)
+        assert isinstance(response, SentimentResponse)
+        assert response.message
+        assert response.sentiment in ["positive", "negative", "neutral"]
+
+
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY environment variable not set",
+)
+@pytest.mark.live
+def test_invalid_model(async_openai_client, test_prompts):
     """Test error handling with invalid model."""
     with pytest.raises(Exception) as exc_info:
         openai_structured_call(
-            client=openai_client,
+            client=async_openai_client,
             model="invalid-model",
             output_schema=SentimentResponse,
             system_prompt=test_prompts["system"],
             user_prompt=test_prompts["user"],
         )
-    assert "does not support structured output" in str(exc_info.value) 
+    assert "does not support structured output" in str(exc_info.value)

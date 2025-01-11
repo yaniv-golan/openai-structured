@@ -76,4 +76,5 @@ Thumbs.db
 dmypy.json
 
 # Poetry
-poetry.lock
+.poetry/
+poetry.toml

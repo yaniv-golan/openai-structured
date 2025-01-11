@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://openai-structured.readthedocs.io/
+    about: Check our documentation for answers to common questions
+  - name: Security Issues
+    url: https://github.com/yaniv-golan/openai-structured/blob/main/SECURITY.md
+    about: Please report security vulnerabilities according to our security policy 

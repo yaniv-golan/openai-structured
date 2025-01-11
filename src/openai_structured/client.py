@@ -2,29 +2,39 @@
 
 import json
 import logging
-import io
+import re
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, AsyncIterable, Dict, List, Optional, Type, cast, AsyncGenerator, AsyncIterator, NamedTuple
-import re
+from typing import Any, AsyncGenerator, List, NamedTuple, Optional, Type, cast
 
-from openai import (APIConnectionError, APIError, AuthenticationError,
-                    BadRequestError, InternalServerError, OpenAI,
-                    RateLimitError)
-from openai.types.chat import ChatCompletionMessageParam, ChatCompletionChunk
+from openai import (
+    APIConnectionError,
+    AsyncOpenAI,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    OpenAI,
+)
+from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import BaseModel, ValidationError
 
 # Import custom exceptions
-from .errors import (APIResponseError, EmptyResponseError,
-                    InvalidResponseFormatError, ModelNotSupportedError,
-                    OpenAIClientError)
+from .errors import (
+    EmptyResponseError,
+    InvalidResponseFormatError,
+    ModelNotSupportedError,
+    OpenAIClientError,
+)
 
 logger = logging.getLogger(__name__)
 
 # Constants
+
+
 class ModelVersion(NamedTuple):
+    """Model version information."""
+
     year: int
     month: int
     day: int
@@ -34,13 +44,20 @@ class ModelVersion(NamedTuple):
         match = re.match(r"(\d{4})-(\d{2})-(\d{2})", version_str)
         if not match:
             raise ValueError(f"Invalid version format: {version_str}")
-        return cls(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        return cls(
+            int(match.group(1)), int(match.group(2)), int(match.group(3))
+        )
 
     def __str__(self) -> str:
         return f"{self.year}-{self.month:02d}-{self.day:02d}"
 
     def __ge__(self, other: "ModelVersion") -> bool:
-        return (self.year, self.month, self.day) >= (other.year, other.month, other.day)
+        return (self.year, self.month, self.day) >= (
+            other.year,
+            other.month,
+            other.day,
+        )
+
 
 OPENAI_API_SUPPORTED_MODELS = {
     "gpt-4o": ModelVersion(2024, 8, 6),
@@ -50,12 +67,15 @@ OPENAI_API_SUPPORTED_MODELS = {
 
 DEFAULT_TEMPERATURE = 0.2
 MAX_BUFFER_SIZE = 1024 * 1024  # 1MB max buffer size
-BUFFER_CLEANUP_THRESHOLD = 512 * 1024  # Clean up buffer if it exceeds 512KB without valid JSON
+# Clean up buffer if it exceeds 512KB without valid JSON
+BUFFER_CLEANUP_THRESHOLD = 512 * 1024
 CHUNK_SIZE = 8192  # 8KB chunks for buffer management
+
 
 @dataclass
 class StreamBuffer:
     """Efficient buffer management for streaming responses."""
+
     chunks: deque[str]
     total_bytes: int
     last_valid_json_pos: int
@@ -66,33 +86,37 @@ class StreamBuffer:
         self.last_valid_json_pos = 0
 
     def write(self, content: str) -> None:
-        chunk_bytes = len(content.encode('utf-8'))
+        chunk_bytes = len(content.encode("utf-8"))
         if self.total_bytes + chunk_bytes > MAX_BUFFER_SIZE:
-            raise BufferError(f"Response exceeded maximum buffer size of {MAX_BUFFER_SIZE} bytes")
+            raise BufferError(
+                "Response exceeded maximum buffer size of "
+                f"{MAX_BUFFER_SIZE} bytes"
+            )
         self.chunks.append(content)
         self.total_bytes += chunk_bytes
 
     def getvalue(self) -> str:
-        return ''.join(self.chunks)
+        return "".join(self.chunks)
 
     def cleanup(self) -> None:
-        """Attempt to clean up the buffer by finding and removing processed JSON."""
+        """Attempt to clean up the buffer by finding"""
+        """and removing processed JSON."""
         content = self.getvalue()
         try:
             # Find the last occurrence of '}'
-            last_brace = content.rstrip().rfind('}')
+            last_brace = content.rstrip().rfind("}")
             if last_brace > self.last_valid_json_pos:
                 # Try to parse everything up to this point
-                potential_json = content[:last_brace + 1]
+                potential_json = content[: last_brace + 1]
                 json.loads(potential_json)  # Just to validate
                 # If successful, update the last valid position
                 self.last_valid_json_pos = last_brace + 1
                 # Keep only the content after the last valid JSON
-                new_content = content[self.last_valid_json_pos:]
+                new_content = content[self.last_valid_json_pos :]
                 self.chunks.clear()
                 if new_content:
                     self.chunks.append(new_content)
-                self.total_bytes = len(new_content.encode('utf-8'))
+                self.total_bytes = len(new_content.encode("utf-8"))
         except (json.JSONDecodeError, ValueError):
             pass  # Keep accumulating if no valid JSON found
 
@@ -101,20 +125,28 @@ class StreamBuffer:
         self.total_bytes = 0
         self.last_valid_json_pos = 0
 
+
 class ModelVersionError(ModelNotSupportedError):
     """Raised when the model version is not supported."""
+
     def __init__(self, model: str, min_version: ModelVersion) -> None:
         super().__init__(
-            f"Model '{model}' version is not supported. Minimum version required: {min_version}"
+            f"Model '{model}' version is not supported. "
+            f"Minimum version required: {min_version}"
         )
+
 
 class BufferOverflowError(BufferError):
     """Raised when the streaming buffer exceeds size limits."""
+
     pass
+
 
 class JSONParseError(InvalidResponseFormatError):
     """Raised when JSON parsing fails."""
+
     pass
+
 
 def _is_model_supported(model_name: str) -> bool:
     """Check if the model and its version are supported."""
@@ -133,8 +165,14 @@ def _create_chat_messages(
     system_prompt: str, user_prompt: str
 ) -> List[ChatCompletionMessageParam]:
     return [
-        cast(ChatCompletionMessageParam, {"role": "system", "content": system_prompt}),
-        cast(ChatCompletionMessageParam, {"role": "user", "content": user_prompt}),
+        cast(
+            ChatCompletionMessageParam,
+            {"role": "system", "content": system_prompt},
+        ),
+        cast(
+            ChatCompletionMessageParam,
+            {"role": "user", "content": user_prompt},
+        ),
     ]
 
 
@@ -167,7 +205,10 @@ def _log_response(logger_opt: Optional[logging.Logger], **kwargs: Any) -> None:
 
 
 def _log_error(
-    logger_opt: Optional[logging.Logger], message: str, error: Exception, **kwargs: Any
+    logger_opt: Optional[logging.Logger],
+    message: str,
+    error: Exception,
+    **kwargs: Any,
 ) -> None:
     if logger_opt:
         logger_opt.error(
@@ -197,6 +238,15 @@ def _parse_json_response(
         ) from e
 
 
+def _log_debug(
+    logger: Optional[logging.Logger],
+    message: str,
+) -> None:
+    """Log a debug message if a logger is provided."""
+    if logger is not None:
+        logger.debug(message)
+
+
 def openai_structured_call(
     client: OpenAI,
     model: str,
@@ -215,7 +265,7 @@ def openai_structured_call(
 
     Args:
         client: Initialized OpenAI client.
-        model: OpenAI model name (e.g., "gpt-4o-2024-08-06").
+        model: OpenAI model name (e.g., "gpt-4-0125-preview").
         output_schema: Pydantic model defining the expected output structure.
         user_prompt: The user's request.
         system_prompt: System instructions for the model.
@@ -264,13 +314,16 @@ def openai_structured_call(
         response = client.chat.completions.create(
             model=model,
             messages=messages,
-            response_format=cast(ResponseFormat, {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "structured_output",
-                    "schema": schema
-                }
-            }),
+            response_format=cast(
+                ResponseFormat,
+                {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "structured_output",
+                        "schema": schema,
+                    },
+                },
+            ),
             temperature=temperature,
             max_tokens=max_tokens,
             top_p=top_p,
@@ -283,7 +336,9 @@ def openai_structured_call(
             raise EmptyResponseError("OpenAI API returned an empty response.")
 
         try:
-            model_instance = output_schema.model_validate_json(response.choices[0].message.content)
+            model_instance = output_schema.model_validate_json(
+                response.choices[0].message.content
+            )
             return model_instance
         except ValidationError as e:
             raise InvalidResponseFormatError(
@@ -301,25 +356,25 @@ def openai_structured_call(
         BadRequestError,
         APIConnectionError,
         InternalServerError,
+        EmptyResponseError,
+        InvalidResponseFormatError,
+        JSONParseError,
     ) as e:
-        _log_error(logger, f"OpenAI API error during call.", e)
-        raise APIResponseError(
-            f"OpenAI API error: {e}",
-            response_id=getattr(e, "response", None),
-        ) from e
+        _log_error(logger, "OpenAI API error during call.", e)
+        raise e
     except Exception as e:
-        _log_error(logger, f"An unexpected error occurred during API call.", e)
+        _log_error(logger, "An unexpected error occurred during API call.", e)
         raise OpenAIClientError(
             f"Unexpected error during OpenAI API call: {e}"
         ) from e
 
 
 async def openai_structured_stream(
-    client: OpenAI,
+    client: AsyncOpenAI,
     model: str,
     output_schema: Type[BaseModel],
-    user_prompt: str,
     system_prompt: str,
+    user_prompt: str,
     temperature: float = DEFAULT_TEMPERATURE,
     max_tokens: Optional[int] = None,
     top_p: float = 1.0,
@@ -344,7 +399,8 @@ async def openai_structured_stream(
         logger: Optional custom logger.
 
     Yields:
-        Instances of the `output_schema` Pydantic model as they become available.
+        Instances of the `output_schema` Pydantic model as
+        they become available.
 
     Raises:
         ModelNotSupportedError: If the model doesn't support structured output.
@@ -354,14 +410,16 @@ async def openai_structured_stream(
         BufferOverflowError: If the response exceeds the maximum buffer size.
         JSONParseError: If JSON parsing fails.
     """
+    if not isinstance(client, AsyncOpenAI):
+        raise TypeError("Streaming operations require AsyncOpenAI client")
 
     if not _is_model_supported(model):
         raise ModelNotSupportedError(
             f"Model '{model}' does not support structured output."
         )
 
-    messages = _create_chat_messages(system_prompt, user_prompt)
     buffer = StreamBuffer()
+    messages = _create_chat_messages(system_prompt, user_prompt)
 
     _log_request(
         logger,
@@ -378,17 +436,21 @@ async def openai_structured_stream(
     try:
         # Get the schema and add required name field
         schema = output_schema.model_json_schema()
+        _log_debug(logger, "Creating streaming completion...")
 
-        stream = client.chat.completions.create(
+        stream = await client.chat.completions.create(
             model=model,
             messages=messages,
-            response_format=cast(ResponseFormat, {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "structured_output",
-                    "schema": schema
-                }
-            }),
+            response_format=cast(
+                ResponseFormat,
+                {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "structured_output",
+                        "schema": schema,
+                    },
+                },
+            ),
             temperature=temperature,
             max_tokens=max_tokens,
             top_p=top_p,
@@ -397,18 +459,34 @@ async def openai_structured_stream(
             stream=True,
         )
 
-        for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
+        _log_debug(logger, f"Stream object created: {type(stream)}")
+        _log_debug(logger, "Starting stream iteration...")
+
+        async for chunk in stream:
+            _log_debug(logger, f"Received chunk: {chunk}")
+            if chunk.choices and chunk.choices[0].delta.content is not None:
                 try:
                     buffer.write(chunk.choices[0].delta.content)
                     current_content = buffer.getvalue()
+                    _log_debug(
+                        logger,
+                        f"Current buffer content: " f"{current_content}",
+                    )
 
                     # Try to parse and yield if valid JSON is formed
                     try:
-                        model_instance = output_schema.model_validate_json(current_content)
+                        model_instance = output_schema.model_validate_json(
+                            current_content
+                        )
+                        _log_debug(
+                            logger,
+                            f"Successfully parsed " f"model: {model_instance}",
+                        )
                         yield model_instance
-                        buffer = StreamBuffer()  # Reset buffer after successful parse
-                    except (ValidationError, json.JSONDecodeError):
+                        # Reset buffer after successful parse
+                        buffer = StreamBuffer()
+                    except (ValidationError, json.JSONDecodeError) as e:
+                        _log_debug(logger, f"Failed to parse JSON: {str(e)}")
                         # Check if we need to clean up the buffer
                         if buffer.total_bytes > BUFFER_CLEANUP_THRESHOLD:
                             buffer.cleanup()
@@ -420,19 +498,19 @@ async def openai_structured_stream(
         BadRequestError,
         APIConnectionError,
         InternalServerError,
+        BufferOverflowError,
+        JSONParseError,
     ) as e:
-        _log_error(logger, f"OpenAI API error during streaming.", e)
-        raise APIResponseError(
-            f"OpenAI API error during streaming: {e}",
-            response_id=getattr(e, "response", None),
-        ) from e
-    except json.JSONDecodeError as e:
-        _log_error(logger, f"JSON parsing error during streaming.", e)
-        raise JSONParseError(f"Failed to parse JSON response: {e}")
+        _log_error(logger, "OpenAI API error during streaming.", e)
+        raise e
     except Exception as e:
-        _log_error(logger, f"An unexpected error occurred during streaming.", e)
+        _log_error(
+            logger,
+            "An unexpected error occurred during streaming.",
+            e,
+        )
         raise OpenAIClientError(
-            f"Unexpected error during OpenAI API streaming call: {e}"
+            "Unexpected error during OpenAI API streaming " f"call: {e}"
         ) from e
     finally:
         buffer.close()

@@ -1,0 +1,16 @@
+# Global owners
+* @yaniv-golan
+
+# Core library code
+/src/openai_structured/ @yaniv-golan
+
+# Test files
+/tests/ @yaniv-golan
+
+# Documentation
+/docs/ @yaniv-golan
+*.md @yaniv-golan
+
+# Build and deployment
+/.github/workflows/ @yaniv-golan
+pyproject.toml @yaniv-golan 

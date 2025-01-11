@@ -38,3 +38,15 @@ class EmptyResponseError(APIResponseError):
     """Raised if the API returns an empty response"""
 
     pass
+
+
+class StreamProcessingError(OpenAIClientError):
+    """Raised when an error occurs during stream processing."""
+
+    pass
+
+
+class BufferOverflowError(OpenAIClientError):
+    """Raised when the buffer size exceeds the maximum allowed size."""
+
+    pass

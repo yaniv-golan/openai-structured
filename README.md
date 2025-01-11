@@ -32,57 +32,118 @@ These will be installed automatically:
 
 ## Installation
 
+### Using pip
+
 ```bash
 pip install openai-structured
 ```
 
-## Quick Start
+### Using Poetry (recommended for development)
 
-```python
-from openai import OpenAI
-from openai_structured import openai_structured_call
-from pydantic import BaseModel
+```bash
+# Install Poetry if you haven't already
+curl -sSL https://install.python-poetry.org | python3 -
 
-class UserInfo(BaseModel):
-    name: str
-    age: int
+# Clone the repository
+git clone https://github.com/yaniv-golan/openai-structured.git
+cd openai-structured
 
-client = OpenAI()  # Uses OPENAI_API_KEY environment variable
-result = openai_structured_call(
-    client=client,
-    model="gpt-4",
-    output_schema=UserInfo,
-    user_prompt="Tell me about John who is 30 years old",
-    system_prompt="Extract user information"
-)
-print(f"Name: {result.name}, Age: {result.age}")
+# Install dependencies
+poetry install
+
+# Activate the virtual environment
+poetry shell
 ```
 
-## Streaming Example
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file in your project root (see `.env.example`):
+
+```bash
+OPENAI_API_KEY=your-api-key-here
+
+# Optional settings
+OPENAI_API_BASE=https://api.openai.com/v1  # Custom API endpoint
+OPENAI_API_VERSION=2024-02-01  # Specific API version
+```
+
+### Project Settings
+
+The library uses these configurations (in `pyproject.toml`):
+
+```toml
+[tool.openai_structured]
+max_buffer_size = 1048576  # 1MB default
+buffer_cleanup_threshold = 524288  # 512KB default
+chunk_size = 8192  # 8KB default
+```
+
+## Quick Start
+
+### Basic Usage with Type Hints
+
+```python
+from typing import List
+from openai import OpenAI
+from openai_structured import openai_structured_call
+from pydantic import BaseModel, Field
+
+class TodoItem(BaseModel):
+    """A single todo item with priority."""
+    task: str = Field(..., description="The task description")
+    priority: str = Field(..., pattern="^(high|medium|low)$")
+
+class TodoList(BaseModel):
+    """A list of todo items."""
+    items: List[TodoItem]
+    total_count: int = Field(..., ge=0)
+
+# Initialize client
+client = OpenAI()  # Uses OPENAI_API_KEY environment variable
+
+# Get structured response
+result = openai_structured_call(
+    client=client,
+    model="gpt-4o-2024-08-06",
+    output_schema=TodoList,
+    user_prompt="Create a todo list with 3 items",
+    system_prompt="Generate a todo list with priorities"
+)
+
+# Type-safe access to response
+for item in result.items:
+    print(f"Task: {item.task}, Priority: {item.priority}")
+print(f"Total items: {result.total_count}")
+```
+
+### Async Streaming Example
 
 ```python
 import asyncio
-from openai import OpenAI
+from openai import AsyncOpenAI
 from openai_structured import openai_structured_stream
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-class TodoItem(BaseModel):
-    task: str
-    priority: str
+class AnalysisResult(BaseModel):
+    """Progressive analysis result."""
+    topic: str = Field(..., description="Current topic being analyzed")
+    insight: str = Field(..., min_length=10)
+    confidence: float = Field(..., ge=0.0, le=1.0)
 
 async def main():
-    client = OpenAI()
-    async for item in openai_structured_stream(
+    client = AsyncOpenAI()  # Uses OPENAI_API_KEY environment variable
+    async for result in openai_structured_stream(
         client=client,
-        model="gpt-4",
-        output_schema=TodoItem,
-        user_prompt=(
-            "Create a list of 3 tasks for a software developer "
-            "with different priorities"
-        ),
-        system_prompt="Generate tasks with priorities (high/medium/low)"
+        model="gpt-4o-2024-08-06",
+        output_schema=AnalysisResult,
+        system_prompt="Analyze the text progressively",
+        user_prompt="Analyze the impact of AI on society",
     ):
-        print(f"Task: {item.task}, Priority: {item.priority}")
+        print(f"Topic: {result.topic}")
+        print(f"Insight: {result.insight}")
+        print(f"Confidence: {result.confidence:.2f}\n")
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -90,29 +151,32 @@ if __name__ == "__main__":
 
 ## Supported Models
 
-* `gpt-3.5-turbo`
-* `gpt-4`
-* `gpt-4-turbo-preview`
+* `gpt-4o-2024-08-06`: Latest GPT-4 model with structured output support
+* `gpt-4o-mini-2024-07-18`: Smaller, faster GPT-4 model
+* `o1-2024-12-17`: Optimized model for structured output
 
 ## Error Handling
 
 The library provides several exception classes for better error handling:
 
-* `OpenAIClientError`: Base class for all errors
-* `APIResponseError`: When the API call fails
-* `ModelNotSupportedError`: When using an unsupported model
-* `EmptyResponseError`: When receiving an empty response
-* `InvalidResponseFormatError`: When the response can't be parsed
-
-Example:
-
 ```python
-from openai_structured import openai_structured_call, OpenAIClientError
+from openai_structured import (
+    OpenAIClientError,  # Base class for all errors
+    APIResponseError,   # API call failures
+    ModelNotSupportedError,  # Unsupported model
+    EmptyResponseError,  # Empty response
+    InvalidResponseFormatError,  # Response parsing failures
+    BufferOverflowError,  # Stream buffer exceeded
+)
 
 try:
     result = openai_structured_call(...)
-except OpenAIClientError as error:
-    print(f"Error occurred: {error}")
+except ModelNotSupportedError as e:
+    print(f"Model not supported: {e}")
+except InvalidResponseFormatError as e:
+    print(f"Invalid response format: {e}")
+except OpenAIClientError as e:
+    print(f"General error: {e}")
 ```
 
 ## Python Version Support

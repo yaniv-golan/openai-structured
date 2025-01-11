@@ -19,6 +19,7 @@ pydantic = "^2.6.3"
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0"
 flake8 = "^6.0"
+flake8-pyproject = "^1.2.3"
 black = "^24.2"
 isort = "^5.13"
 sphinx = "^7.0"
@@ -60,4 +61,14 @@ include = '\.pyi?$'
 profile = "black"
 multi_line_output = 3
 line_length = 79
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "live: mark test as a live test that should use real API key",
+    "asyncio: mark test as requiring async loop",
+]
 
