@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.11'
           
       - name: Install Poetry
         run: |
@@ -24,8 +24,10 @@ jobs:
           
       - name: Install dependencies
         run: |
+          pip install -e .
           poetry install --with docs
           
       - name: Build documentation
-        working-directory: docs
-        run: poetry run make html 
+        working-directory: docs/source
+        run: |
+          poetry run sphinx-build -b html . ../build/html 
