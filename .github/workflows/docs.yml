@@ -9,13 +9,16 @@ on:
 jobs:
   docs:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10']
     steps:
       - uses: actions/checkout@v4
       
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
           
       - name: Install Poetry
         run: |
@@ -24,10 +27,13 @@ jobs:
           
       - name: Install dependencies
         run: |
-          pip install -e .
+          poetry env info
           poetry install --with docs
+          poetry show
           
       - name: Build documentation
-        working-directory: docs/source
+        working-directory: docs
         run: |
-          poetry run sphinx-build -b html . ../build/html 
+          poetry run which sphinx-build
+          poetry run sphinx-build --version
+          poetry run make html SPHINXOPTS="-v" 
