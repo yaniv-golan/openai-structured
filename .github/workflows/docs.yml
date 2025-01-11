@@ -30,6 +30,7 @@ jobs:
           poetry env info
           poetry install --only main --only docs
           poetry show
+          pip install -r docs/requirements.txt
           
       - name: Build documentation
         working-directory: docs
