@@ -1,9 +1,11 @@
 """Test configuration and fixtures."""
 
 import asyncio
+from typing import Generator
 
 import pytest
 import pytest_asyncio
+from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
 
@@ -34,8 +36,11 @@ def env_setup(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Set up environment variables for testing."""
+    # Load .env file for live tests
+    if "live" in request.keywords:
+        load_dotenv()
     # Only set test key for non-live tests
-    if "live" not in request.keywords:
+    else:
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
 
@@ -59,7 +64,7 @@ def mock_response() -> MockResponse:
 
 
 @pytest_asyncio.fixture(scope="function")
-def event_loop():
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     """Create and provide a new event loop for each test.
 
     Note: While pytest-asyncio suggests deprecating custom event loop fixtures,

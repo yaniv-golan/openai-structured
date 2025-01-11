@@ -51,7 +51,9 @@ class ModelVersion(NamedTuple):
     def __str__(self) -> str:
         return f"{self.year}-{self.month:02d}-{self.day:02d}"
 
-    def __ge__(self, other: "ModelVersion") -> bool:
+    def __ge__(self, other: object) -> bool:
+        if not isinstance(other, ModelVersion):
+            return NotImplemented
         return (self.year, self.month, self.day) >= (
             other.year,
             other.month,
@@ -247,8 +249,8 @@ def _log_debug(
         logger.debug(message)
 
 
-def openai_structured_call(
-    client: OpenAI,
+async def openai_structured_call(
+    client: AsyncOpenAI,
     model: str,
     output_schema: Type[BaseModel],
     user_prompt: str,
@@ -311,7 +313,7 @@ def openai_structured_call(
         # Get the schema and add required name field
         schema = output_schema.model_json_schema()
 
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=model,
             messages=messages,
             response_format=cast(
