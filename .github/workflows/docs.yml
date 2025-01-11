@@ -32,6 +32,7 @@ jobs:
           which poetry
           poetry env info
           poetry install --with dev,docs
+          pip install sphinx sphinx-rtd-theme myst-parser
           poetry show
           which sphinx-build || true
           
