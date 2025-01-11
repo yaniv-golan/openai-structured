@@ -28,9 +28,8 @@ jobs:
       - name: Install dependencies
         run: |
           poetry env info
-          poetry install --only main --only docs
+          poetry install --with docs
           poetry show
-          pip install -r docs/requirements.txt
           
       - name: Build documentation
         working-directory: docs
