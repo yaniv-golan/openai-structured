@@ -32,8 +32,12 @@ jobs:
           which poetry
           poetry env info
           poetry install --with dev,docs
-          pip install sphinx sphinx-rtd-theme myst-parser
-          poetry show
+          echo "PATH=$PATH"
+          echo "PYTHONPATH=$PYTHONPATH"
+          find $HOME/.local -name sphinx-build
+          find /usr/local -name sphinx-build
+          python -c "import sphinx; print(sphinx.__file__)"
+          python -m sphinx --version || true
           which sphinx-build || true
           
       - name: Build documentation
