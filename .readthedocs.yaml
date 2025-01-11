@@ -12,7 +12,7 @@ build:
       - poetry config virtualenvs.create false
     post_install:
       # Install dependencies with poetry
-      - poetry install --with docs
+      - poetry install --only main --only docs
 
 sphinx:
   configuration: docs/source/conf.py
