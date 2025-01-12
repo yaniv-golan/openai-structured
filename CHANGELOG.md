@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-01-15
+
+### Added
+
+- Documentation improvements for token limits
+- Enhanced JSON parsing error messages with context (±50 chars) and position information
+
+### Changed
+
+- Unified model references across documentation (gpt-4o, gpt-4o-mini, O1)
+- Clarified that model token limits are based on current OpenAI specifications
+- Improved model version documentation with date format requirements
+- Removed duplicate example files for better maintainability
+
+### Fixed
+
+- Corrected model references in documentation
+- Fixed incorrect version references
+- Code formatting improvements
+
 ## [0.3.0] - 2025-01-15
 
 ### Added
@@ -66,7 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling
 - Documentation framework
 
-[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yaniv-golan/openai-structured/releases/tag/v0.1.0

@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath("../../src"))
 project = "openai-structured"
 copyright = "2025, Yaniv Golan"
 author = "Yaniv Golan"
-version = "0.3.0"
+version = "0.4.0"
 
 extensions = [
     "sphinx.ext.autodoc",
