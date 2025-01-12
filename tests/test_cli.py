@@ -122,19 +122,19 @@ def test_get_context_window_limit() -> None:
 def test_validate_token_limits() -> None:
     """Test token limit validation."""
     # Should not raise for valid token counts
-    validate_token_limits("gpt-4o", total_tokens=1000, max_token_limit=16_384)
-    validate_token_limits("o1", total_tokens=50_000, max_token_limit=100_000)
+    validate_token_limits("gpt-4o-2024-08-06", total_tokens=1000, max_token_limit=16_384)
+    validate_token_limits("o1-2024-12-17", total_tokens=50_000, max_token_limit=100_000)
 
     # Should raise for exceeding context window
     with pytest.raises(
         ValueError, match="exceed model's context window limit"
     ):
-        validate_token_limits("gpt-4o", total_tokens=130_000)
+        validate_token_limits("gpt-4o-2024-08-06", total_tokens=130_000)
 
     # Should raise when not enough room for output
     with pytest.raises(ValueError, match="Only .* tokens remaining"):
         validate_token_limits(
-            "gpt-4o", total_tokens=120_000, max_token_limit=16_384
+            "gpt-4o-2024-08-06", total_tokens=120_000, max_token_limit=16_384
         )
 
 
@@ -143,31 +143,28 @@ async def test_cli_basic(
     temp_files: Dict[str, Path], mock_openai_client: AsyncMock
 ) -> None:
     """Test basic CLI functionality."""
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o-2024-08-06",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
+    with patch(
+        "sys.argv",
+        [
+            "cli.py",
+            "--system-prompt",
+            "Analyze files",
+            "--template",
+            "Compare {file1} with {file2}",
+            "--file",
+            f"file1={temp_files['file1']}",
+            "--file",
+            f"file2={temp_files['file2']}",
+            "--schema-file",
+            str(temp_files["schema"]),
+            "--model",
+            "gpt-4o-2024-08-06",
+            "--api-key",
+            "test-key",
+        ],
+    ), patch(
+        "openai_structured.cli.AsyncOpenAI",
+        return_value=mock_openai_client,
     ):
         await _main()  # Should complete successfully
 
@@ -177,33 +174,30 @@ async def test_cli_token_limit(
     temp_files: Dict[str, Path], mock_openai_client: AsyncMock
 ) -> None:
     """Test token limit handling."""
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o-2024-08-06",
-                "--max-token-limit",
-                "1",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
+    with patch(
+        "sys.argv",
+        [
+            "cli.py",
+            "--system-prompt",
+            "Analyze files",
+            "--template",
+            "Compare {file1} with {file2}",
+            "--file",
+            f"file1={temp_files['file1']}",
+            "--file",
+            f"file2={temp_files['file2']}",
+            "--schema-file",
+            str(temp_files["schema"]),
+            "--model",
+            "gpt-4o-2024-08-06",
+            "--max-token-limit",
+            "1",
+            "--api-key",
+            "test-key",
+        ],
+    ), patch(
+        "openai_structured.cli.AsyncOpenAI",
+        return_value=mock_openai_client,
     ):
         with pytest.raises(SystemExit) as exc_info:
             await _main()
@@ -225,31 +219,28 @@ async def test_cli_rate_limit(
         response=mock_response,
         body={"error": {"message": "Rate limit exceeded"}},
     )
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o-2024-08-06",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
+    with patch(
+        "sys.argv",
+        [
+            "cli.py",
+            "--system-prompt",
+            "Analyze files",
+            "--template",
+            "Compare {file1} with {file2}",
+            "--file",
+            f"file1={temp_files['file1']}",
+            "--file",
+            f"file2={temp_files['file2']}",
+            "--schema-file",
+            str(temp_files["schema"]),
+            "--model",
+            "gpt-4o-2024-08-06",
+            "--api-key",
+            "test-key",
+        ],
+    ), patch(
+        "openai_structured.cli.AsyncOpenAI",
+        return_value=mock_openai_client,
     ):
         with pytest.raises(SystemExit) as exc_info:
             await _main()
@@ -261,31 +252,28 @@ async def test_cli_model_not_supported(
     temp_files: Dict[str, Path], mock_openai_client: AsyncMock
 ) -> None:
     """Test unsupported model error handling."""
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-3.5-turbo",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
+    with patch(
+        "sys.argv",
+        [
+            "cli.py",
+            "--system-prompt",
+            "Analyze files",
+            "--template",
+            "Compare {file1} with {file2}",
+            "--file",
+            f"file1={temp_files['file1']}",
+            "--file",
+            f"file2={temp_files['file2']}",
+            "--schema-file",
+            str(temp_files["schema"]),
+            "--model",
+            "gpt-3.5-turbo",
+            "--api-key",
+            "test-key",
+        ],
+    ), patch(
+        "openai_structured.cli.AsyncOpenAI",
+        return_value=mock_openai_client,
     ):
         with pytest.raises(SystemExit) as exc_info:
             await _main()
@@ -301,31 +289,28 @@ async def test_cli_api_error(
     mock_openai_client.chat.completions.create.side_effect = (
         APIConnectionError(request=mock_request)
     )
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o-2024-08-06",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
+    with patch(
+        "sys.argv",
+        [
+            "cli.py",
+            "--system-prompt",
+            "Analyze files",
+            "--template",
+            "Compare {file1} with {file2}",
+            "--file",
+            f"file1={temp_files['file1']}",
+            "--file",
+            f"file2={temp_files['file2']}",
+            "--schema-file",
+            str(temp_files["schema"]),
+            "--model",
+            "gpt-4o-2024-08-06",
+            "--api-key",
+            "test-key",
+        ],
+    ), patch(
+        "openai_structured.cli.AsyncOpenAI",
+        return_value=mock_openai_client,
     ):
         with pytest.raises(SystemExit) as exc_info:
             await _main()
@@ -352,9 +337,9 @@ def test_cli_subprocess(temp_files: Dict[str, Path]) -> None:
             "--schema-file",
             str(temp_files["schema"]),
             "--model",
-            "gpt-4",
+            "gpt-3.5-turbo",
             "--api-key",
-            "invalid-key",  # This should fail
+            "test-key",
         ],
         capture_output=True,
         text=True,
@@ -380,9 +365,9 @@ def test_cli_subprocess_stdin(temp_files: Dict[str, Path]) -> None:
             "--schema-file",
             str(temp_files["schema"]),
             "--model",
-            "gpt-4",
+            "gpt-3.5-turbo",
             "--api-key",
-            "invalid-key",
+            "test-key",
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -415,7 +400,7 @@ def test_cli_subprocess_token_limit(temp_files: Dict[str, Path]) -> None:
             "--schema-file",
             str(temp_files["schema"]),
             "--model",
-            "gpt-4",
+            "gpt-4o-2024-08-06",
             "--max-token-limit",
             "1",  # Very low limit
             "--api-key",
@@ -435,58 +420,62 @@ async def test_cli_token_limits(
 ) -> None:
     """Test CLI handling of token limits."""
     # Test o1 model with large token count
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "x" * 190_000,  # Very large prompt
-                "--template",
-                "{file1}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "o1",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
+    with patch(
+        "sys.argv",
+        [
+            "cli.py",
+            "--system-prompt",
+            "x" * 190_000,  # Very large prompt
+            "--template",
+            "{file1}",
+            "--file",
+            f"file1={temp_files['file1']}",
+            "--schema-file",
+            str(temp_files["schema"]),
+            "--model",
+            "o1-2024-12-17",
+            "--max-token-limit",
+            "100000",  # Set explicit token limit
+            "--api-key",
+            "test-key",
+        ],
+    ), patch(
+        "openai_structured.cli.AsyncOpenAI",
+        return_value=mock_openai_client,
+    ), patch(
+        "openai_structured.cli.estimate_tokens_for_chat",
+        return_value=150_000,  # Force high token count
     ):
         with pytest.raises(SystemExit) as exc_info:
             await _main()
         assert exc_info.value.code == 1
 
     # Test gpt-4o with context window limit
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "x" * 120_000,  # Large prompt
-                "--template",
-                "{file1}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
+    with patch(
+        "sys.argv",
+        [
+            "cli.py",
+            "--system-prompt",
+            "x" * 120_000,  # Large prompt
+            "--template",
+            "{file1}",
+            "--file",
+            f"file1={temp_files['file1']}",
+            "--schema-file",
+            str(temp_files["schema"]),
+            "--model",
+            "gpt-4o-2024-08-06",
+            "--max-token-limit",
+            "16384",  # Set explicit token limit
+            "--api-key",
+            "test-key",
+        ],
+    ), patch(
+        "openai_structured.cli.AsyncOpenAI",
+        return_value=mock_openai_client,
+    ), patch(
+        "openai_structured.cli.estimate_tokens_for_chat",
+        return_value=20_000,  # Force token count above limit
     ):
         with pytest.raises(SystemExit) as exc_info:
             await _main()
