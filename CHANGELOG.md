@@ -11,12 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Automated PyPI publishing workflow using GitHub Actions and trusted publishing
+- Automated PyPI publishing workflow using GitHub Actions
+  - Secure publishing using OpenID Connect (OIDC) authentication
+  - Triggered automatically on new GitHub releases
+  - Built and published using Poetry
+
+### Changed
+
+- Improved Read the Docs build configuration
+  - Simplified dependency management using Poetry
+  - Enhanced documentation build process reliability
 
 ### Fixed
 
-- Documentation build issues with sphinx-rtd-theme dependency
-- Read the Docs configuration simplified to use Poetry exclusively
+- Documentation build failures due to missing sphinx-rtd-theme
+  - Added explicit theme installation in pre-install phase
+  - Ensured correct environment setup for documentation builds
 
 ## [0.4.0] - 2025-01-15
 
