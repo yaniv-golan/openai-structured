@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-01-12
+
+### Added
+
+- Automated PyPI publishing workflow using GitHub Actions and trusted publishing
+
+### Fixed
+
+- Documentation build issues with sphinx-rtd-theme dependency
+- Read the Docs configuration simplified to use Poetry exclusively
+
 ## [0.4.0] - 2025-01-15
 
 ### Added
