@@ -5,7 +5,7 @@ import logging
 import re
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, List, NamedTuple, Optional, Type, cast
+from typing import Any, AsyncGenerator, Deque, Dict, List, NamedTuple, Optional, Type, TypeVar, Union, cast
 
 from openai import (
     APIConnectionError,
@@ -77,7 +77,7 @@ CHUNK_SIZE = 8192  # 8KB chunks for buffer management
 class StreamBuffer:
     """Efficient buffer management for streaming responses."""
 
-    chunks: deque[str]
+    chunks: Deque[str]
     total_bytes: int
     last_valid_json_pos: int
 
