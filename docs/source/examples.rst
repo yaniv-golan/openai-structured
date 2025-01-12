@@ -27,7 +27,7 @@ The simplest use case is extracting structured data from text. This example show
         client = OpenAI()
         result = openai_structured_call(
             client=client,
-            model="gpt-4",
+            model="gpt-4o-2024-08-06",
             output_schema=UserInfo,
             user_prompt="Tell me about John who is 30 years old",
             system_prompt="Extract user information"
@@ -68,7 +68,7 @@ you can use the streaming API. This example demonstrates:
         client = OpenAI()
         async for item in openai_structured_stream(
             client=client,
-            model="gpt-4",
+            model="gpt-4o-2024-08-06",
             output_schema=TodoItem,
             user_prompt=(
                 "Create a list of 3 tasks for a software developer "
@@ -118,7 +118,7 @@ This example shows more advanced features:
         try:
             result = openai_structured_call(
                 client=client,
-                model="gpt-4",
+                model="gpt-4o-2024-08-06",
                 output_schema=ProductInfo,
                 user_prompt=(
                     "Tell me about a high-end laptop with detailed specifications"
@@ -162,7 +162,7 @@ Always wrap API calls in try-except blocks to handle specific exceptions:
     try:
         result = openai_structured_call(...)
     except ModelNotSupportedError:
-        print("Please use one of: gpt-3.5-turbo, gpt-4, gpt-4-turbo-preview")
+        print("Please use one of: gpt-4o-2024-08-06, gpt-4o-mini-2024-07-18, o1-2024-12-17")
     except APIResponseError as e:
         print(f"API error: {e}")
     except EmptyResponseError:
@@ -183,7 +183,7 @@ Set up your environment properly:
     export OPENAI_API_KEY=your-api-key-here
 
     # Optional: set default model
-    export OPENAI_MODEL=gpt-4
+    export OPENAI_MODEL=gpt-4o-2024-08-06
 
 Custom System Prompts
 ~~~~~~~~~~~~~~~~~~

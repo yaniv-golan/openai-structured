@@ -36,7 +36,7 @@ Here's a basic example of extracting structured data from text:
    client = OpenAI()
    result = openai_structured_call(
        client=client,
-       model="gpt-4",
+       model="gpt-4o-2024-08-06",
        output_schema=UserInfo,
        user_prompt="Tell me about John who is 30 years old",
        system_prompt="Extract user information"
