@@ -11,10 +11,5 @@ build:
     post_install:
       - poetry install --with docs
 
-python:
-  install:
-    - method: pip
-      path: .
-
 sphinx:
   configuration: docs/source/conf.py 
