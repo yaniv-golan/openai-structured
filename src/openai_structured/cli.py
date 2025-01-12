@@ -25,8 +25,8 @@ from .client import openai_structured_call
 from .errors import ModelNotSupportedError, OpenAIClientError
 
 # Check Python version
-if sys.version_info < (3, 8):
-    sys.exit("Python 3.8 or higher is required")
+if sys.version_info < (3, 9):
+    sys.exit("Python 3.9 or higher is required")
 
 
 # Make jsonschema optional

@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Made jsonschema an optional dependency
-- Updated Python requirement to >=3.8.1
+- Updated Python requirement to >=3.9
 - Enhanced error handling for CLI operations
 - Improved documentation structure
 
