@@ -8,6 +8,7 @@ build:
     pre_install:
       - pip install poetry
       - poetry config virtualenvs.create false
+      - pip install sphinx-rtd-theme
     post_install:
       - poetry install --with docs
 
