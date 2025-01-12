@@ -145,6 +145,9 @@ def estimate_tokens_for_chat(
 def get_default_token_limit(model: str) -> int:
     """Get the default token limit for a given model.
 
+    Note: These limits are based on current OpenAI model specifications as of 2024 and may
+    need to be updated if OpenAI changes the models' capabilities.
+
     Args:
         model: The model name (e.g., 'gpt-4o', 'gpt-4o-mini', 'o1')
 
@@ -161,6 +164,9 @@ def get_default_token_limit(model: str) -> int:
 
 def get_context_window_limit(model: str) -> int:
     """Get the total context window limit for a given model.
+
+    Note: These limits are based on current OpenAI model specifications as of 2024 and may
+    need to be updated if OpenAI changes the models' capabilities.
 
     Args:
         model: The model name (e.g., 'gpt-4o', 'gpt-4o-mini', 'o1')

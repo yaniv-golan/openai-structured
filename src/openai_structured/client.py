@@ -69,10 +69,11 @@ class ModelVersion(NamedTuple):
         )
 
 
-# Model token limits:
+# Model token limits (based on OpenAI specifications as of 2024):
 # - GPT-4o: 128K context window, 16K max output tokens
 # - GPT-4o-mini: 128K context window, 16K max output tokens
 # - O1: 200K context window, 100K max output tokens (including reasoning)
+# Note: These limits may change as OpenAI updates their models
 OPENAI_API_SUPPORTED_MODELS = {
     "gpt-4o": ModelVersion(2024, 8, 6),
     "gpt-4o-mini": ModelVersion(2024, 7, 18),
