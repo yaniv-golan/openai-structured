@@ -257,7 +257,7 @@ def _parse_json_response(
             context = "..." + context
         if end < len(content):
             context = context + "..."
-        
+
         raise InvalidResponseFormatError(
             f"Invalid JSON at position {error_pos}: {e.msg}\n"
             f"Context: {context}\n"
