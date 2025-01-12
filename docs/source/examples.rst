@@ -7,41 +7,86 @@ demonstrates how to use the library effectively with real-world scenarios.
 Basic Usage
 -----------
 
-The simplest use case is extracting structured data from text. This example shows how to:
+The basic example demonstrates:
 
-* Define a Pydantic model for the expected structure
-* Make a simple API call
-* Handle the structured response
+* Defining Pydantic models with field validation
+* Making API calls with proper error handling
+* Processing structured responses
+* Using environment variables for configuration
 
 .. code-block:: python
 
+    from typing import List
     from openai import OpenAI
-    from openai_structured import openai_structured_call
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
+    from openai_structured import (
+        ModelNotSupportedError,
+        OpenAIClientError,
+        openai_structured_call,
+    )
 
-    class UserInfo(BaseModel):
-        name: str
-        age: int
-
-    def main():
-        client = OpenAI()
-        result = openai_structured_call(
-            client=client,
-            model="gpt-4o-2024-08-06",
-            output_schema=UserInfo,
-            user_prompt="Tell me about John who is 30 years old",
-            system_prompt="Extract user information"
+    class TodoItem(BaseModel):
+        """A single todo item with priority."""
+        task: str = Field(..., description="The task description")
+        priority: str = Field(
+            ...,
+            pattern="^(high|medium|low|High|Medium|Low)$",
+            description="Priority level (high/medium/low)",
         )
-        print(f"Name: {result.name}, Age: {result.age}")
 
-    if __name__ == "__main__":
-        main()
+    class TodoList(BaseModel):
+        """A list of todo items."""
+        items: List[TodoItem]
+        total_count: int = Field(..., ge=0)
+
+    def main() -> None:
+        """Run the example."""
+        client = OpenAI()
+
+        try:
+            # Define prompts
+            system_prompt = """
+            You are a task manager that creates todo lists.
+            Each task should have a clear description and priority level.
+            """
+            user_prompt = (
+                "Create a todo list with 3 tasks for a software developer."
+            )
+
+            # Get structured response
+            result = openai_structured_call(
+                client=client,
+                model="gpt-4o-2024-08-06",
+                output_schema=TodoList,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            )
+
+            # Process the response
+            print(f"\nTotal tasks: {result.total_count}")
+            print("\nTasks:")
+            for item in result.items:
+                print(f"- {item.task} (Priority: {item.priority})")
+
+        except ModelNotSupportedError as e:
+            print(f"\nError: Model not supported - {e}")
+        except OpenAIClientError as e:
+            print(f"\nError: {e}")
+        except Exception as e:
+            print(f"\nUnexpected error: {e}")
+        finally:
+            client.close()  # Cleanup resources
 
 Expected output:
 
 .. code-block:: text
 
-    Name: John, Age: 30
+    Total tasks: 3
+
+    Tasks:
+    - Implement user authentication system (Priority: high)
+    - Write unit tests for core functionality (Priority: medium)
+    - Update API documentation (Priority: low)
 
 Streaming Example
 -------------------
@@ -49,34 +94,70 @@ Streaming Example
 For handling large responses or when you want to process data as it arrives,
 you can use the streaming API. This example demonstrates:
 
-* Async streaming functionality
+* Async streaming functionality with proper error handling
 * Processing structured items as they arrive
-* Using line continuation for long strings
+* Using type hints and proper Python typing
+* Handling various error cases
 
 .. code-block:: python
 
     import asyncio
-    from openai import OpenAI
-    from openai_structured import openai_structured_stream
-    from pydantic import BaseModel
+    from typing import NoReturn
+    from openai import AsyncOpenAI
+    from pydantic import BaseModel, Field
+    from openai_structured import (
+        BufferOverflowError,
+        ModelNotSupportedError,
+        OpenAIClientError,
+        openai_structured_stream,
+    )
 
-    class TodoItem(BaseModel):
-        task: str
-        priority: str
+    class AnalysisResult(BaseModel):
+        """Progressive analysis result."""
+        topic: str = Field(..., description="Current topic being analyzed")
+        insight: str = Field(..., min_length=10)
+        confidence: float = Field(..., ge=0.0, le=1.0)
 
-    async def main():
-        client = OpenAI()
-        async for item in openai_structured_stream(
-            client=client,
-            model="gpt-4o-2024-08-06",
-            output_schema=TodoItem,
-            user_prompt=(
-                "Create a list of 3 tasks for a software developer "
-                "with different priorities"
-            ),
-            system_prompt="Generate tasks with priorities (high/medium/low)"
-        ):
-            print(f"Task: {item.task}, Priority: {item.priority}")
+    async def main() -> NoReturn:
+        """Run the streaming example."""
+        client = AsyncOpenAI()
+
+        try:
+            # Define prompts
+            system_prompt = """
+            You are an AI analyst providing progressive insights.
+            For each response:
+            1. Focus on a specific topic
+            2. Provide a detailed insight
+            3. Include a confidence score
+            """
+            user_prompt = (
+                "Analyze the impact of AI on different aspects of society."
+            )
+
+            # Stream structured responses
+            print("\nStreaming analysis results:\n")
+            async for result in openai_structured_stream(
+                client=client,
+                model="gpt-4o-2024-08-06",
+                output_schema=AnalysisResult,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            ):
+                print(f"Topic: {result.topic}")
+                print(f"Insight: {result.insight}")
+                print(f"Confidence: {result.confidence:.2f}\n")
+
+        except ModelNotSupportedError as e:
+            print(f"\nError: Model not supported - {e}")
+        except BufferOverflowError as e:
+            print(f"\nError: Buffer overflow - {e}")
+        except OpenAIClientError as e:
+            print(f"\nError: {e}")
+        except Exception as e:
+            print(f"\nUnexpected error: {e}")
+        finally:
+            await client.close()  # Cleanup resources
 
     if __name__ == "__main__":
         asyncio.run(main())
@@ -85,9 +166,19 @@ Expected output:
 
 .. code-block:: text
 
-    Task: Implement user authentication, Priority: high
-    Task: Write unit tests for API endpoints, Priority: medium
-    Task: Update API documentation, Priority: low
+    Streaming analysis results:
+
+    Topic: Employment and Workforce
+    Insight: AI automation is reshaping job markets, creating new roles while displacing traditional ones
+    Confidence: 0.95
+
+    Topic: Healthcare
+    Insight: AI-powered diagnostics are improving early disease detection and treatment planning
+    Confidence: 0.88
+
+    Topic: Education
+    Insight: Personalized learning platforms are adapting to individual student needs
+    Confidence: 0.92
 
 Advanced Usage
 --------------
@@ -97,118 +188,4 @@ This example shows more advanced features:
 * Custom system prompts for better control
 * Error handling with specific exceptions
 * Complex data structures with multiple fields
-* Proper Python packaging structure
-
-.. code-block:: python
-
-    from openai import OpenAI
-    from openai_structured import (
-        openai_structured_call,
-        OpenAIClientError,
-    )
-    from pydantic import BaseModel
-
-    class ProductInfo(BaseModel):
-        name: str
-        price: float
-        description: str
-
-    def main():
-        client = OpenAI()
-        try:
-            result = openai_structured_call(
-                client=client,
-                model="gpt-4o-2024-08-06",
-                output_schema=ProductInfo,
-                user_prompt=(
-                    "Tell me about a high-end laptop with detailed specifications"
-                ),
-                system_prompt="Extract product details with exact pricing"
-            )
-            print(f"{result.name}: ${result.price}")
-            print(f"Description: {result.description}")
-        except OpenAIClientError as error:
-            print(f"Error occurred: {error}")
-
-    if __name__ == "__main__":
-        main()
-
-Expected output:
-
-.. code-block:: text
-
-    MacBook Pro 16": $2499.00
-    Description: High-performance laptop with M2 Pro chip, 16GB RAM, 512GB SSD...
-
-Common Patterns
--------------
-
-Error Handling
-~~~~~~~~~~~~
-
-Always wrap API calls in try-except blocks to handle specific exceptions:
-
-.. code-block:: python
-
-    from openai_structured import (
-        openai_structured_call,
-        OpenAIClientError,
-        APIResponseError,
-        ModelNotSupportedError,
-        EmptyResponseError,
-        InvalidResponseFormatError,
-    )
-
-    try:
-        result = openai_structured_call(...)
-    except ModelNotSupportedError:
-        print("Supported models and their token limits:")
-        print("- gpt-4o-2024-08-06: 128K context, 16K output tokens")
-        print("- gpt-4o-mini-2024-07-18: 128K context, 16K output tokens")
-        print("- o1-2024-12-17: 200K context, 100K output tokens")
-    except APIResponseError as e:
-        print(f"API error: {e}")
-    except EmptyResponseError:
-        print("Received empty response from API")
-    except InvalidResponseFormatError as e:
-        print(f"Could not parse response: {e}")
-    except OpenAIClientError as e:
-        print(f"Other error: {e}")
-
-Environment Variables
-~~~~~~~~~~~~~~~~~~
-
-Set up your environment properly:
-
-.. code-block:: bash
-
-    # In your shell or .env file
-    export OPENAI_API_KEY=your-api-key-here
-
-    # Optional: set default model
-    export OPENAI_MODEL=gpt-4o-2024-08-06
-
-Custom System Prompts
-~~~~~~~~~~~~~~~~~~
-
-Customize the system prompt for better results:
-
-.. code-block:: python
-
-    system_prompt = """
-    Extract precise information from the input.
-    Ensure all numeric values are accurate.
-    Format strings consistently.
-    Return only valid JSON matching the schema.
-    """
-
-Additional Tips
--------------
-
-* Always use type hints and Pydantic models for better code safety
-* Handle exceptions appropriately in production code
-* Consider using environment variables for API keys
-* Use async streaming for large responses or real-time processing
-* Test your models with various inputs to ensure robustness
-* Set appropriate timeouts for your use case
-* Consider rate limiting in production environments 
+* Proper Python packaging structure 
