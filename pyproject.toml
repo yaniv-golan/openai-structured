@@ -12,7 +12,7 @@ packages = [{include = "openai_structured", from = "src"}]
 include = ["src/openai_structured/py.typed"]
 
 [tool.poetry.dependencies]
-python = ">=3.8.1,<4.0"
+python = ">=3.9,<4.0"
 openai = "^1.12.0"
 pydantic = "^2.6.3"
 tiktoken = "^0.6.0"
@@ -54,7 +54,7 @@ exclude = [
     "examples/"
 ]
 packages = ["openai_structured", "tests"]
-python_version = "3.8"
+python_version = "3.9"
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
@@ -66,8 +66,10 @@ show_error_codes = true
 
 [tool.black]
 line-length = 79
-target-version = ['py39']
+target-version = ["py39"]
 include = '\.pyi?$'
+preview = false
+required-version = "24.8.0"
 
 [tool.isort]
 profile = "black"
@@ -83,4 +85,7 @@ markers = [
     "live: mark test as a live test that should use real API key",
     "asyncio: mark test as requiring async loop",
 ]
+
+[tool.ruff]
+target-version = "py39"
 
