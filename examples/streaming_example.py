@@ -1,7 +1,7 @@
 # examples/streaming_example.py
 import asyncio
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from openai_structured import openai_structured_stream
@@ -13,10 +13,10 @@ class TodoItem(BaseModel):
 
 
 async def main():
-    client = OpenAI()
+    client = AsyncOpenAI()
     async for item in openai_structured_stream(
         client=client,
-        model="gpt-4",
+        model="gpt-4o-2024-08-06",
         output_schema=TodoItem,
         user_prompt=(
             "Create a list of 3 tasks for a software developer "

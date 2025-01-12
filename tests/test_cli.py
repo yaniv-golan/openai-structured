@@ -99,7 +99,7 @@ def test_estimate_tokens() -> None:
         {"role": "system", "content": "You are a helpful assistant"},
         {"role": "user", "content": "Hello"},
     ]
-    tokens = estimate_tokens_for_chat(messages, "gpt-4")
+    tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
     assert tokens > 0
 
 
@@ -503,6 +503,42 @@ async def test_cli_token_limits(
             "openai_structured.cli.estimate_tokens_for_chat",
             return_value=20_000,  # Force token count above limit
         ),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            await _main()
+        assert exc_info.value.code == 1
+
+
+def test_token_counting() -> None:
+    """Test token counting for chat messages."""
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "user", "content": "Hello, how are you?"},
+    ]
+    tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
+    assert tokens > 0
+
+
+@pytest.mark.asyncio
+async def test_unsupported_model(
+    temp_files: Dict[str, Path], mock_openai_client: AsyncMock
+) -> None:
+    """Test handling of unsupported model."""
+    with patch(
+        "sys.argv",
+        [
+            "cli.py",
+            "--system-prompt",
+            "test",
+            "--template",
+            "test {file1}",
+            "--file",
+            f"file1={temp_files['file1']}",
+            "--schema-file",
+            str(temp_files["schema"]),
+            "--model",
+            "gpt-4",
+        ],
     ):
         with pytest.raises(SystemExit) as exc_info:
             await _main()

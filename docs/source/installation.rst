@@ -97,7 +97,7 @@ You can verify the installation by running this simple test:
    try:
        result = openai_structured_call(
            client=client,
-           model="gpt-3.5-turbo",  # Fastest model for testing
+           model="gpt-4o-mini-2024-07-18",  # Fast model for structured output
            output_schema=Greeting,
            user_prompt="Say hello",
            system_prompt="Respond with a greeting in JSON format"
@@ -130,3 +130,8 @@ If you encounter issues:
    .. code-block:: bash
 
       pip install --upgrade openai-structured 
+
+# Example configuration
+OPENAI_API_KEY=your-api-key-here
+OPENAI_MODEL=gpt-4o-mini-2024-07-18  # Fastest model for testing
+LOG_LEVEL=INFO 

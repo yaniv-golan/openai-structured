@@ -162,7 +162,10 @@ Always wrap API calls in try-except blocks to handle specific exceptions:
     try:
         result = openai_structured_call(...)
     except ModelNotSupportedError:
-        print("Please use one of: gpt-4o-2024-08-06, gpt-4o-mini-2024-07-18, o1-2024-12-17")
+        print("Supported models and their token limits:")
+        print("- gpt-4o-2024-08-06: 128K context, 16K output tokens")
+        print("- gpt-4o-mini-2024-07-18: 128K context, 16K output tokens")
+        print("- o1-2024-12-17: 200K context, 100K output tokens")
     except APIResponseError as e:
         print(f"API error: {e}")
     except EmptyResponseError:

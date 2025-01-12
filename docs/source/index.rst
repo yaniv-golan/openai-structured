@@ -21,6 +21,15 @@ Installation
 
    pip install openai-structured
 
+Supported Models
+-----------------
+
+This library requires models that support structured output:
+
+* ``gpt-4o-2024-08-06`` (default): 128K context window, 16K output tokens
+* ``gpt-4o-mini-2024-07-18``: 128K context window, 16K output tokens
+* ``o1-2024-12-17``: 200K context window, 100K output tokens
+
 Quick Example
 -----------------
 
@@ -37,7 +46,7 @@ Quick Example
    client = OpenAI()
    result = openai_structured_call(
        client=client,
-       model="gpt-4",
+       model="gpt-4o-2024-08-06",
        output_schema=UserInfo,
        user_prompt="Tell me about John who is 30 years old",
        system_prompt="Extract user information"

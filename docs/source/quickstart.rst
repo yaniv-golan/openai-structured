@@ -43,4 +43,15 @@ Here's a basic example of extracting structured data from text:
    )
    print(f"Name: {result.name}, Age: {result.age}")
 
+Supported Models and Token Limits
+--------------------------------
+
+The following models are supported for structured output:
+
+* ``gpt-4o-2024-08-06``: 128K context window, 16K output tokens
+* ``gpt-4o-mini-2024-07-18``: 128K context window, 16K output tokens
+* ``o1-2024-12-17``: 200K context window, 100K output tokens (including reasoning)
+
+Choose the appropriate model based on your context size and output requirements.
+
 For more examples, see the :doc:`examples` section. 

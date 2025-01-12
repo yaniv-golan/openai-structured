@@ -69,6 +69,10 @@ class ModelVersion(NamedTuple):
         )
 
 
+# Model token limits:
+# - GPT-4o: 128K context window, 16K max output tokens
+# - GPT-4o-mini: 128K context window, 16K max output tokens
+# - O1: 200K context window, 100K max output tokens (including reasoning)
 OPENAI_API_SUPPORTED_MODELS = {
     "gpt-4o": ModelVersion(2024, 8, 6),
     "gpt-4o-mini": ModelVersion(2024, 7, 18),
@@ -292,7 +296,7 @@ async def openai_structured_call(
 
     Args:
         client: Initialized OpenAI client.
-        model: OpenAI model name (e.g., "gpt-4-0125-preview").
+        model: OpenAI model name (e.g., "gpt-4o-2024-08-06").
         output_schema: Pydantic model defining the expected output structure.
         user_prompt: The user's request.
         system_prompt: System instructions for the model.

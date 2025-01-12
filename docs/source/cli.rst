@@ -207,15 +207,15 @@ Besides environment variables and command-line arguments, there are several more
 Token Limits
 -----------
 
-The CLI automatically counts tokens in your prompts using ``tiktoken`` and enforces limits:
+The CLI automatically counts tokens in your prompts using ``tiktoken`` and enforces model-specific limits:
 
-* Default limit for GPT-4 models: 8192 tokens
-* Default limit for other models: 4096 tokens
+* GPT-4o and GPT-4o-mini: 128,000 token context window, 16,384 token output limit
+* O1: 200,000 token context window, 100,000 token output limit (including reasoning tokens)
 
 You can override these limits with ``--max-token-limit`` or disable checking by setting it to 0::
 
     # Custom limit
-    oai-structured-cli --max-token-limit 2000 ...
+    oai-structured-cli --max-token-limit 50000 ...
 
     # Disable limit checking
     oai-structured-cli --max-token-limit 0 ...
