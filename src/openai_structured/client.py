@@ -5,7 +5,16 @@ import logging
 import re
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Deque, Dict, List, NamedTuple, Optional, Type, TypeVar, Union, cast
+from typing import (
+    Any,
+    AsyncGenerator,
+    Deque,
+    List,
+    NamedTuple,
+    Optional,
+    Type,
+    cast,
+)
 
 from openai import (
     APIConnectionError,
