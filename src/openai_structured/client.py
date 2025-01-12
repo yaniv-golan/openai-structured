@@ -242,9 +242,26 @@ def _parse_json_response(
         raise EmptyResponseError("OpenAI API returned empty response")
     try:
         return output_schema.model_validate_json(content)
-    except (ValidationError, json.JSONDecodeError) as e:
+    except ValidationError as e:
+        # For Pydantic validation errors, include the validation error details
         raise InvalidResponseFormatError(
-            f"Invalid response format from OpenAI API: {e}"
+            f"Response validation failed: {e}\nReceived content (first 200 chars): {content[:200]}"
+        ) from e
+    except json.JSONDecodeError as e:
+        # For JSON parsing errors, include position and snippet around the error
+        error_pos = e.pos
+        start = max(0, error_pos - 50)
+        end = min(len(content), error_pos + 50)
+        context = content[start:end]
+        if start > 0:
+            context = "..." + context
+        if end < len(content):
+            context = context + "..."
+        
+        raise InvalidResponseFormatError(
+            f"Invalid JSON at position {error_pos}: {e.msg}\n"
+            f"Context: {context}\n"
+            f"Full response (first 200 chars): {content[:200]}"
         ) from e
 
 
