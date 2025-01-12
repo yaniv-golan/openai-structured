@@ -1,0 +1,1 @@
+{"type": "object", "properties": {"summary": {"type": "string"}, "score": {"type": "integer"}}, "required": ["summary", "score"]}

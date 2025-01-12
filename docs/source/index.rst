@@ -11,6 +11,7 @@ A Python library for structured output from OpenAI's API.
    quickstart
    api
    examples
+   cli
    contributing
 
 Installation

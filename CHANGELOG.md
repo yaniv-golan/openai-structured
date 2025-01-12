@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-01-15
+
+### Added
+
+- Command-line interface (oai-structured-cli)
+- JSON schema validation support
+- Token counting and limits
+- Multiple file input support
+- stdin support
+- Comprehensive CLI documentation
+- CLI test suite with subprocess testing
+
+### Changed
+
+- Made jsonschema an optional dependency
+- Updated Python requirement to >=3.8.1
+- Enhanced error handling for CLI operations
+- Improved documentation structure
+
+### Fixed
+
+- Token limit validation
+- Template placeholder validation
+- Output directory handling
+- API error handling in CLI
+
 ## [0.2.0] - 2025-01-12
 
 ### Added
@@ -40,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling
 - Documentation framework
 
-[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yaniv-golan/openai-structured/releases/tag/v0.1.0
