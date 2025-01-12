@@ -8,11 +8,11 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Set, Any, Type
-from pydantic import BaseModel, create_model
+from typing import Dict, Optional, Set, Any, Type, List, Union, Tuple
 
 import tiktoken
 from openai import AsyncOpenAI, APIConnectionError, AuthenticationError, BadRequestError, InternalServerError, RateLimitError
+from pydantic import BaseModel, create_model, ConfigDict
 
 from .client import openai_structured_call
 from .errors import ModelNotSupportedError, OpenAIClientError
@@ -31,7 +31,7 @@ except ImportError:
     HAVE_JSONSCHEMA = False
 
 
-def validate_json_schema(schema: dict) -> None:
+def validate_json_schema(schema: Dict[str, Any]) -> None:
     """Validate that the provided schema is a valid JSON Schema."""
     if not HAVE_JSONSCHEMA:
         logging.warning("jsonschema package not installed. Schema validation disabled.")
@@ -43,7 +43,7 @@ def validate_json_schema(schema: dict) -> None:
         raise ValueError(f"Invalid JSON Schema: {e}")
 
 
-def validate_response(response: dict, schema: dict) -> None:
+def validate_response(response: Dict[str, Any], schema: Dict[str, Any]) -> None:
     """Validate that the response matches the provided JSON Schema."""
     if not HAVE_JSONSCHEMA:
         logging.warning("jsonschema package not installed. Response validation disabled.")
@@ -59,13 +59,14 @@ def validate_response(response: dict, schema: dict) -> None:
         raise ValueError("Response validation errors:\n" + "\n".join(error_messages))
 
 
-def create_dynamic_model(schema: dict) -> Type[BaseModel]:
+def create_dynamic_model(schema: Dict[str, Any]) -> Type[BaseModel]:
     """Create a Pydantic model from a JSON schema."""
     # Extract properties and their types
     properties = schema.get("properties", {})
-    fields = {}
+    field_definitions: Dict[str, Any] = {}
+    
     for name, prop in properties.items():
-        field_type = Any  # Default to Any for complex types
+        field_type: Any  # Allow any type to be assigned
         if prop.get("type") == "string":
             field_type = str
         elif prop.get("type") == "integer":
@@ -75,13 +76,21 @@ def create_dynamic_model(schema: dict) -> Type[BaseModel]:
         elif prop.get("type") == "boolean":
             field_type = bool
         elif prop.get("type") == "array":
-            field_type = list
+            field_type = List[Any]
         elif prop.get("type") == "object":
-            field_type = dict
-        
-        fields[name] = (field_type, ...)  # ... means required
+            field_type = Dict[str, Any]
+        else:
+            field_type = Any
+            
+        field_definitions[name] = (field_type, ...)
 
-    return create_model("DynamicModel", **fields)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model: Type[BaseModel] = create_model(
+        "DynamicModel",
+        __config__=model_config,
+        **field_definitions
+    )
+    return model
 
 
 def validate_template(template: str, available_files: Set[str]) -> None:
@@ -92,7 +101,7 @@ def validate_template(template: str, available_files: Set[str]) -> None:
         raise ValueError(f"Template placeholders missing files: {', '.join(missing)}")
 
 
-def estimate_tokens_for_chat(messages: list, model: str) -> int:
+def estimate_tokens_for_chat(messages: List[Dict[str, str]], model: str) -> int:
     """Estimate the number of tokens in a chat completion."""
     try:
         encoding = tiktoken.encoding_for_model(model)
@@ -146,7 +155,7 @@ def get_context_window_limit(model: str) -> int:
         return 8_192  # default fallback
 
 
-def validate_token_limits(model: str, total_tokens: int, max_token_limit: int | None = None) -> None:
+def validate_token_limits(model: str, total_tokens: int, max_token_limit: Optional[int] = None) -> None:
     """Validate token counts against model limits.
     
     Args:
