@@ -102,9 +102,62 @@ def test_estimate_tokens():
 
 
 def test_get_default_token_limit():
-    """Test default token limits."""
-    assert get_default_token_limit("gpt-4") == 8192
-    assert get_default_token_limit("gpt-3.5-turbo") == 4096
+    """Test default token limits for different models."""
+    assert get_default_token_limit("o1") == 100_000
+    assert get_default_token_limit("gpt-4o") == 16_384
+    assert get_default_token_limit("gpt-4o-mini") == 16_384
+    assert get_default_token_limit("unknown-model") == 4_096
+
+
+def test_get_context_window_limit():
+    """Test context window limits for different models."""
+    assert get_context_window_limit("o1") == 200_000
+    assert get_context_window_limit("gpt-4o") == 128_000
+    assert get_context_window_limit("gpt-4o-mini") == 128_000
+    assert get_context_window_limit("unknown-model") == 8_192
+
+
+def test_validate_token_limits():
+    """Test token limit validation."""
+    # Should not raise for valid token counts
+    validate_token_limits("gpt-4o", total_tokens=1000, max_token_limit=16_384)
+    validate_token_limits("o1", total_tokens=50_000, max_token_limit=100_000)
+    
+    # Should raise for exceeding context window
+    with pytest.raises(ValueError, match="exceed model's context window limit"):
+        validate_token_limits("gpt-4o", total_tokens=130_000)
+    
+    # Should raise when not enough room for output
+    with pytest.raises(ValueError, match="Only .* tokens remaining"):
+        validate_token_limits("gpt-4o", total_tokens=120_000, max_token_limit=16_384)
+
+
+def test_cli_token_limits(mock_openai_client, temp_files):
+    """Test CLI handling of token limits."""
+    schema_file = temp_files["schema.json"]
+    input_file = temp_files["input.txt"]
+    
+    # Test o1 model with large token count
+    with pytest.raises(SystemExit) as exc_info:
+        _main([
+            "--system-prompt", "x" * 190_000,  # Very large prompt
+            "--template", "{file1}",
+            "--file", f"file1={input_file}",
+            "--schema-file", schema_file,
+            "--model", "o1",
+        ])
+    assert exc_info.value.code == 1
+    
+    # Test gpt-4o with context window limit
+    with pytest.raises(SystemExit) as exc_info:
+        _main([
+            "--system-prompt", "x" * 120_000,  # Large prompt
+            "--template", "{file1}",
+            "--file", f"file1={input_file}",
+            "--schema-file", schema_file,
+            "--model", "gpt-4o",
+        ])
+    assert exc_info.value.code == 1
 
 
 @pytest.mark.asyncio

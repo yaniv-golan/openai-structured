@@ -113,10 +113,67 @@ def estimate_tokens_for_chat(messages: list, model: str) -> int:
 
 
 def get_default_token_limit(model: str) -> int:
-    """Get the default token limit for a model."""
-    if "gpt-4" in model:
-        return 8192
-    return 4096  # Default for other models
+    """Get the default token limit for a given model.
+    
+    Args:
+        model: The model name (e.g., 'gpt-4o', 'gpt-4o-mini', 'o1')
+        
+    Returns:
+        The default token limit for the model
+    """
+    if "o1" in model:
+        return 100_000  # o1 supports up to 100K output tokens
+    elif "gpt-4o" in model:
+        return 16_384  # gpt-4o and gpt-4o-mini support up to 16K output tokens
+    else:
+        return 4_096  # default fallback
+
+
+def get_context_window_limit(model: str) -> int:
+    """Get the total context window limit for a given model.
+    
+    Args:
+        model: The model name (e.g., 'gpt-4o', 'gpt-4o-mini', 'o1')
+        
+    Returns:
+        The context window limit for the model
+    """
+    if "o1" in model:
+        return 200_000  # o1 supports 200K total context window
+    elif "gpt-4o" in model:
+        return 128_000  # gpt-4o and gpt-4o-mini support 128K context window
+    else:
+        return 8_192  # default fallback
+
+
+def validate_token_limits(model: str, total_tokens: int, max_token_limit: int | None = None) -> None:
+    """Validate token counts against model limits.
+    
+    Args:
+        model: The model name
+        total_tokens: Total number of tokens in the prompt
+        max_token_limit: Optional user-specified token limit
+        
+    Raises:
+        ValueError: If token limits are exceeded
+    """
+    context_limit = get_context_window_limit(model)
+    output_limit = max_token_limit if max_token_limit is not None else get_default_token_limit(model)
+    
+    # Check if total tokens exceed context window
+    if total_tokens >= context_limit:
+        raise ValueError(
+            f"Total tokens ({total_tokens:,}) exceed model's context window limit "
+            f"of {context_limit:,} tokens"
+        )
+    
+    # Check if there's enough room for output tokens
+    remaining_tokens = context_limit - total_tokens
+    if remaining_tokens < output_limit:
+        raise ValueError(
+            f"Only {remaining_tokens:,} tokens remaining in context window, but "
+            f"output may require up to {output_limit:,} tokens"
+        )
 
 
 async def _main() -> None:
@@ -133,7 +190,13 @@ async def _main() -> None:
     parser.add_argument("--schema-file", required=True,
                       help="Path to JSON schema file defining the response structure")
     parser.add_argument("--model", default="gpt-4o-2024-08-06",
-                      help="OpenAI model to use")
+                      help=(
+                          "OpenAI model to use. Supported models:\n"
+                          "- gpt-4o: 128K context, 16K output\n"
+                          "- gpt-4o-mini: 128K context, 16K output\n"
+                          "- o1: 200K context, 100K output"
+                      ),
+    )
     parser.add_argument("--max-token-limit", type=int,
                       help="Maximum tokens allowed. Set to 0 or negative to disable check.")
     parser.add_argument("--output-file",
