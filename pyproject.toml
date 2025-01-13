@@ -18,6 +18,8 @@ pydantic = "^2.6.3"
 tiktoken = "^0.6.0"
 jsonschema = "^4.23.0"
 aiohttp = "^3.11.11"
+ijson = "^3.2.3"
+typing-extensions = "^4.9.0"
 
 [tool.poetry.scripts]
 ostruct = "openai_structured.cli:main"
@@ -90,4 +92,11 @@ markers = [
 
 [tool.ruff]
 target-version = "py39"
+
+[tool.poetry.group.examples]
+optional = true
+
+[tool.poetry.group.examples.dependencies]
+tenacity = "^8.2.3"
+asyncio-throttle = "^1.0.2"
 
