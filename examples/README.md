@@ -1,21 +1,21 @@
 # openai-structured Examples
 
-This directory contains examples demonstrating various features of the `openai-structured` library.
+This directory contains examples demonstrating various features of the `openai-structured` library for working with [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/function-calling).
 
 ## Basic Examples
 
 ### streaming.py
 
-Demonstrates the default streaming behavior with structured output:
+Demonstrates streaming with OpenAI Structured Outputs:
 
-- Processing large responses piece by piece
+- Processing large structured responses piece by piece
 - Buffer management and cleanup
 - Progress tracking
 - Error handling
 
 ### schema_validation.py
 
-Shows how to use Pydantic's validation features with structured output:
+Shows how to use Pydantic's validation features with OpenAI Structured Outputs:
 
 - Custom field types and validators
 - Complex nested models
@@ -80,7 +80,7 @@ Advanced CLI usage:
 
 ### production_setup.py
 
-Production-ready setup with:
+Production-ready setup for OpenAI Structured Outputs with:
 
 - Proper error handling
 - Retries with backoff
@@ -124,7 +124,7 @@ python examples/cli_basic.py
 ## Notes
 
 - All examples use streaming by default
-- Examples use the latest `gpt-4o-2024-08-06` model
+- Examples use the latest `gpt-4o-2024-08-06` model with OpenAI Structured Outputs
 - Some examples create temporary files
 - Error examples demonstrate failure handling
 - Logging examples create log files

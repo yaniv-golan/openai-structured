@@ -3,7 +3,7 @@
 openai-structured
 ===============
 
-A Python library and command-line tool for making OpenAI API calls with structured output, featuring streaming support and efficient buffer management. The library provides both a Python API and a CLI command `ostruct` for extracting structured data using OpenAI models.
+A Python library and command-line tool for working with `OpenAI Structured Outputs <https://platform.openai.com/docs/guides/function-calling>`_, featuring streaming support and efficient buffer management. The library provides both a Python API and a CLI command `ostruct` for extracting structured data using OpenAI models.
 
 Version Compatibility
 ------------------
@@ -20,6 +20,12 @@ Version Compatibility
 
 Key Features
 ----------
+
+* **OpenAI Structured Outputs**
+    - Full support for OpenAI's structured output feature
+    - JSON Schema validation and Pydantic integration
+    - Streaming and non-streaming APIs
+    - Comprehensive error handling
 
 * **Streaming Support**
     - Real-time response processing via ``async_openai_structured_stream``
@@ -119,18 +125,18 @@ Supported Models
 Production Models (Recommended)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* ``gpt-4o-2024-08-06``: GPT-4 with structured output
+* ``gpt-4o-2024-08-06``: GPT-4 with OpenAI Structured Outputs
     * 128K context window
     * 16K output tokens
     * Full JSON schema support
     * Minimum version: 2024-08-06
 
-* ``gpt-4o-mini-2024-07-18``: Smaller GPT-4 variant
+* ``gpt-4o-mini-2024-07-18``: Smaller GPT-4 variant with OpenAI Structured Outputs
     * 128K context window
     * 16K output tokens
     * Minimum version: 2024-07-18
 
-* ``o1-2024-12-17``: Optimized for structured data
+* ``o1-2024-12-17``: Optimized for OpenAI Structured Outputs
     * 200K context window
     * 100K output tokens
     * Minimum version: 2024-12-17
@@ -138,15 +144,15 @@ Production Models (Recommended)
 Development Aliases
 ~~~~~~~~~~~~~~~~~
 
-* ``gpt-4o``: Latest GPT-4 with structured output
+* ``gpt-4o``: Latest GPT-4 with OpenAI Structured Outputs
     * Maps to most recent compatible version
     * Minimum version: 2024-08-06
 
-* ``gpt-4o-mini``: Latest GPT-4 mini variant
+* ``gpt-4o-mini``: Latest GPT-4 mini variant with OpenAI Structured Outputs
     * Maps to most recent compatible version
     * Minimum version: 2024-07-18
 
-* ``o1``: Latest optimized model
+* ``o1``: Latest model optimized for OpenAI Structured Outputs
     * Maps to most recent compatible version
     * Minimum version: 2024-12-17
 

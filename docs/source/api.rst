@@ -3,7 +3,7 @@
 API Reference
 ============
 
-This document details the API for the ``openai-structured`` library.
+This document details the API for the ``openai-structured`` library, which provides a Python interface for working with `OpenAI Structured Outputs <https://platform.openai.com/docs/guides/function-calling>`_.
 
 Version Compatibility
 ------------------
@@ -27,14 +27,14 @@ Client
 
 .. module:: openai_structured.client
 
-The client module provides functions for making structured OpenAI API calls with streaming support.
+The client module provides functions for working with OpenAI Structured Outputs, featuring streaming support and efficient buffer management.
 
 Functions
 ~~~~~~~~~
 
 .. function:: async_openai_structured_stream(messages: List[ChatCompletionMessageParam], schema: Dict[str, Any], *, model: str = "gpt-4o", temperature: float = 0.0, max_tokens: Optional[int] = None, top_p: float = 1.0, frequency_penalty: float = 0.0, presence_penalty: float = 0.0, timeout: float = 60.0, stream_config: Optional[StreamConfig] = None, validate_schema: bool = True, on_log: Optional[Callable[[LogEvent], None]] = None) -> AsyncGenerator[Dict[str, Any], None]
 
-    Make a streaming OpenAI API call with structured output.
+    Make a streaming OpenAI API call using OpenAI Structured Outputs.
 
     :param messages: List of chat messages in OpenAI format
     :param schema: JSON Schema defining the expected response structure
@@ -86,9 +86,9 @@ Functions
 
 .. function:: supports_structured_output(model_name: str) -> bool
 
-    Check if a model supports structured output.
+    Check if a model supports OpenAI Structured Outputs.
 
-    This function validates whether a given model name supports structured output,
+    This function validates whether a given model name supports OpenAI Structured Outputs,
     handling both aliases and dated versions. For dated versions, it ensures they meet
     minimum version requirements.
 
@@ -96,13 +96,13 @@ Functions
         - an alias (e.g., "gpt-4o")
         - dated version (e.g., "gpt-4o-2024-08-06")
         - newer version (e.g., "gpt-4o-2024-09-01")
-    :return: True if the model supports structured output, False otherwise
+    :return: True if the model supports OpenAI Structured Outputs, False otherwise
 
     Example::
 
         # Check alias
         if supports_structured_output("gpt-4o"):
-            print("Model supports structured output")
+            print("Model supports OpenAI Structured Outputs")
 
         # Check dated version
         if supports_structured_output("gpt-4o-2024-08-06"):
@@ -110,7 +110,7 @@ Functions
 
         # Check unsupported model
         if not supports_structured_output("gpt-3.5-turbo"):
-            print("Model does not support structured output")
+            print("Model does not support OpenAI Structured Outputs")
 
     Notes:
         - Aliases (e.g., "gpt-4o") are automatically resolved to the latest compatible version
@@ -123,7 +123,7 @@ Classes
 
 .. class:: StreamConfig
 
-    Configuration for streaming behavior.
+    Configuration for streaming behavior with OpenAI Structured Outputs.
 
     :param max_buffer_size: Maximum buffer size in bytes (default: 1MB)
         - Minimum: 64KB
@@ -147,7 +147,7 @@ Classes
 
 .. class:: StreamBuffer
 
-    Internal buffer management for streaming responses. Handles efficient chunk processing,
+    Internal buffer management for streaming OpenAI Structured Outputs responses. Handles efficient chunk processing,
     cleanup, and error recovery.
 
     :param config: StreamConfig instance controlling buffer behavior

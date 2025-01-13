@@ -3,7 +3,7 @@
 Command Line Interface
 -------------------
 
-The ``ostruct`` command provides a CLI for extracting structured data from text using OpenAI models.
+The ``ostruct`` command provides a CLI for working with `OpenAI Structured Outputs <https://platform.openai.com/docs/guides/function-calling>`_ using OpenAI models.
 
 Arguments
 --------
@@ -32,7 +32,7 @@ Optional Arguments
     Example: ``--file doc1=contract.txt --file doc2=terms.txt``
 
 * ``--model TEXT``
-    OpenAI model to use (default: "gpt-4o-2024-08-06")
+    OpenAI model with Structured Outputs support (default: "gpt-4o-2024-08-06")
 
 * ``--temperature FLOAT``
     Temperature for sampling (default: 0.0)
@@ -152,23 +152,23 @@ The CLI uses efficient buffer management for streaming responses:
 Model Support
 ------------
 
-The following models support structured output:
+The following models support OpenAI Structured Outputs:
 
 Production Models (Recommended)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* ``gpt-4o-2024-08-06``: GPT-4 with structured output
+* ``gpt-4o-2024-08-06``: GPT-4 with OpenAI Structured Outputs
     * 128K context window
     * 16K output tokens
     * Full JSON schema support
     * Minimum version: 2024-08-06
 
-* ``gpt-4o-mini-2024-07-18``: Smaller GPT-4 variant
+* ``gpt-4o-mini-2024-07-18``: Smaller GPT-4 variant with OpenAI Structured Outputs
     * 128K context window
     * 16K output tokens
     * Minimum version: 2024-07-18
 
-* ``o1-2024-12-17``: Optimized for structured data
+* ``o1-2024-12-17``: Optimized for OpenAI Structured Outputs
     * 200K context window
     * 100K output tokens
     * Minimum version: 2024-12-17
@@ -176,14 +176,14 @@ Production Models (Recommended)
 Development Aliases
 ~~~~~~~~~~~~~~~~~
 
-* ``gpt-4o``: Latest GPT-4 structured model
-* ``gpt-4o-mini``: Latest mini variant
-* ``o1``: Latest optimized model
+* ``gpt-4o``: Latest GPT-4 with OpenAI Structured Outputs
+* ``gpt-4o-mini``: Latest mini variant with OpenAI Structured Outputs
+* ``o1``: Latest model optimized for OpenAI Structured Outputs
 
 Version Validation
 ~~~~~~~~~~~~~~~~
 
-The CLI validates model versions to ensure compatibility:
+The CLI validates model versions to ensure compatibility with OpenAI Structured Outputs:
 
 * Version Format: ``{base_model}-{YYYY}-{MM}-{DD}``
     * Example: ``gpt-4o-2024-08-06``

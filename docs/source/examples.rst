@@ -3,7 +3,7 @@
 Examples
 =======
 
-This section provides examples of common use cases for the ``openai-structured`` library.
+This section provides examples of common use cases for working with `OpenAI Structured Outputs <https://platform.openai.com/docs/guides/function-calling>`_ using the ``openai-structured`` library.
 
 Basic Examples
 ------------
@@ -11,7 +11,7 @@ Basic Examples
 Movie Review Analysis
 ~~~~~~~~~~~~~~~~~~
 
-Extract structured movie reviews with streaming:
+Extract structured movie reviews using OpenAI Structured Outputs with streaming:
 
 .. code-block:: python
 
@@ -42,9 +42,10 @@ Extract structured movie reviews with streaming:
         client = AsyncOpenAI()  # Initialize client
 
         try:
+            # Use OpenAI Structured Outputs with streaming
             async for chunk in async_openai_structured_stream(
                 client=client,
-                model="gpt-4o-2024-08-06",  # Use specific version
+                model="gpt-4o-2024-08-06",  # Model with OpenAI Structured Outputs support
                 output_schema=MovieReview,
                 system_prompt="You are a movie critic.",
                 user_prompt=f"Review the movie '{title}'",
@@ -104,7 +105,7 @@ Extract structured movie reviews with streaming:
 Code Analysis
 ~~~~~~~~~~~
 
-Analyze code with custom rules and streaming:
+Analyze code using OpenAI Structured Outputs with custom rules and streaming:
 
 .. code-block:: python
 
@@ -158,9 +159,10 @@ Analyze code with custom rules and streaming:
                 chunk_size=16 * 1024              # 16KB chunks
             )
 
+            # Use OpenAI Structured Outputs with streaming
             async for chunk in async_openai_structured_stream(
                 client=client,
-                model="gpt-4o-2024-08-06",  # Use specific version
+                model="gpt-4o-2024-08-06",  # Model with OpenAI Structured Outputs support
                 output_schema=CodeAnalysis,
                 system_prompt="You are a code review expert.",
                 user_prompt=f"Analyze this code:\n\n{code}",
@@ -225,7 +227,7 @@ Analyze code with custom rules and streaming:
 Buffer Management
 ~~~~~~~~~~~~~~
 
-Configure buffer settings for different use cases:
+Configure buffer settings for different OpenAI Structured Outputs use cases:
 
 .. code-block:: python
 
@@ -355,4 +357,5 @@ Use different models with version validation:
 
         finally:
             await client.close()
+```
 ```

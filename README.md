@@ -7,11 +7,11 @@
 [![Documentation Status](https://readthedocs.org/projects/openai-structured/badge/?version=latest)](https://openai-structured.readthedocs.io/en/latest/)
 [![Build Status](https://github.com/yaniv-golan/openai-structured/actions/workflows/python-package.yml/badge.svg)](https://github.com/yaniv-golan/openai-structured/actions/workflows/python-package.yml)
 
-A Python library for structured output from OpenAI's API using Pydantic models.
+A Python library for working with [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/function-calling) using Pydantic models.
 
 ## Key Features
 
-* **Structured Output:** Get structured data from OpenAI using Pydantic models
+* **Structured Output:** Get structured data using OpenAI Structured Outputs with Pydantic models
 * **Efficient Streaming:** Built-in streaming support for optimal performance
 * **Type Safety:** Full type hints and Pydantic validation
 * **Simple API:** Clean and intuitive interface
@@ -123,11 +123,11 @@ Authentication:
 
 ## Supported Models
 
-The library supports models with structured output capabilities:
+The library supports models with [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/function-calling) capabilities:
 
 ### Production Models (Recommended)
 
-* `gpt-4o-2024-08-06`: GPT-4 with structured output
+* `gpt-4o-2024-08-06`: GPT-4 with OpenAI Structured Outputs
   * 128K context window
   * 16K output tokens
   * Full JSON schema support
@@ -204,7 +204,7 @@ class TodoList(BaseModel):
 # Initialize client
 client = OpenAI()  # Uses OPENAI_API_KEY environment variable
 
-# Process streamed response
+# Process streamed response using OpenAI Structured Outputs
 async for result in openai_structured_stream(
     client=client,
     model="gpt-4o-2024-08-06",
