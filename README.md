@@ -151,9 +151,21 @@ if __name__ == "__main__":
 
 ## Supported Models
 
-* `gpt-4o-2024-08-06`: Latest GPT-4 model with structured output support
-* `gpt-4o-mini-2024-07-18`: Smaller, faster GPT-4 model
-* `o1-2024-12-17`: Optimized model for structured output
+Models can be specified using either aliases or dated versions:
+
+### Aliases (convenient for development)
+
+* `gpt-4o`: Latest GPT-4 model with structured output support (128K context window, 16K output tokens)
+* `gpt-4o-mini`: Smaller, faster GPT-4 model (128K context window, 16K output tokens)
+* `o1`: Optimized model for structured output (200K context window, 100K output tokens)
+
+### Dated Versions (recommended for production)
+
+* `gpt-4o-2024-08-06`: Specific version of GPT-4 model (128K context window, 16K output tokens)
+* `gpt-4o-mini-2024-07-18`: Specific version of smaller GPT-4 model (128K context window, 16K output tokens)
+* `o1-2024-12-17`: Specific version of optimized model (200K context window, 100K output tokens)
+
+Note: Following OpenAI's best practices, it is recommended to use dated model versions in production applications for better version stability. When using aliases, OpenAI will automatically resolve them to the latest compatible version. Our library validates that dated versions meet minimum version requirements.
 
 ## Error Handling
 

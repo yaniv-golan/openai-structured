@@ -1,6 +1,8 @@
 # src/openai_structured/errors.py
 from typing import Optional
 
+from .model_version import ModelVersion
+
 
 class OpenAIClientError(Exception):
     """Base class for exceptions in the OpenAI client."""
@@ -12,6 +14,16 @@ class ModelNotSupportedError(OpenAIClientError):
     """Raised when the provided model is not supported."""
 
     pass
+
+
+class ModelVersionError(ModelNotSupportedError):
+    """Raised when the model version is not supported."""
+
+    def __init__(self, model: str, min_version: ModelVersion) -> None:
+        super().__init__(
+            f"Model '{model}' version is not supported. "
+            f"Minimum version required: {min_version}"
+        )
 
 
 class APIResponseError(OpenAIClientError):

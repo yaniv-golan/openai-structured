@@ -7,27 +7,30 @@ A Python library for structured output from OpenAI's API.
 
 :noindex:
 """
-__version__ = "0.3.0"  # Follow Semantic Versioning
+__version__ = "0.5.0"  # Follow Semantic Versioning
 
-from .client import openai_structured_call, openai_structured_stream
+from .client import (
+    openai_structured_call,
+    openai_structured_stream,
+    supports_structured_output,
+)
 from .errors import (
-    APIResponseError,
     BufferOverflowError,
     EmptyResponseError,
     InvalidResponseFormatError,
     ModelNotSupportedError,
+    ModelVersionError,
     OpenAIClientError,
-    StreamProcessingError,
 )
 
 __all__ = [
     "openai_structured_call",
     "openai_structured_stream",
-    "APIResponseError",
+    "supports_structured_output",
+    "OpenAIClientError",
+    "ModelNotSupportedError",
+    "ModelVersionError",
     "EmptyResponseError",
     "InvalidResponseFormatError",
-    "ModelNotSupportedError",
-    "OpenAIClientError",
-    "StreamProcessingError",
     "BufferOverflowError",
 ]

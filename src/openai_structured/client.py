@@ -10,7 +10,6 @@ from typing import (
     AsyncGenerator,
     Deque,
     List,
-    NamedTuple,
     Optional,
     Type,
     cast,
@@ -32,52 +31,60 @@ from .errors import (
     EmptyResponseError,
     InvalidResponseFormatError,
     ModelNotSupportedError,
+    ModelVersionError,
     OpenAIClientError,
 )
+from .model_version import ModelVersion
 
 logger = logging.getLogger(__name__)
 
 # Constants
 
-
-class ModelVersion(NamedTuple):
-    """Model version information."""
-
-    year: int
-    month: int
-    day: int
-
-    @classmethod
-    def from_string(cls, version_str: str) -> "ModelVersion":
-        match = re.match(r"(\d{4})-(\d{2})-(\d{2})", version_str)
-        if not match:
-            raise ValueError(f"Invalid version format: {version_str}")
-        return cls(
-            int(match.group(1)), int(match.group(2)), int(match.group(3))
-        )
-
-    def __str__(self) -> str:
-        return f"{self.year}-{self.month:02d}-{self.day:02d}"
-
-    def __ge__(self, other: object) -> bool:
-        if not isinstance(other, ModelVersion):
-            return NotImplemented
-        return (self.year, self.month, self.day) >= (
-            other.year,
-            other.month,
-            other.day,
-        )
-
+# Regex pattern for model version extraction
+# Format: "{base_model}-{YYYY}-{MM}-{DD}"
+# Examples:
+#   - "gpt-4o-2024-08-06"      -> ("gpt-4o", "2024-08-06")
+#   - "gpt-4-turbo-2024-08-06" -> ("gpt-4-turbo", "2024-08-06")
+#
+# Pattern components:
+# ^           Start of string
+# ([\w-]+?)   Group 1: Base model name
+#   [\w-]     Allow word chars (a-z, A-Z, 0-9, _) and hyphens
+#   +?        One or more chars (non-greedy)
+# -           Literal hyphen separator
+# (...)       Group 2: Date in YYYY-MM-DD format
+#   \d{4}     Exactly 4 digits for year
+#   -         Literal hyphen
+#   \d{2}     Exactly 2 digits for month
+#   -         Literal hyphen
+#   \d{2}     Exactly 2 digits for day
+# $           End of string
+MODEL_VERSION_PATTERN = re.compile(r"^([\w-]+?)-(\d{4}-\d{2}-\d{2})$")
 
 # Model token limits (based on OpenAI specifications as of 2024):
-# - GPT-4o: 128K context window, 16K max output tokens
-# - GPT-4o-mini: 128K context window, 16K max output tokens
-# - O1: 200K context window, 100K max output tokens (including reasoning)
+# Models can be specified using either aliases or dated versions:
+# Aliases:
+# - gpt-4o: 128K context window, 16K max output tokens (minimum version: 2024-08-06)
+# - gpt-4o-mini: 128K context window, 16K max output tokens (minimum version: 2024-07-18)
+# - o1: 200K context window, 100K max output tokens (minimum version: 2024-12-17)
+#
+# When using aliases (e.g., "gpt-4o"), OpenAI will automatically use the latest
+# compatible version. We validate that the model meets our minimum version
+# requirements, but the actual version resolution is handled by OpenAI.
+#
+# Dated versions (recommended for production):
+# - gpt-4o-2024-08-06: 128K context window, 16K max output tokens
+# - gpt-4o-mini-2024-07-18: 128K context window, 16K max output tokens
+# - o1-2024-12-17: 200K context window, 100K max output tokens
+#
 # Note: These limits may change as OpenAI updates their models
+
+# Model version mapping - maps aliases to minimum supported versions
 OPENAI_API_SUPPORTED_MODELS = {
-    "gpt-4o": ModelVersion(2024, 8, 6),
-    "gpt-4o-mini": ModelVersion(2024, 7, 18),
-    "o1": ModelVersion(2024, 12, 17),
+    # Aliases map to minimum supported versions
+    "gpt-4o": ModelVersion(2024, 8, 6),      # Minimum supported version
+    "gpt-4o-mini": ModelVersion(2024, 7, 18), # Minimum supported version
+    "o1": ModelVersion(2024, 12, 17),         # Minimum supported version
 }
 
 DEFAULT_TEMPERATURE = 0.2
@@ -141,16 +148,6 @@ class StreamBuffer:
         self.last_valid_json_pos = 0
 
 
-class ModelVersionError(ModelNotSupportedError):
-    """Raised when the model version is not supported."""
-
-    def __init__(self, model: str, min_version: ModelVersion) -> None:
-        super().__init__(
-            f"Model '{model}' version is not supported. "
-            f"Minimum version required: {min_version}"
-        )
-
-
 class BufferOverflowError(BufferError):
     """Raised when the streaming buffer exceeds size limits."""
 
@@ -163,16 +160,56 @@ class JSONParseError(InvalidResponseFormatError):
     pass
 
 
-def _is_model_supported(model_name: str) -> bool:
-    """Check if the model and its version are supported."""
-    for base_model, min_version in OPENAI_API_SUPPORTED_MODELS.items():
-        if base_model in model_name:
-            try:
-                version_str = model_name.split(f"{base_model}-")[-1]
-                version = ModelVersion.from_string(version_str)
-                return version >= min_version
-            except (IndexError, ValueError):
-                raise ModelVersionError(model_name, min_version)
+def supports_structured_output(model_name: str) -> bool:
+    """Check if a model supports structured output.
+    
+    This function validates whether a given model name supports structured output,
+    handling both aliases and dated versions. For dated versions, it ensures they meet
+    minimum version requirements.
+    
+    Args:
+        model_name: The model name, which can be either:
+                   - an alias (e.g., "gpt-4o")
+                   - dated version (e.g., "gpt-4o-2024-08-06")
+                   - newer version (e.g., "gpt-4o-2024-09-01")
+    
+    Returns:
+        bool: True if the model supports structured output
+        
+    Raises:
+        ModelVersionError: If a dated version format is invalid or doesn't meet
+                          minimum version requirements
+        
+    Examples:
+        >>> supports_structured_output("gpt-4o")
+        True
+        >>> supports_structured_output("gpt-4o-2024-08-06")
+        True
+        >>> supports_structured_output("gpt-4o-2024-09-01")  # Newer version
+        True
+        >>> supports_structured_output("gpt-3.5-turbo")
+        False
+    """
+    # Check for exact matches (aliases)
+    if model_name in OPENAI_API_SUPPORTED_MODELS:
+        return True
+        
+    # Try to parse as a dated version
+    match = MODEL_VERSION_PATTERN.match(model_name)
+    if not match:
+        return False
+        
+    base_model, version_str = match.groups()
+    
+    # Check if the base model has a minimum version requirement
+    if base_model in OPENAI_API_SUPPORTED_MODELS:
+        try:
+            version = ModelVersion.from_string(version_str)
+            min_version = OPENAI_API_SUPPORTED_MODELS[base_model]
+            return version >= min_version
+        except ValueError:
+            return False
+            
     return False
 
 
@@ -320,7 +357,7 @@ async def openai_structured_call(
         EmptyResponseError: If the API returns an empty response.
     """
 
-    if not _is_model_supported(model):
+    if not supports_structured_output(model):
         raise ModelNotSupportedError(
             f"Model '{model}' does not support structured output."
         )
@@ -445,7 +482,7 @@ async def openai_structured_stream(
     if not isinstance(client, AsyncOpenAI):
         raise TypeError("Streaming operations require AsyncOpenAI client")
 
-    if not _is_model_supported(model):
+    if not supports_structured_output(model):
         raise ModelNotSupportedError(
             f"Model '{model}' does not support structured output."
         )

@@ -58,18 +58,44 @@ Here's a basic example of extracting structured data with proper error handling:
 Supported Models and Token Limits
 --------------------------------
 
-The following models are supported for structured output:
+The following models support structured output:
 
-* ``gpt-4o``: 128K context window, 16K output tokens
-* ``gpt-4o-mini``: 128K context window, 16K output tokens
-* ``O1``: 200K context window, 100K output tokens (including reasoning)
+Aliases (convenient for development)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-When using these models, specify them with a version date in the format ``<model>-YYYY-MM-DD``.
-The minimum supported versions are:
+* ``gpt-4o``: Latest GPT-4 model (128K context window, 16K output tokens)
+* ``gpt-4o-mini``: Smaller, faster GPT-4 model (128K context window, 16K output tokens)
+* ``o1``: Optimized model (200K context window, 100K output tokens)
 
-* ``gpt-4o-2024-08-06``
-* ``gpt-4o-mini-2024-07-18``
-* ``o1-2024-12-17``
+Dated Versions (recommended for production)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``gpt-4o-2024-08-06``: Specific version of GPT-4 model
+* ``gpt-4o-mini-2024-07-18``: Specific version of smaller GPT-4 model
+* ``o1-2024-12-17``: Specific version of optimized model
+
+Model Version Guidelines
+~~~~~~~~~~~~~~~~~~~~~
+
+* For development and testing, you can use the simpler alias format (e.g., ``gpt-4o``)
+* For production applications, use dated versions (e.g., ``gpt-4o-2024-08-06``) for better stability
+* Both formats are fully supported and will work with all library features
+* Aliases are resolved by OpenAI to the latest compatible version
+* We validate that dated versions meet minimum version requirements
+
+You can check if a model supports structured output before making API calls:
+
+.. code-block:: python
+
+   from openai_structured import supports_structured_output
+
+   # Check aliases
+   print(supports_structured_output("gpt-4o"))  # True
+   print(supports_structured_output("gpt-3.5-turbo"))  # False
+
+   # Check dated versions
+   print(supports_structured_output("gpt-4o-2024-08-06"))  # True
+   print(supports_structured_output("gpt-4o-2024-09-01"))  # True (newer version)
 
 Choose the appropriate model based on your context size and output requirements.
 
