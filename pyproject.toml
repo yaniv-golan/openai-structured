@@ -17,6 +17,7 @@ openai = "^1.12.0"
 pydantic = "^2.6.3"
 tiktoken = "^0.6.0"
 jsonschema = "^4.23.0"
+aiohttp = "^3.11.11"
 
 [tool.poetry.scripts]
 ostruct = "openai_structured.cli:main"
@@ -34,7 +35,6 @@ build = "^1.2.2.post1"
 twine = "^6.0.1"
 python-dotenv = "^1.0.1"
 types-jsonschema = "^4.23.0.20241208"
-types-aiohttp = "^3.9.3"
 anyio = {version = "3.7.1", extras = ["trio"]}
 sphinx = ">=7.0,<8.0"
 
