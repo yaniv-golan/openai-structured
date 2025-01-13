@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-01-20
+
+### Added
+
+- New API functions for structured output
+  - Added `openai_structured_call` for single responses
+  - Added `openai_structured_stream` for streaming responses
+  - Added `supports_structured_output` for checking model compatibility and version requirements
+- Enhanced streaming support with efficient buffer management
+  - Added `StreamBuffer` class for optimized memory usage
+  - Implemented buffer cleanup mechanism for large responses
+  - Added configurable buffer size limits and thresholds
+- Improved error handling and reporting
+  - Added detailed JSON parsing error messages with context
+  - Enhanced validation error reporting with response snippets
+  - Added response ID tracking in error messages
+- Comprehensive logging system
+  - Added detailed debug logging for API requests and responses
+  - Added structured logging with payload information
+  - Added streaming-specific debug logs
+- Enhanced model version management
+  - Added `ModelVersion` class for semantic version comparison
+  - Added strict version validation for supported models
+  - Updated model specifications and token limits
+
+### Changed
+
+- Rename CLI command from oai-structured-cli to ostruct
+- Update documentation with comprehensive CLI guide
+- Add supported models documentation
+- Expand error handling documentation
+- Improved type safety with strict type hints
+- Enhanced error hierarchy and exception handling
+- Optimized streaming performance with chunked processing
+
+### Fixed
+
+- Buffer overflow handling in streaming responses
+- JSON parsing error handling with context information
+- Model version validation and comparison
+- Type hints and validation in API responses
+
 ## [0.5.0] - 2025-01-12
 
 ### Added
@@ -107,7 +149,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling
 - Documentation framework
 
-[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.2.0...v0.3.0

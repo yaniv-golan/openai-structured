@@ -7,7 +7,7 @@ A Python library for structured output from OpenAI's API.
 
 :noindex:
 """
-__version__ = "0.5.0"  # Follow Semantic Versioning
+__version__ = "0.6.0"  # Follow Semantic Versioning
 
 from .client import (
     StreamConfig,
