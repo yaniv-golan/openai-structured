@@ -12,11 +12,12 @@ A Python library for structured output from OpenAI's API using Pydantic models.
 ## Key Features
 
 * **Structured Output:** Get structured data from OpenAI using Pydantic models
-* **Async Streaming:** Process responses efficiently with async streaming support
+* **Efficient Streaming:** Built-in streaming support for optimal performance
 * **Type Safety:** Full type hints and Pydantic validation
 * **Simple API:** Clean and intuitive interface
-* **Error Handling:** Well-defined exceptions for better error management
+* **Error Handling:** Comprehensive error handling with specific error types
 * **Modern:** Built for OpenAI's latest API and Python 3.9+
+* **CLI Tool:** Powerful command-line interface for structured API calls
 
 ## Requirements
 
@@ -29,6 +30,8 @@ These will be installed automatically:
 
 * `openai>=1.12.0`: OpenAI Python SDK
 * `pydantic>=2.6.3`: Data validation
+* `ijson>=3.2.3`: Efficient JSON streaming
+* `tiktoken>=0.6.0`: Token counting and validation
 
 ## Installation
 
@@ -55,39 +58,137 @@ poetry install
 poetry shell
 ```
 
-## Configuration
+## Command-Line Interface
 
-### Environment Variables
-
-Create a `.env` file in your project root (see `.env.example`):
+The CLI provides a powerful way to make structured API calls from the command line:
 
 ```bash
-OPENAI_API_KEY=your-api-key-here
-
-# Optional settings
-OPENAI_API_BASE=https://api.openai.com/v1  # Custom API endpoint
-OPENAI_API_VERSION=2024-02-01  # Specific API version
+openai-structured \
+  --system-prompt "You are a helpful assistant" \
+  --template "Analyze this text: {input}" \
+  --file input=data.txt \
+  --schema-file schema.json \
+  --model gpt-4o \
+  --output-file result.json
 ```
 
-### Project Settings
+### Key CLI Features
 
-The library uses these configurations (in `pyproject.toml`):
+* **Streaming by Default:** All responses are streamed for optimal performance
+* **File Input:** Process multiple input files with template placeholders
+* **Schema Validation:** Automatic JSON schema validation
+* **Token Management:** Automatic token counting and limit validation
+* **Flexible Output:** Write to file or stdout with progress indication
 
-```toml
-[tool.openai_structured]
-max_buffer_size = 1048576  # 1MB default
-buffer_cleanup_threshold = 524288  # 512KB default
-chunk_size = 8192  # 8KB default
+### CLI Arguments
+
+Required:
+
+```bash
+--system-prompt TEXT    # System prompt for the model
+--template TEXT        # Template with {file} placeholders
+--schema-file PATH     # JSON schema for response structure
 ```
 
-## Quick Start
+Input:
 
-### Basic Usage with Type Hints
+```bash
+--file NAME=PATH      # File mapping (name=path), use multiple times
+                      # Example: --file input=data.txt
+```
+
+Model Configuration:
+
+```bash
+--model TEXT          # Model to use (default: gpt-4o-2024-08-06)
+--temperature FLOAT   # Temperature (default: 0.0)
+--max-tokens INT      # Max tokens (default: model-specific)
+--top-p FLOAT        # Top-p sampling (default: 1.0)
+--timeout FLOAT      # API timeout in seconds (default: 60.0)
+```
+
+Output and Logging:
+
+```bash
+--output-file PATH    # Write JSON output to file
+--verbose            # Enable detailed logging
+--validate-schema    # Validate schema and response
+```
+
+Authentication:
+
+```bash
+--api-key TEXT       # OpenAI API key (overrides env var)
+```
+
+## Supported Models
+
+The library supports models with structured output capabilities:
+
+### Production Models (Recommended)
+
+* `gpt-4o-2024-08-06`: GPT-4 with structured output
+  * 128K context window
+  * 16K output tokens
+  * Full JSON schema support
+
+* `gpt-4o-mini-2024-07-18`: Smaller GPT-4 variant
+  * 128K context window
+  * 16K output tokens
+  * Optimized for faster responses
+
+* `o1-2024-12-17`: Optimized for structured data
+  * 200K context window
+  * 100K output tokens
+  * Best for large structured outputs
+
+### Development Aliases
+
+* `gpt-4o`: Latest GPT-4 structured model
+* `gpt-4o-mini`: Latest mini variant
+* `o1`: Latest optimized model
+
+Note: Use dated versions in production for stability. Aliases automatically use the latest compatible version.
+
+## Error Handling
+
+The library provides comprehensive error handling with specific exception types:
+
+```python
+from openai_structured import (
+    OpenAIClientError,        # Base class for all errors
+    ModelNotSupportedError,   # Model doesn't support structured output
+    ModelVersionError,        # Model version not supported
+    APIResponseError,         # API call failures
+    InvalidResponseFormatError,  # Response format issues
+    EmptyResponseError,       # Empty response from API
+    JSONParseError,          # JSON parsing failures
+    StreamInterruptedError,   # Stream interruption
+    StreamBufferError,        # Buffer management issues
+    StreamParseError,        # Stream parsing failures
+    BufferOverflowError,     # Buffer size exceeded
+)
+
+try:
+    result = openai_structured_call(...)
+except ModelNotSupportedError as e:
+    print(f"Model not supported: {e}")
+except StreamInterruptedError as e:
+    print(f"Stream interrupted: {e}")
+except StreamParseError as e:
+    print(f"Stream parse error after {e.attempts} attempts: {e}")
+except OpenAIClientError as e:
+    print(f"General error: {e}")
+```
+
+## Python API
+
+### Basic Usage
 
 ```python
 from typing import List
 from openai import OpenAI
-from openai_structured import openai_structured_call
+from openai_structured import openai_structured_stream
 from pydantic import BaseModel, Field
 
 class TodoItem(BaseModel):
@@ -103,95 +204,100 @@ class TodoList(BaseModel):
 # Initialize client
 client = OpenAI()  # Uses OPENAI_API_KEY environment variable
 
-# Get structured response
-result = openai_structured_call(
+# Process streamed response
+async for result in openai_structured_stream(
     client=client,
     model="gpt-4o-2024-08-06",
     output_schema=TodoList,
     user_prompt="Create a todo list with 3 items",
     system_prompt="Generate a todo list with priorities"
-)
-
-# Type-safe access to response
-for item in result.items:
-    print(f"Task: {item.task}, Priority: {item.priority}")
-print(f"Total items: {result.total_count}")
+):
+    # Type-safe access to response
+    for item in result.items:
+        print(f"Task: {item.task}, Priority: {item.priority}")
+    print(f"Total items: {result.total_count}")
 ```
 
-### Async Streaming Example
+### Stream Configuration
+
+Control streaming behavior with `StreamConfig`:
 
 ```python
-import asyncio
-from openai import AsyncOpenAI
-from openai_structured import openai_structured_stream
-from pydantic import BaseModel, Field
+from openai_structured import StreamConfig, openai_structured_stream
 
-class AnalysisResult(BaseModel):
-    """Progressive analysis result."""
-    topic: str = Field(..., description="Current topic being analyzed")
-    insight: str = Field(..., min_length=10)
-    confidence: float = Field(..., ge=0.0, le=1.0)
-
-async def main():
-    client = AsyncOpenAI()  # Uses OPENAI_API_KEY environment variable
-    async for result in openai_structured_stream(
-        client=client,
-        model="gpt-4o-2024-08-06",
-        output_schema=AnalysisResult,
-        system_prompt="Analyze the text progressively",
-        user_prompt="Analyze the impact of AI on society",
-    ):
-        print(f"Topic: {result.topic}")
-        print(f"Insight: {result.insight}")
-        print(f"Confidence: {result.confidence:.2f}\n")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-## Supported Models
-
-Models can be specified using either aliases or dated versions:
-
-### Aliases (convenient for development)
-
-* `gpt-4o`: Latest GPT-4 model with structured output support (128K context window, 16K output tokens)
-* `gpt-4o-mini`: Smaller, faster GPT-4 model (128K context window, 16K output tokens)
-* `o1`: Optimized model for structured output (200K context window, 100K output tokens)
-
-### Dated Versions (recommended for production)
-
-* `gpt-4o-2024-08-06`: Specific version of GPT-4 model (128K context window, 16K output tokens)
-* `gpt-4o-mini-2024-07-18`: Specific version of smaller GPT-4 model (128K context window, 16K output tokens)
-* `o1-2024-12-17`: Specific version of optimized model (200K context window, 100K output tokens)
-
-Note: Following OpenAI's best practices, it is recommended to use dated model versions in production applications for better version stability. When using aliases, OpenAI will automatically resolve them to the latest compatible version. Our library validates that dated versions meet minimum version requirements.
-
-## Error Handling
-
-The library provides several exception classes for better error handling:
-
-```python
-from openai_structured import (
-    OpenAIClientError,  # Base class for all errors
-    APIResponseError,   # API call failures
-    ModelNotSupportedError,  # Unsupported model
-    EmptyResponseError,  # Empty response
-    InvalidResponseFormatError,  # Response parsing failures
-    BufferOverflowError,  # Stream buffer exceeded
+stream_config = StreamConfig(
+    max_buffer_size=1024 * 1024,  # 1MB max buffer
+    cleanup_threshold=512 * 1024,  # Clean up at 512KB
+    chunk_size=8192,  # 8KB chunks
 )
 
+async for result in openai_structured_stream(
+    client=client,
+    model="gpt-4o",
+    output_schema=MySchema,
+    system_prompt="...",
+    user_prompt="...",
+    stream_config=stream_config,
+):
+    process_result(result)
+```
+
+### Production Best Practices
+
+1. Use dated model versions for stability:
+
+```python
+model = "gpt-4o-2024-08-06"  # Instead of "gpt-4o"
+```
+
+2. Implement retries for resilience:
+
+```python
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential())
+async def resilient_call():
+    async for result in openai_structured_stream(...):
+        yield result
+```
+
+3. Add rate limiting:
+
+```python
+from asyncio_throttle import Throttler
+
+async with Throttler(rate_limit=100, period=60):
+    async for result in openai_structured_stream(...):
+        process_result(result)
+```
+
+4. Handle all error types:
+
+```python
 try:
-    result = openai_structured_call(...)
-except ModelNotSupportedError as e:
-    print(f"Model not supported: {e}")
-except InvalidResponseFormatError as e:
-    print(f"Invalid response format: {e}")
+    async for result in openai_structured_stream(...):
+        process_result(result)
+except StreamInterruptedError:
+    handle_interruption()
+except StreamBufferError:
+    handle_buffer_issue()
 except OpenAIClientError as e:
-    print(f"General error: {e}")
+    handle_general_error(e)
+finally:
+    cleanup_resources()
 ```
 
-## Python Version Support
+## Configuration
+
+### Environment Variables
+
+```bash
+OPENAI_API_KEY=your-api-key-here
+OPENAI_API_BASE=https://api.openai.com/v1  # Optional custom endpoint
+OPENAI_API_VERSION=2024-02-01  # Optional API version
+```
+
+### Python Version Support
 
 * Python 3.9+
 * Tested on CPython implementations

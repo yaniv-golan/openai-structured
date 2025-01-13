@@ -14,7 +14,7 @@ from openai_structured import (
     InvalidResponseFormatError,
     ModelNotSupportedError,
     OpenAIClientError,
-    openai_structured_stream,
+    async_openai_structured_stream,
 )
 
 
@@ -53,33 +53,25 @@ def setup_logging() -> logging.Logger:
 async def process_articles(
     client: AsyncOpenAI, logger: logging.Logger
 ) -> None:
-    """Process news articles with error handling."""
-    system_prompt = """
-    You are a news analyst that processes articles and provides structured analysis.
-    For each article:
-    1. Create a clear, concise title
-    2. Provide a detailed summary
-    3. List relevant topics
-    4. Analyze the sentiment
-    5. Include a confidence score
-    6. Optionally include the source
-    """
-    user_prompt = """
-    Analyze these recent tech industry developments:
-    1. AI advancements in healthcare
-    2. Cybersecurity challenges
-    3. Environmental impact of cloud computing
-    """
+    """Process news articles using OpenAI's API with structured output."""
+
+    def debug_wrapper(level, message, data=None):
+        if data:
+            logger.debug(f"{message} {data}")
+        else:
+            logger.debug(message)
 
     try:
-        async for article in openai_structured_stream(
+        async for article in async_openai_structured_stream(
             client=client,
             model="gpt-4o-2024-08-06",
+            temperature=0.3,
+            system_prompt="You are a news article analyzer. Given a news article, analyze "
+            "its content and provide structured information about it.",
+            user_prompt="Please analyze this recent tech industry news article and provide "
+            "structured information about key developments, trends, and their implications.",
             output_schema=NewsArticle,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=0.3,  # Lower temperature for more focused output
-            logger=logger,  # Enable detailed logging
+            on_log=debug_wrapper,
         ):
             logger.info("Received article: %s", article.title)
             print("\nArticle Analysis:")

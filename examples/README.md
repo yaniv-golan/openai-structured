@@ -1,79 +1,130 @@
-# Examples
+# openai-structured Examples
 
-This directory contains example scripts demonstrating how to use the `openai-structured` library.
+This directory contains examples demonstrating various features of the `openai-structured` library.
 
-## Setup
+## Basic Examples
 
-1. Install the library:
+### streaming.py
+
+Demonstrates the default streaming behavior with structured output:
+
+- Processing large responses piece by piece
+- Buffer management and cleanup
+- Progress tracking
+- Error handling
+
+### schema_validation.py
+
+Shows how to use Pydantic's validation features with structured output:
+
+- Custom field types and validators
+- Complex nested models
+- Field constraints and descriptions
+- Schema validation errors
+
+### error_handling.py
+
+Comprehensive error handling examples:
+
+- Stream interruption handling
+- Buffer overflow management
+- Parse error recovery
+- Rate limiting and retries
+- Network error handling
+- Resource cleanup
+
+## CLI Examples
+
+### cli_basic.py
+
+Basic CLI usage examples:
+
+```bash
+# Simple analysis
+openai-structured \
+  --system-prompt "Analyze the text" \
+  --template "Content: {input}" \
+  --file input=data.txt \
+  --schema-file analysis_schema.json
+
+# Multiple files
+openai-structured \
+  --system-prompt "Compare the files" \
+  --template "File A: {file_a}\nFile B: {file_b}" \
+  --file file_a=a.txt \
+  --file file_b=b.txt \
+  --schema-file comparison_schema.json \
+  --output-file result.json
+
+# With validation
+openai-structured \
+  --system-prompt "Analyze code" \
+  --template "Code: {source}" \
+  --file source=code.py \
+  --schema-file code_analysis_schema.json \
+  --validate-schema \
+  --verbose
+```
+
+### cli_advanced.py
+
+Advanced CLI usage:
+
+- Custom model configurations
+- Token limit management
+- Progress monitoring
+- Error handling
+- Output formatting
+
+## Production Examples
+
+### production_setup.py
+
+Production-ready setup with:
+
+- Proper error handling
+- Retries with backoff
+- Rate limiting
+- Resource cleanup
+- Logging configuration
+- Monitoring hooks
+
+### logging_setup.py
+
+Advanced logging configuration:
+
+- Structured logging
+- Multiple handlers
+- Log rotation
+- Error tracking
+- Performance monitoring
+
+## Running the Examples
+
+1. Install the package:
 
 ```bash
 pip install openai-structured
 ```
 
-2. Set up your environment:
+2. Set your OpenAI API key:
 
 ```bash
-# Create a .env file in the examples directory
-echo "OPENAI_API_KEY=your-api-key-here" > .env
+export OPENAI_API_KEY=your-api-key
 ```
 
-## Examples
-
-### Basic Usage (`basic_usage.py`)
-
-Demonstrates basic synchronous API calls with structured output:
-
-- Creating Pydantic models
-- Making API calls
-- Processing structured responses
+3. Run any example:
 
 ```bash
-python basic_usage.py
-```
-
-### Streaming (`streaming.py`)
-
-Shows how to use async streaming for real-time structured output:
-
-- Async client setup
-- Streaming responses
-- Proper resource cleanup
-
-```bash
-python streaming.py
-```
-
-### Advanced Usage (`advanced_usage.py`)
-
-Illustrates advanced features and best practices:
-
-- Comprehensive error handling
-- Logging configuration
-- Complex Pydantic models
-- Resource management
-- Configuration options
-
-```bash
-python advanced_usage.py
+python examples/streaming.py
+python examples/cli_basic.py
+# etc.
 ```
 
 ## Notes
 
-- Each example includes detailed comments explaining the code
-- Error handling follows best practices
-- Examples demonstrate proper resource cleanup
-- Configuration options are documented inline
-
-## Common Issues
-
-1. **API Key Not Found**
-   - Ensure you've set the `OPENAI_API_KEY` environment variable
-   - Check that your `.env` file is in the correct location
-
-2. **Model Availability**
-   - The examples use specific model versions
-   - Update the model names if newer versions are available
-
-3. **Rate Limits**
-   - Be aware of OpenAI's rate limits
-   - Add appropriate delays if running examples multiple times
+- All examples use streaming by default
+- Examples use the latest `gpt-4o-2024-08-06` model
+- Some examples create temporary files
+- Error examples demonstrate failure handling
+- Logging examples create log files

@@ -1,102 +1,291 @@
-Quick Start Guide
-=================
+.. Copyright (c) 2025 Yaniv Golan. All rights reserved.
+
+Quickstart
+=========
 
 Installation
-------------
-
-Install using pip:
-
-.. code-block:: bash
-
-   pip install openai-structured
-
-Or install from source using Poetry:
-
-.. code-block:: bash
-
-   git clone https://github.com/yaniv-golan/openai-structured.git
-   cd openai-structured
-   poetry install
-
-Basic Usage
 -----------
 
-Here's a basic example of extracting structured data with proper error handling:
+Using pip::
+
+    pip install openai-structured
+
+Using Poetry::
+
+    poetry add openai-structured
+
+Basic Usage
+----------
+
+The library provides a simple way to extract structured data from OpenAI models:
 
 .. code-block:: python
 
-   from typing import List
-   from openai import OpenAI
-   from pydantic import BaseModel, Field
-   from openai_structured import openai_structured_call, OpenAIClientError
+    import asyncio
+    from pydantic import BaseModel, Field
+    from openai_structured import async_openai_structured_stream, StreamConfig
+    from openai_structured.errors import StreamBufferError, ValidationError
 
-   class TodoItem(BaseModel):
-       task: str = Field(..., description="The task description")
-       priority: str = Field(..., description="Priority level (high/medium/low)")
+    # Define your output schema
+    class MovieReview(BaseModel):
+        title: str
+        rating: float
+        summary: str
+        pros: list[str]
+        cons: list[str]
 
-   class TodoList(BaseModel):
-       items: List[TodoItem]
-       total_count: int
+    async def analyze_movie():
+        # Convert Pydantic model to JSON Schema
+        schema = MovieReview.model_json_schema()
 
-   client = OpenAI()
-   try:
-       result = openai_structured_call(
-           client=client,
-           model="gpt-4o-2024-08-06",
-           output_schema=TodoList,
-           user_prompt="Create a todo list with 2 tasks",
-           system_prompt="You are a task manager that creates todo lists"
-       )
-       print(f"\nTotal tasks: {result.total_count}")
-       for item in result.items:
-           print(f"- {item.task} (Priority: {item.priority})")
-   except OpenAIClientError as e:
-       print(f"Error: {e}")
-   finally:
-       client.close()
+        # Prepare messages
+        messages = [
+            {"role": "system", "content": "You are a movie critic."},
+            {"role": "user", "content": "Review the movie 'Inception'"}
+        ]
 
-Supported Models and Token Limits
---------------------------------
+        try:
+            # Stream the response
+            async for chunk in async_openai_structured_stream(
+                messages=messages,
+                schema=schema,
+                model="gpt-4o-2024-08-06",
+                temperature=0.7,
+                stream_config=StreamConfig(
+                    max_buffer_size=1024 * 1024  # 1MB
+                )
+            ):
+                # Process each chunk as it arrives
+                review = MovieReview(**chunk)
+                print(f"Processing: {review.title}")
+                print(f"Rating: {review.rating}/10")
+                print(f"Summary: {review.summary}")
+                print("\nPros:")
+                for pro in review.pros:
+                    print(f"- {pro}")
+                print("\nCons:")
+                for con in review.cons:
+                    print(f"- {con}")
 
-The following models support structured output:
+        except ValidationError as e:
+            print(f"Invalid response: {e}")
+        except StreamBufferError as e:
+            print(f"Buffer overflow: {e}")
+        except StreamInterruptedError as e:
+            print(f"Stream interrupted: {e}")
+        except TokenLimitError as e:
+            print(f"Token limit exceeded: {e}")
 
-Aliases (convenient for development)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Run the async function
+    asyncio.run(analyze_movie())
 
-* ``gpt-4o``: Latest GPT-4 model (128K context window, 16K output tokens)
-* ``gpt-4o-mini``: Smaller, faster GPT-4 model (128K context window, 16K output tokens)
-* ``o1``: Optimized model (200K context window, 100K output tokens)
+Stream Configuration
+-----------------
 
-Dated Versions (recommended for production)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* ``gpt-4o-2024-08-06``: Specific version of GPT-4 model
-* ``gpt-4o-mini-2024-07-18``: Specific version of smaller GPT-4 model
-* ``o1-2024-12-17``: Specific version of optimized model
-
-Model Version Guidelines
-~~~~~~~~~~~~~~~~~~~~~
-
-* For development and testing, you can use the simpler alias format (e.g., ``gpt-4o``)
-* For production applications, use dated versions (e.g., ``gpt-4o-2024-08-06``) for better stability
-* Both formats are fully supported and will work with all library features
-* Aliases are resolved by OpenAI to the latest compatible version
-* We validate that dated versions meet minimum version requirements
-
-You can check if a model supports structured output before making API calls:
+Configure streaming behavior:
 
 .. code-block:: python
 
-   from openai_structured import supports_structured_output
+    from openai_structured import StreamConfig
 
-   # Check aliases
-   print(supports_structured_output("gpt-4o"))  # True
-   print(supports_structured_output("gpt-3.5-turbo"))  # False
+    # Default configuration
+    config = StreamConfig()  # 1MB buffer, 512KB cleanup
 
-   # Check dated versions
-   print(supports_structured_output("gpt-4o-2024-08-06"))  # True
-   print(supports_structured_output("gpt-4o-2024-09-01"))  # True (newer version)
+    # Custom configuration
+    config = StreamConfig(
+        max_buffer_size=2 * 1024 * 1024,  # 2MB
+        cleanup_threshold=1024 * 1024,     # 1MB
+        chunk_size=16 * 1024              # 16KB
+    )
 
-Choose the appropriate model based on your context size and output requirements.
+    async for chunk in async_openai_structured_stream(
+        messages=messages,
+        schema=schema,
+        stream_config=config
+    ):
+        process_chunk(chunk)
 
-For more examples, see the :doc:`examples` section. 
+Error Handling
+------------
+
+The library provides comprehensive error handling:
+
+.. code-block:: python
+
+    from openai_structured.errors import (
+        StreamBufferError,
+        StreamInterruptedError,
+        ValidationError,
+        TokenLimitError
+    )
+
+    try:
+        async for chunk in async_openai_structured_stream(...):
+            process_chunk(chunk)
+    except StreamBufferError as e:
+        print(f"Buffer overflow: {e}")
+    except StreamInterruptedError as e:
+        print(f"Stream interrupted: {e}")
+    except ValidationError as e:
+        print(f"Validation error: {e}")
+    except TokenLimitError as e:
+        print(f"Token limit exceeded: {e}")
+
+File Processing
+~~~~~~~~~~~~~
+
+Process files efficiently:
+
+.. code-block:: python
+
+    import aiofiles
+
+    async def analyze_file(filepath: str):
+        async with aiofiles.open(filepath, 'r') as f:
+            content = await f.read()
+
+        messages = [
+            {"role": "system", "content": "Analyze this document."},
+            {"role": "user", "content": content}
+        ]
+
+        async for chunk in async_openai_structured_stream(
+            messages=messages,
+            schema=schema,
+            model="o1",  # Use optimized model for large files
+            timeout=120.0  # Longer timeout for large files
+        ):
+            await process_chunk(chunk)
+
+Supported Models
+--------------
+
+Production Models
+~~~~~~~~~~~~~~~
+
+* ``gpt-4o-2024-08-06``
+    - GPT-4 with structured output
+    - 128K context window
+    - 16K output tokens
+    - Full JSON schema support
+
+* ``gpt-4o-mini-2024-07-18``
+    - Smaller GPT-4 variant
+    - 128K context window
+    - 16K output tokens
+    - Optimized for faster responses
+
+* ``o1-2024-12-17``
+    - Optimized for structured data
+    - 200K context window
+    - 100K output tokens
+    - Best for large structured outputs
+
+Development Aliases
+~~~~~~~~~~~~~~~~
+
+* ``gpt-4o``: Latest GPT-4 structured model
+* ``gpt-4o-mini``: Latest mini variant
+* ``o1``: Latest optimized model
+
+.. note::
+    Use dated versions in production for stability.
+    Aliases automatically use the latest compatible version.
+
+Environment Variables
+------------------
+
+The library uses these environment variables:
+
+* ``OPENAI_API_KEY`` (required)
+    OpenAI API key for authentication
+
+* ``OPENAI_API_BASE`` (optional)
+    Custom API endpoint URL
+
+* ``OPENAI_API_VERSION`` (optional)
+    Specific API version to use 
+
+Advanced Usage
+------------
+
+Complex Schema
+~~~~~~~~~~~~
+
+Use Pydantic for complex schemas:
+
+.. code-block:: python
+
+    from typing import Literal
+    from pydantic import BaseModel, Field
+
+    class Character(BaseModel):
+        name: str
+        age: int = Field(minimum=0, maximum=150)
+        occupation: str
+        skills: list[str]
+
+    class MovieAnalysis(BaseModel):
+        title: str
+        rating: float = Field(minimum=0, maximum=10)
+        summary: str
+        themes: list[str]
+
+    # Convert to JSON Schema
+    schema = MovieAnalysis.model_json_schema()
+
+    async def analyze_movie():
+        try:
+            async for chunk in async_openai_structured_stream(
+                messages=[
+                    {"role": "system", "content": "Analyze this movie."},
+                    {"role": "user", "content": "Analyze 'The Matrix'"}
+                ],
+                schema=schema
+            ):
+                analysis = MovieAnalysis(**chunk)
+                print(f"Analyzing {analysis.title}...")
+                for character in analysis.characters:
+                    print(f"- {character.name}: {character.role}")
+        except ValidationError as e:
+            print(f"Validation error: {e}")
+
+Error Handling
+------------
+
+The library provides comprehensive error handling:
+
+.. code-block:: python
+
+    from openai_structured.errors import (
+        StreamBufferError,
+        StreamInterruptedError,
+        ValidationError,
+        TokenLimitError
+    )
+
+    try:
+        async for chunk in async_openai_structured_stream(
+            client=client,
+            model="gpt-4o-2024-08-06",
+            output_schema=OutputSchema,
+            system_prompt="Analyze this text",
+            user_prompt="Sample text to analyze",
+        ):
+            process_chunk(chunk)
+    except ValueError as e:
+        if "token limit" in str(e).lower():
+            print(f"Token limit exceeded: {e}")
+            print("Consider reducing input size or using a model with larger context")
+        else:
+            raise
+    except StreamBufferError as e:
+        print(f"Buffer overflow: {e}")
+    except StreamInterruptedError as e:
+        print(f"Stream interrupted: {e}")
+    except ValidationError as e:
+        print(f"Validation error: {e}")
+    except APIError as e:
+        print(f"API error: {e}")
+    finally:
+        await client.close() 

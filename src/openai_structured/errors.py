@@ -41,24 +41,47 @@ class APIResponseError(OpenAIClientError):
 
 
 class InvalidResponseFormatError(APIResponseError):
-    """Raised if the API doesn't provide the expected JSON format"""
+    """Raised if the API doesn't provide the expected JSON format."""
 
     pass
 
 
 class EmptyResponseError(APIResponseError):
-    """Raised if the API returns an empty response"""
+    """Raised if the API returns an empty response."""
 
     pass
 
 
-class StreamProcessingError(OpenAIClientError):
-    """Raised when an error occurs during stream processing."""
+class JSONParseError(InvalidResponseFormatError):
+    """Raised when JSON parsing fails."""
 
     pass
 
 
-class BufferOverflowError(OpenAIClientError):
-    """Raised when the buffer size exceeds the maximum allowed size."""
+class StreamInterruptedError(OpenAIClientError):
+    """Raised when a stream is interrupted unexpectedly."""
+
+    pass
+
+
+class StreamBufferError(StreamInterruptedError):
+    """Base class for stream buffer related errors."""
+
+    pass
+
+
+class StreamParseError(StreamInterruptedError):
+    """Raised when stream content cannot be parsed after multiple attempts."""
+
+    def __init__(self, message: str, attempts: int, last_error: Exception):
+        super().__init__(
+            f"{message} after {attempts} attempts. Last error: {last_error}"
+        )
+        self.attempts = attempts
+        self.last_error = last_error
+
+
+class BufferOverflowError(StreamBufferError):
+    """Raised when the buffer exceeds size limits."""
 
     pass

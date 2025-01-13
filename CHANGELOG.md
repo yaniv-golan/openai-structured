@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Command-line interface (oai-structured-cli)
+- Command-line interface (ostruct)
 - JSON schema validation support
 - Token counting and limits
 - Multiple file input support

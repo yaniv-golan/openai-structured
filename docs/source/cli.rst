@@ -1,42 +1,28 @@
 .. Copyright (c) 2025 Yaniv Golan. All rights reserved.
 
 Command Line Interface
-=====================
+-------------------
 
-The ``oai-structured-cli`` command line tool allows you to easily make structured OpenAI API calls using JSON schemas, with support for multiple input files, stdin reading, and token counting.
-
-Installation
-------------
-
-The CLI is automatically installed when you install the package::
-
-    pip install openai-structured
-
-Basic Usage
-----------
-
-Here's a basic example::
-
-    oai-structured-cli \
-      --system-prompt "You are a helpful assistant" \
-      --template "Summarize the doc: {file1}" \
-      --schema-file schema.json \
-      --file file1=doc1.txt
+The ``ostruct`` command provides a CLI for extracting structured data from text using OpenAI models.
 
 Arguments
----------
+--------
 
-Required Arguments
-~~~~~~~~~~~~~~~~~
+Required:
 
-* ``--system-prompt TEXT``
-    The system role prompt text (e.g., "You are an expert in legal analysis")
+* ``--system-prompt TEXT``: System prompt for the model.
+* ``--template TEXT``: Template with {file} placeholders for input substitution.
+* ``--schema-file PATH``: JSON Schema file defining the expected response structure.
 
-* ``--template TEXT``
-    The main user prompt template with placeholders like ``{file1}``, ``{stdin}``
+Optional:
 
-* ``--schema-file PATH``
-    Path to a JSON schema file that defines the structure of the OpenAI response
+* ``--file KEY=PATH``: File to read as input, can be specified multiple times.
+* ``--output-file PATH``: Write JSON output to file instead of stdout.
+* ``--model TEXT``: Model to use (default: gpt-4o-2024-08-06).
+* ``--temperature FLOAT``: Temperature for sampling (default: 0.0).
+* ``--max-tokens INTEGER``: Maximum tokens to generate (defaults to model-specific limit).
+* ``--validate-schema``: Validate response against schema.
+* ``--verbose``: Enable verbose logging.
 
 Optional Arguments
 ~~~~~~~~~~~~~~~~~
@@ -45,342 +31,315 @@ Optional Arguments
     Repeatable. Associates file contents with a name for template substitution.
     Example: ``--file doc1=contract.txt --file doc2=terms.txt``
 
-* ``--model MODEL``
+* ``--model TEXT``
     OpenAI model to use (default: "gpt-4o-2024-08-06")
 
-* ``--max-token-limit INT``
-    Maximum allowed tokens. Set to 0 or negative to disable check.
-    Default is model-dependent (8192 for GPT-4 models)
+* ``--temperature FLOAT``
+    Temperature for sampling (default: 0.0)
+    - Higher: More creative, varied outputs
+    - Lower: More focused, deterministic outputs
+    - Range: 0.0 to 2.0
+
+* ``--max-tokens INT``
+    Maximum tokens to generate. Set to 0 or negative to disable token limit checks.
+    Defaults to model-specific limit.
+    - Affects response length and cost
+    - Higher limits increase memory usage
+
+* ``--top-p FLOAT``
+    Top-p sampling parameter (default: 1.0)
+    - Controls output diversity
+    - Lower values: More focused
+    - Range: 0.0 to 1.0
+
+* ``--frequency-penalty FLOAT``
+    Frequency penalty parameter (default: 0.0)
+    - Controls repetition across all generated tokens
+    - Higher: Less repetition
+    - Range: -2.0 to 2.0
+
+* ``--presence-penalty FLOAT``
+    Presence penalty parameter (default: 0.0)
+    - Controls repetition based on token presence
+    - Higher: More topic changes
+    - Range: -2.0 to 2.0
+
+* ``--timeout FLOAT``
+    Timeout in seconds for API calls (default: 60.0)
+    - Applies to both streaming and validation
+    - Adjust for large responses
 
 * ``--output-file PATH``
-    Write JSON output to this file instead of stdout
+    Write JSON output to file instead of stdout.
+    - Creates parent directories if needed
+    - Writes output as it's received
 
-* ``--log-level LEVEL``
-    Logging level: DEBUG, INFO, WARNING, or ERROR (default: INFO)
-
-* ``--api-key KEY``
-    OpenAI API key. Overrides OPENAI_API_KEY environment variable if provided
+* ``--verbose``
+    Enable detailed logging including:
+    - Token usage statistics
+    - API request/response details
+    - Error context and stack traces
 
 * ``--validate-schema``
-    Enable validation of the JSON schema and response
+    Validate both schema and response:
+    - Schema validation: Checks JSON Schema Draft 7 compliance
+    - Response validation: Ensures response matches schema
+    - Type validation: Verifies data types and constraints
+
+* ``--api-key TEXT``
+    OpenAI API key. Overrides OPENAI_API_KEY environment variable.
+    Warning: Key might be visible in process list or shell history.
+
+Streaming Behavior
+----------------
+
+All responses are streamed by default:
+
+* Response Processing
+    - Chunk-based processing with 8KB default chunk size
+    - JSON validation of complete objects
+    - Automatic buffer management
+    - Debug logging of significant size changes
+    - Resource cleanup on completion
+
+* Error Handling
+    - StreamBufferError for buffer overflow
+    - StreamParseError after 5 failed parse attempts
+    - StreamInterruptedError for network issues
+    - ValidationError for schema violations
+    - Automatic resource cleanup on errors
+    - Detailed error messages with context
+
+* Resource Management
+    - Automatic buffer cleanup
+    - Connection closing in finally blocks
+    - Buffer reset after successful parse
+    - Proper error propagation
+    - Debug logging support
+
+Buffer Management
+---------------
+
+The CLI uses efficient buffer management for streaming responses:
+
+* Buffer Size Control
+    - Default maximum buffer size: 1MB
+    - Default cleanup threshold: 512KB
+    - Default chunk size: 8KB
+    - Automatic cleanup when buffer exceeds threshold
+    - Buffer overflow protection with clear error messages
+
+* Cleanup Strategy
+    - Uses ijson for efficient JSON parsing and finding complete objects
+    - Fallback to pattern matching if ijson parsing fails
+    - Maximum 3 cleanup attempts before overflow error
+    - Tracks cleanup statistics for debugging
+    - Preserves partial valid responses when possible
+
+* Error Handling
+    - BufferOverflowError when size exceeds limit
+    - StreamParseError after 5 failed parse attempts
+    - StreamInterruptedError for network issues
+    - Automatic resource cleanup on errors
+
+* Memory Efficiency
+    - Chunk-based processing using write() method
+    - Content cache invalidation on write
+    - Automatic buffer reset after successful parse
+    - Total bytes tracking for size management
+    - Cleanup triggered at configurable threshold
 
 Model Support
 ------------
 
 The following models support structured output:
 
-Aliases (convenient for development):
+Production Models (Recommended)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* ``gpt-4o``: Latest GPT-4 model (128K context window, 16K output tokens)
-* ``gpt-4o-mini``: Smaller, faster GPT-4 model (128K context window, 16K output tokens)
-* ``o1``: Optimized model (200K context window, 100K output tokens)
+* ``gpt-4o-2024-08-06``: GPT-4 with structured output
+    * 128K context window
+    * 16K output tokens
+    * Full JSON schema support
+    * Minimum version: 2024-08-06
 
-Dated Versions (recommended for production):
+* ``gpt-4o-mini-2024-07-18``: Smaller GPT-4 variant
+    * 128K context window
+    * 16K output tokens
+    * Minimum version: 2024-07-18
 
-* ``gpt-4o-2024-08-06``: Specific version of GPT-4 model
-* ``gpt-4o-mini-2024-07-18``: Specific version of smaller GPT-4 model
-* ``o1-2024-12-17``: Specific version of optimized model
+* ``o1-2024-12-17``: Optimized for structured data
+    * 200K context window
+    * 100K output tokens
+    * Minimum version: 2024-12-17
 
-.. note::
-    Following OpenAI's best practices, it is recommended to use dated model versions
-    in production applications for better version stability. When using aliases,
-    OpenAI will automatically resolve them to the latest compatible version.
+Development Aliases
+~~~~~~~~~~~~~~~~~
 
-.. warning::
-    Other models like ``gpt-3.5-turbo`` do not support structured output and will result in an error.
+* ``gpt-4o``: Latest GPT-4 structured model
+* ``gpt-4o-mini``: Latest mini variant
+* ``o1``: Latest optimized model
 
-Template Validation
-------------------
+Version Validation
+~~~~~~~~~~~~~~~~
 
-The CLI validates templates before making API calls. A template must:
+The CLI validates model versions to ensure compatibility:
 
-1. Reference only defined file names::
+* Version Format: ``{base_model}-{YYYY}-{MM}-{DD}``
+    * Example: ``gpt-4o-2024-08-06``
+    * Validation regex: ``^[\w-]+?-\d{4}-\d{2}-\d{2}$``
 
-    # Valid - both files are provided
-    --template "Compare {file1} with {file2}" \
-    --file file1=a.txt --file file2=b.txt
+* Alias Resolution
+    * Aliases automatically use latest compatible version
+    * Enforces minimum version requirements
+    * Clear error messages for version mismatches
 
-    # Invalid - file2 is missing
-    --template "Compare {file1} with {file2}" \
-    --file file1=a.txt
+The ``--validate-schema`` option provides validation using JSON Schema Draft 7:
 
-2. Use ``{stdin}`` only when input is provided on stdin::
+Schema File Validation
+~~~~~~~~~~~~~~~~~~~~
 
-    # Valid - stdin is provided
-    echo "test" | oai-structured-cli --template "Analyze {stdin}"
+* JSON Schema Draft 7 compliance check using ``jsonschema`` package
+* Required properties validation
+* Type definitions (string, integer, number, boolean, array, object)
+* Basic constraints (minimum, maximum, pattern)
+* Array validation (minItems, maxItems)
+* Object property validation
+* Validation errors include path and message
 
-    # Invalid - no stdin provided
-    oai-structured-cli --template "Analyze {stdin}"
+Response Validation
+~~~~~~~~~~~~~~~~~
+
+* JSON parsing validation
+* Schema compliance verification
+* Type checking against schema
+* Required field validation
+* Array and object validation
+* Detailed error messages with context
+* Validation occurs after each complete object in stream
+
+Error Types
+~~~~~~~~~~
+
+* Schema validation errors (invalid schema format)
+* JSON parse errors (with position and context)
+* Type mismatches (wrong data type)
+* Missing required fields
+* Invalid field values
+* Token limit errors (input too long, output limit exceeded)
+* Stream parse errors (after 5 attempts)
+* Buffer overflow errors
+* Stream interruption errors
+
+Exit Codes
+---------
+
+The CLI uses these exit codes:
+
+* ``0`` (SUCCESS)
+    Command completed successfully
+
+* ``1`` (VALIDATION_ERROR)
+    - Schema validation failed
+    - Response validation failed
+    - Token limit exceeded (input too long or output limit exceeded)
+    - Invalid template
+    - Type mismatch
+    - Format error
+
+* ``2`` (USAGE_ERROR)
+    - Missing required arguments
+    - Invalid argument values
+    - File not found
+    - Permission denied
+    - Invalid configuration
+    - Schema error
+
+* ``3`` (API_ERROR)
+    - Authentication failed
+    - Rate limit exceeded
+    - Model not supported
+    - Network error
+    - Timeout
+    - Version error
+
+* ``4`` (IO_ERROR)
+    - File read/write error
+    - Directory creation failed
+    - Permission issues
+    - Disk space issues
+    - Network I/O
+    - Buffer overflow
+
+* ``5`` (UNKNOWN_ERROR)
+    - Unexpected exceptions
+    - Internal errors
+    - System errors
+    - Resource errors
+    - State errors
+
+* ``6`` (INTERRUPTED)
+    - User interrupted (Ctrl+C)
+    - Signal received
+    - Forced termination
+    - Cleanup triggered
+    - Resource release
 
 Examples
 --------
 
-Multiple Files with Schema
-~~~~~~~~~~~~~~~~~~~~~~~~
+Basic Analysis
+~~~~~~~~~~~~~
 
-Compare two documents with a custom response schema::
+Analyze a text file with a custom schema::
 
     # schema.json
     {
       "type": "object",
       "properties": {
-        "differences": {
+        "summary": { "type": "string" },
+        "key_points": {
           "type": "array",
           "items": { "type": "string" }
         },
-        "similarity_score": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
+        "sentiment": {
+          "type": "string",
+          "enum": ["positive", "neutral", "negative"]
         }
       },
-      "required": ["differences", "similarity_score"]
+      "required": ["summary", "key_points", "sentiment"]
     }
 
-    oai-structured-cli \
-      --system-prompt "You are a legal AI." \
-      --template "Compare the docs for conflicts. docA={docA}, docB={docB}" \
+    ostruct \
+      --system-prompt "You are an expert analyst." \
+      --template "Analyze this text: {input}" \
       --schema-file schema.json \
-      --file docA=contract1.txt \
-      --file docB=contract2.txt
+      --file input=document.txt \
+      --output-file analysis.json \
+      --verbose
+
+Multiple Files
+~~~~~~~~~~~~
+
+Compare two documents::
+
+    ostruct \
+      --system-prompt "You are a legal AI." \
+      --template "Compare these documents:\n1: {doc1}\n2: {doc2}" \
+      --schema-file comparison_schema.json \
+      --file doc1=contract1.txt \
+      --file doc2=contract2.txt \
+      --validate-schema
 
 Using stdin
 ~~~~~~~~~~
 
-Process data from stdin with a summary schema::
+Process data from stdin::
+
+    cat data.txt | ostruct \
+      --system-prompt "Analyze this data" \
+      --template "Process this: {stdin}" \
+      --schema-file schema.json \
+      --model gpt-4o \
+      --temperature 0.7
 
-    # summary_schema.json
-    {
-      "type": "object",
-      "properties": {
-        "title": { "type": "string" },
-        "key_points": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      },
-      "required": ["title", "key_points"]
-    }
-
-    cat report.txt | oai-structured-cli \
-      --system-prompt "Analyze the following report" \
-      --template "Please summarize this: {stdin}" \
-      --schema-file summary_schema.json
-
-Environment Variables
--------------------
-
-The CLI supports the following environment variables:
-
-1. ``OPENAI_API_KEY`` (required if --api-key not provided)
-   OpenAI API key for authentication
-
-2. ``LOG_LEVEL`` (optional)
-   Default logging level (DEBUG, INFO, WARNING, ERROR)
-   Can be overridden by --log-level
-
-Environment variables take precedence over command-line arguments for security reasons.
-
-API Key Configuration
---------------------
-
-The CLI supports two ways to provide your OpenAI API key:
-
-1. Environment variable (recommended)::
-
-       export OPENAI_API_KEY="your-key-here"
-       oai-structured-cli ...
-
-2. Command line argument (less secure)::
-
-       oai-structured-cli --api-key "your-key-here" ...
-
-.. warning::
-    Using ``--api-key`` on the command line is less secure as the key might appear in shell history or process listings.
-    Prefer using the ``OPENAI_API_KEY`` environment variable.
-
-Alternative Security Approaches
------------------------------
-
-Besides environment variables and command-line arguments, there are several more secure ways to handle API keys:
-
-1. **Configuration Files**::
-
-       # ~/.config/oai-structured-cli/config
-       OPENAI_API_KEY=your-key-here
-
-2. **Secret Managers**:
-   * HashiCorp Vault
-   * AWS Secrets Manager
-   * Azure Key Vault
-   * Google Cloud Secret Manager
-
-3. **Docker Secrets** (if running in containers)
-
-Token Limits
------------
-
-The CLI automatically counts tokens in your prompts using ``tiktoken`` and enforces model-specific limits:
-
-* GPT-4o and GPT-4o-mini: 128,000 token context window, 16,384 token output limit
-* O1: 200,000 token context window, 100,000 token output limit (including reasoning tokens)
-
-You can override these limits with ``--max-token-limit`` or disable checking by setting it to 0::
-
-    # Custom limit
-    oai-structured-cli --max-token-limit 50000 ...
-
-    # Disable limit checking
-    oai-structured-cli --max-token-limit 0 ...
-
-Response Format
---------------
-
-The CLI outputs JSON responses in a consistent format:
-
-1. **Success Response**::
-
-    {
-      "field1": "value1",
-      "field2": 123,
-      "field3": ["item1", "item2"]
-    }
-
-2. **String Response**::
-    If the model returns a string instead of a JSON object, the CLI will attempt to parse it as JSON.
-    If parsing fails, an error is returned.
-
-3. **Output File**::
-    When using --output-file, the JSON is written with 2-space indentation::
-
-        {
-          "field1": "value1",
-          "field2": 123
-        }
-
-Schema Validation
-----------------
-
-The CLI supports validation of both the schema file and the OpenAI response using the ``--validate-schema`` flag.
-
-Schema File Validation
-~~~~~~~~~~~~~~~~~~~~~
-
-When ``--validate-schema`` is enabled, the CLI validates that your schema file is a valid JSON Schema::
-
-    # valid_schema.json
-    {
-      "type": "object",
-      "properties": {
-        "summary": {
-          "type": "string",
-          "description": "A brief summary of the document"
-        },
-        "key_points": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1,
-          "description": "List of key points from the document"
-        }
-      },
-      "required": ["summary", "key_points"]
-    }
-
-Common validation errors::
-
-    Invalid JSON Schema: 'type' is a required property
-    Invalid JSON Schema: 'items' is required for array types
-    Invalid JSON Schema: unknown property format 'datetime'
-
-Response Validation
-~~~~~~~~~~~~~~~~~~
-
-The CLI also validates the OpenAI response against your schema::
-
-    # Example validation errors
-    Response validation errors:
-    At summary: 'summary' is a required property
-    At key_points/0: 'test' is not of type 'number'
-    At confidence: 0.5 is less than the minimum of 0.8
-
-.. note::
-    Schema validation requires the ``jsonschema`` package. If not installed, validation
-    is skipped with a warning message.
-
-Exit Codes
-----------
-
-The CLI uses the following exit codes:
-
-* ``0``: Success - Command completed successfully
-* ``1``: Error - Command failed. Specific cases include:
-    - File reading errors
-    - Invalid template
-    - Token limit exceeded
-    - API authentication failure
-    - Model not supported
-    - Network connectivity issues
-    - OpenAI server errors
-    - Schema validation errors
-    - JSON parsing errors
-
-Error Handling
--------------
-
-The CLI handles various error conditions with specific error messages:
-
-1. **File Errors**::
-
-    Cannot read schema.json: No such file or directory
-    Cannot read input.txt: Permission denied
-
-2. **Template Errors**::
-
-    Template placeholders missing files: file2
-    Template references {stdin} but no input provided on stdin
-
-3. **Token Limits**::
-
-    Prompt requires 9000 tokens, exceeds limit of 8192
-
-4. **API Errors**::
-
-    API error: Could not connect to OpenAI API
-    Rate limit exceeded: Please retry after 20s
-    Model not supported: gpt-3.5-turbo does not support structured output
-
-5. **Schema Errors**::
-
-    Invalid JSON Schema: 'type' is a required property
-    Response validation errors:
-    At summary: 'summary' is a required property
-
-All errors are logged with appropriate messages and result in non-zero exit codes.
-
-Repository Integration
---------------------
-
-The ``oai-structured-cli`` tool is fully integrated with the repository:
-
-* **Location**: ``src/openai_structured/cli.py``
-* **Entry Point**: Defined in ``pyproject.toml`` as ``oai-structured-cli = "openai_structured.cli:main"``
-* **Testing**: Comprehensive test suite in ``tests/test_cli.py``
-* **CI/CD**: Integrated with GitHub Actions workflows
-* **Documentation**: This documentation is built and deployed automatically
-
-For development:
-
-1. Clone the repository::
-
-    git clone https://github.com/your-org/openai-structured.git
-    cd openai-structured
-
-2. Install in development mode::
-
-    poetry install
-
-3. Run tests::
-
-    poetry run pytest tests/test_cli.py 

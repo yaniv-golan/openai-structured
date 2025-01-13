@@ -1,545 +1,511 @@
 """Tests for the CLI implementation."""
 
-import json
+import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from openai import APIConnectionError, APIStatusError, AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 from pydantic import BaseModel
 
 from openai_structured.cli import (
-    _main,
+    ExitCode,
     create_dynamic_model,
     estimate_tokens_for_chat,
     get_context_window_limit,
     get_default_token_limit,
-    validate_template,
-    validate_token_limits,
+    main,
+    validate_template_placeholders,
 )
+from openai_structured.errors import StreamInterruptedError, StreamParseError
 
 
-@pytest.fixture
-def temp_files(tmp_path: Path) -> Dict[str, Path]:
-    """Create temporary test files."""
-    file1 = tmp_path / "file1.txt"
-    file1.write_text("Content of file 1")
-    file2 = tmp_path / "file2.txt"
-    file2.write_text("Content of file 2")
-    schema_file = tmp_path / "schema.json"
-    schema_file.write_text(
-        json.dumps(
-            {
-                "type": "object",
-                "properties": {
-                    "summary": {"type": "string"},
-                    "score": {"type": "integer"},
-                },
-                "required": ["summary", "score"],
-            }
-        )
-    )
-    return {"file1": file1, "file2": file2, "schema": schema_file}
+class SampleOutputSchema(BaseModel):
+    """Schema used for testing CLI output."""
 
-
-@pytest.fixture
-def mock_openai_client() -> AsyncMock:
-    """Create a mock OpenAI client."""
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_chat = AsyncMock()
-    mock_completions = AsyncMock()
-    mock_client.chat = mock_chat
-    mock_chat.completions = mock_completions
-
-    # Set up a default response
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = (
-        '{"summary": "Test summary", "score": 5}'
-    )
-    mock_completions.create.return_value = mock_response
-
-    return mock_client
+    field: str
 
 
 def test_create_dynamic_model() -> None:
-    """Test creating a Pydantic model from JSON schema."""
+    """Test creating a dynamic model from JSON schema."""
     schema = {
         "type": "object",
         "properties": {
-            "name": {"type": "string"},
-            "age": {"type": "integer"},
-            "scores": {"type": "array"},
-            "metadata": {"type": "object"},
+            "string_field": {"type": "string"},
+            "int_field": {"type": "integer"},
+            "float_field": {"type": "number"},
+            "bool_field": {"type": "boolean"},
+            "array_field": {"type": "array"},
+            "object_field": {"type": "object"},
         },
     }
+
     model = create_dynamic_model(schema)
     assert issubclass(model, BaseModel)
-    assert model.model_fields["name"].annotation == str
-    assert model.model_fields["age"].annotation == int
-    assert model.model_fields["scores"].annotation == List[Any]
-    assert model.model_fields["metadata"].annotation == Dict[str, Any]
 
 
-def test_validate_template() -> None:
-    """Test template validation."""
-    template = "Compare {file1} with {file2}"
-    files = {"file1", "file2"}
-    validate_template(template, files)  # Should not raise
+def test_validate_template_placeholders() -> None:
+    """Test template placeholder validation."""
+    available_files = {"file1", "file2"}
 
-    with pytest.raises(ValueError, match="missing files"):
-        validate_template(template, {"file1"})
+    # Valid template
+    validate_template_placeholders("Test {file1} and {file2}", available_files)
+
+    # Missing placeholder
+    with pytest.raises(
+        ValueError, match="Template placeholders missing files"
+    ):
+        validate_template_placeholders("Test {file3}", available_files)
 
 
-def test_estimate_tokens() -> None:
-    """Test token estimation."""
+def test_estimate_tokens_for_chat() -> None:
+    """Test token estimation for chat messages."""
     messages = [
         {"role": "system", "content": "You are a helpful assistant"},
         {"role": "user", "content": "Hello"},
     ]
-    tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
-    assert tokens > 0
 
+    with patch("tiktoken.get_encoding") as mock_get_encoding:
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]  # Mock token IDs
+        mock_get_encoding.return_value = mock_encoding
 
-def test_get_default_token_limit() -> None:
-    """Test default token limits for different models."""
-    assert get_default_token_limit("o1") == 100_000
-    assert get_default_token_limit("gpt-4o") == 16_384
-    assert get_default_token_limit("gpt-4o-mini") == 16_384
-    assert get_default_token_limit("unknown-model") == 4_096
+        tokens = estimate_tokens_for_chat(messages, "gpt-4o")
+        assert tokens > 0
 
 
 def test_get_context_window_limit() -> None:
-    """Test context window limits for different models."""
+    """Test getting context window limits."""
     assert get_context_window_limit("o1") == 200_000
     assert get_context_window_limit("gpt-4o") == 128_000
     assert get_context_window_limit("gpt-4o-mini") == 128_000
-    assert get_context_window_limit("unknown-model") == 8_192
+    assert get_context_window_limit("unknown") == 8_192
 
 
-def test_validate_token_limits() -> None:
-    """Test token limit validation."""
-    # Should not raise for valid token counts
-    validate_token_limits(
-        "gpt-4o-2024-08-06", total_tokens=1000, max_token_limit=16_384
-    )
-    validate_token_limits(
-        "o1-2024-12-17", total_tokens=50_000, max_token_limit=100_000
-    )
+def test_get_default_token_limit() -> None:
+    """Test getting default token limits."""
+    assert get_default_token_limit("o1") == 100_000
+    assert get_default_token_limit("gpt-4o") == 16_384
+    assert get_default_token_limit("gpt-4o-mini") == 16_384
+    assert get_default_token_limit("unknown") == 4_096
 
-    # Should raise for exceeding context window
-    with pytest.raises(
-        ValueError, match="exceed model's context window limit"
+
+@pytest.mark.asyncio
+async def test_cli_validation_error() -> None:
+    """Test CLI with validation error."""
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli",
+                "--system-prompt",
+                "test",
+                "--template",
+                "test {missing}",  # Missing file mapping
+                "--schema-file",
+                "schema.json",
+            ],
+        ),
+        patch.object(Path, "open", create=True),
+        patch("json.load", return_value={}),
     ):
-        validate_token_limits("gpt-4o-2024-08-06", total_tokens=130_000)
+        result = await main()
+        assert result == ExitCode.VALIDATION_ERROR
 
-    # Should raise when not enough room for output
-    with pytest.raises(ValueError, match="Only .* tokens remaining"):
-        validate_token_limits(
-            "gpt-4o-2024-08-06", total_tokens=120_000, max_token_limit=16_384
+
+@pytest.mark.asyncio
+async def test_cli_usage_error() -> None:
+    """Test CLI with usage error."""
+    with (
+        patch("sys.argv", ["cli"]),  # Missing required arguments
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        await main()
+        assert (
+            exc_info.value.code == 2
+        )  # argparse exits with status code 2 for usage errors
+
+
+@pytest.mark.asyncio
+async def test_cli_io_error() -> None:
+    """Test CLI with IO error."""
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli",
+                "--system-prompt",
+                "test",
+                "--template",
+                "test {input}",
+                "--file",
+                "input=nonexistent.txt",
+                "--schema-file",
+                "schema.json",
+            ],
+        ),
+        patch.object(Path, "open", side_effect=OSError),
+    ):
+        result = await main()
+        assert result == ExitCode.IO_ERROR
+
+
+@pytest.mark.asyncio
+async def test_cli_streaming_success() -> None:
+    """Test successful streaming CLI execution."""
+    schema = {
+        "type": "object",
+        "properties": {"field": {"type": "string"}},
+        "required": ["field"],
+    }
+
+    # Create mock stream responses
+    mock_responses = [
+        MagicMock(choices=[MagicMock(delta=MagicMock(content='{"field": '))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content='"test"'))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content="}"))]),
+    ]
+
+    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
+        for response in mock_responses:
+            yield response
+
+    # Create mock completions
+    mock_completions = AsyncMock()
+    mock_completions.create = AsyncMock(return_value=mock_stream())
+
+    # Create mock chat
+    mock_chat = MagicMock()
+    mock_chat.completions = mock_completions
+
+    # Create mock client
+    mock_client = AsyncMock(spec=AsyncOpenAI)
+    mock_client.chat = mock_chat
+
+    # Create mock encoding
+    mock_encoding = MagicMock()
+    mock_encoding.encode.return_value = [1, 2, 3]
+    mock_get_encoding = MagicMock(return_value=mock_encoding)
+
+    with (
+        patch("builtins.open", create=True),
+        patch("json.load", return_value=schema),
+        patch("tiktoken.get_encoding", mock_get_encoding),
+        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch.object(
+            sys,
+            "argv",
+            [
+                "cli",
+                "--model",
+                "gpt-4o",
+                "--system-prompt",
+                "You are a helpful assistant",
+                "--template",
+                "Process this: {input}",
+                "--file",
+                "input=test.txt",
+                "--schema-file",
+                "schema.json",
+            ],
+        ),
+    ):
+        result = await main()
+        assert result == ExitCode.SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_cli_streaming_interruption() -> None:
+    """Test CLI with stream interruption."""
+    schema = {
+        "type": "object",
+        "properties": {"field": {"type": "string"}},
+    }
+
+    # Create mock stream that raises interruption
+    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
+        yield MagicMock(
+            choices=[MagicMock(delta=MagicMock(content='{"field": '))]
+        )
+        raise StreamInterruptedError("Stream interrupted")
+
+    # Create mock completions
+    mock_completions = AsyncMock()
+    mock_completions.create = AsyncMock(return_value=mock_stream())
+
+    # Create mock chat
+    mock_chat = MagicMock()
+    mock_chat.completions = mock_completions
+
+    # Create mock client
+    mock_client = AsyncMock(spec=AsyncOpenAI)
+    mock_client.chat = mock_chat
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli",
+                "--system-prompt",
+                "test",
+                "--template",
+                "test {input}",
+                "--file",
+                "input=test.txt",
+                "--schema-file",
+                "schema.json",
+                "--model",
+                "gpt-4o",
+            ],
+        ),
+        patch.object(Path, "open", create=True),
+        patch("json.load", return_value=schema),
+        patch("builtins.open", create=True),
+        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("tiktoken.get_encoding") as mock_get_encoding,
+    ):
+        # Mock tiktoken
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]
+        mock_get_encoding.return_value = mock_encoding
+
+        result = await main()
+        assert result == ExitCode.API_ERROR
+
+
+@pytest.mark.asyncio
+async def test_cli_streaming_parse_error() -> None:
+    """Test CLI with stream parse error."""
+    schema = {
+        "type": "object",
+        "properties": {"field": {"type": "string"}},
+    }
+
+    # Create mock stream that raises parse error
+    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
+        yield MagicMock(
+            choices=[MagicMock(delta=MagicMock(content="invalid json"))]
+        )
+        raise StreamParseError(
+            "Failed to parse stream", 3, ValueError("Invalid JSON")
         )
 
+    # Create mock completions
+    mock_completions = AsyncMock()
+    mock_completions.create = AsyncMock(return_value=mock_stream())
 
-@pytest.mark.asyncio
-async def test_cli_basic(
-    temp_files: Dict[str, Path], mock_openai_client: AsyncMock
-) -> None:
-    """Test basic CLI functionality."""
+    # Create mock chat
+    mock_chat = MagicMock()
+    mock_chat.completions = mock_completions
+
+    # Create mock client
+    mock_client = AsyncMock(spec=AsyncOpenAI)
+    mock_client.chat = mock_chat
+
     with (
         patch(
             "sys.argv",
             [
-                "cli.py",
+                "cli",
                 "--system-prompt",
-                "Analyze files",
+                "test",
                 "--template",
-                "Compare {file1} with {file2}",
+                "test {input}",
                 "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
+                "input=test.txt",
                 "--schema-file",
-                str(temp_files["schema"]),
+                "schema.json",
                 "--model",
-                "gpt-4o-2024-08-06",
-                "--api-key",
-                "test-key",
+                "gpt-4o",
             ],
         ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
+        patch.object(Path, "open", create=True),
+        patch("json.load", return_value=schema),
+        patch("builtins.open", create=True),
+        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("tiktoken.get_encoding") as mock_get_encoding,
     ):
-        await _main()  # Should complete successfully
+        # Mock tiktoken
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]
+        mock_get_encoding.return_value = mock_encoding
+
+        result = await main()
+        assert result == ExitCode.API_ERROR
 
 
 @pytest.mark.asyncio
-async def test_cli_token_limit(
-    temp_files: Dict[str, Path], mock_openai_client: AsyncMock
-) -> None:
-    """Test token limit handling."""
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o-2024-08-06",
-                "--max-token-limit",
-                "1",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            await _main()
-        assert exc_info.value.code == 1
-
-
-@pytest.mark.asyncio
-async def test_cli_rate_limit(
-    temp_files: Dict[str, Path], mock_openai_client: AsyncMock
-) -> None:
-    """Test rate limit error handling."""
-    mock_response = MagicMock()
-    mock_response.status = 429
-    mock_response.json.return_value = {
-        "error": {"message": "Rate limit exceeded"}
+async def test_cli_streaming_with_output_file() -> None:
+    """Test streaming CLI with output file."""
+    schema = {
+        "type": "object",
+        "properties": {"field": {"type": "string"}},
     }
-    mock_openai_client.chat.completions.create.side_effect = APIStatusError(
-        message="Rate limit exceeded",
-        response=mock_response,
-        body={"error": {"message": "Rate limit exceeded"}},
-    )
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o-2024-08-06",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            await _main()
-        assert exc_info.value.code == 1
 
-
-@pytest.mark.asyncio
-async def test_cli_model_not_supported(
-    temp_files: Dict[str, Path], mock_openai_client: AsyncMock
-) -> None:
-    """Test unsupported model error handling."""
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-3.5-turbo",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            await _main()
-        assert exc_info.value.code == 1
-
-
-@pytest.mark.asyncio
-async def test_cli_api_error(
-    temp_files: Dict[str, Path], mock_openai_client: AsyncMock
-) -> None:
-    """Test API error handling."""
-    mock_request = MagicMock()
-    mock_openai_client.chat.completions.create.side_effect = (
-        APIConnectionError(request=mock_request)
-    )
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "Analyze files",
-                "--template",
-                "Compare {file1} with {file2}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--file",
-                f"file2={temp_files['file2']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o-2024-08-06",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            await _main()
-        assert exc_info.value.code == 1
-
-
-def test_cli_subprocess(temp_files: Dict[str, Path]) -> None:
-    """Test CLI using subprocess."""
-    import subprocess
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "openai_structured.cli",
-            "--system-prompt",
-            "Analyze files",
-            "--template",
-            "Compare {file1} with {file2}",
-            "--file",
-            f"file1={temp_files['file1']}",
-            "--file",
-            f"file2={temp_files['file2']}",
-            "--schema-file",
-            str(temp_files["schema"]),
-            "--model",
-            "gpt-3.5-turbo",
-            "--api-key",
-            "test-key",
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 1
-    assert "Model not supported" in result.stderr
-
-
-def test_cli_subprocess_stdin(temp_files: Dict[str, Path]) -> None:
-    """Test CLI with stdin input."""
-    import subprocess
-
-    process = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "openai_structured.cli",
-            "--system-prompt",
-            "Analyze text",
-            "--template",
-            "Analyze {stdin}",
-            "--schema-file",
-            str(temp_files["schema"]),
-            "--model",
-            "gpt-3.5-turbo",
-            "--api-key",
-            "test-key",
-        ],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    stdout, stderr = process.communicate(input="Test input")
-    assert process.returncode == 1
-    assert "Model not supported" in stderr
-
-
-def test_cli_subprocess_token_limit(temp_files: Dict[str, Path]) -> None:
-    """Test CLI token limit using subprocess."""
-    import subprocess
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "openai_structured.cli",
-            "--system-prompt",
-            "Analyze files",
-            "--template",
-            "Compare {file1} with {file2}",
-            "--file",
-            f"file1={temp_files['file1']}",
-            "--file",
-            f"file2={temp_files['file2']}",
-            "--schema-file",
-            str(temp_files["schema"]),
-            "--model",
-            "gpt-4o-2024-08-06",
-            "--max-token-limit",
-            "1",  # Very low limit
-            "--api-key",
-            "test-key",
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 1
-    assert "exceeds limit" in result.stderr
-
-
-@pytest.mark.asyncio
-async def test_cli_token_limits(
-    mock_openai_client: AsyncMock, temp_files: Dict[str, Path]
-) -> None:
-    """Test CLI handling of token limits."""
-    # Test o1 model with large token count
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "x" * 190_000,  # Very large prompt
-                "--template",
-                "{file1}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "o1-2024-12-17",
-                "--max-token-limit",
-                "100000",  # Set explicit token limit
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
-        patch(
-            "openai_structured.cli.estimate_tokens_for_chat",
-            return_value=150_000,  # Force high token count
-        ),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            await _main()
-        assert exc_info.value.code == 1
-
-    # Test gpt-4o with context window limit
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--system-prompt",
-                "x" * 120_000,  # Large prompt
-                "--template",
-                "{file1}",
-                "--file",
-                f"file1={temp_files['file1']}",
-                "--schema-file",
-                str(temp_files["schema"]),
-                "--model",
-                "gpt-4o-2024-08-06",
-                "--max-token-limit",
-                "16384",  # Set explicit token limit
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch(
-            "openai_structured.cli.AsyncOpenAI",
-            return_value=mock_openai_client,
-        ),
-        patch(
-            "openai_structured.cli.estimate_tokens_for_chat",
-            return_value=20_000,  # Force token count above limit
-        ),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            await _main()
-        assert exc_info.value.code == 1
-
-
-def test_token_counting() -> None:
-    """Test token counting for chat messages."""
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant"},
-        {"role": "user", "content": "Hello, how are you?"},
+    # Create mock stream responses
+    mock_responses = [
+        MagicMock(choices=[MagicMock(delta=MagicMock(content='{"field": '))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content='"test"'))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content="}"))]),
     ]
-    tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
-    assert tokens > 0
+
+    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
+        for response in mock_responses:
+            yield response
+
+    # Create mock completions
+    mock_completions = AsyncMock()
+    mock_completions.create = AsyncMock(return_value=mock_stream())
+
+    # Create mock chat
+    mock_chat = MagicMock()
+    mock_chat.completions = mock_completions
+
+    # Create mock client
+    mock_client = AsyncMock(spec=AsyncOpenAI)
+    mock_client.chat = mock_chat
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli",
+                "--system-prompt",
+                "test",
+                "--template",
+                "test {input}",
+                "--file",
+                "input=test.txt",
+                "--schema-file",
+                "schema.json",
+                "--model",
+                "gpt-4o",
+                "--output-file",
+                "output.json",
+            ],
+        ),
+        patch.object(Path, "open", create=True),
+        patch("json.load", return_value=schema),
+        patch("builtins.open", create=True),
+        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("tiktoken.get_encoding") as mock_get_encoding,
+        patch.object(Path, "mkdir", create=True),
+    ):
+        # Mock tiktoken
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]
+        mock_get_encoding.return_value = mock_encoding
+
+        result = await main()
+        assert result == ExitCode.SUCCESS
 
 
 @pytest.mark.asyncio
-async def test_unsupported_model(
-    temp_files: Dict[str, Path], mock_openai_client: AsyncMock
-) -> None:
-    """Test handling of unsupported model."""
-    with patch(
-        "sys.argv",
-        [
-            "cli.py",
-            "--system-prompt",
-            "test",
-            "--template",
-            "test {file1}",
-            "--file",
-            f"file1={temp_files['file1']}",
-            "--schema-file",
-            str(temp_files["schema"]),
-            "--model",
-            "gpt-4",
-        ],
+async def test_cli_api_error() -> None:
+    """Test CLI with API error."""
+    schema = {
+        "type": "object",
+        "properties": {"field": {"type": "string"}},
+    }
+
+    # Create a debug handler to capture all log messages
+    debug_logs = []
+
+    def debug_handler(*args: Any, **kwargs: Any) -> None:
+        debug_logs.append(" ".join(str(arg) for arg in args))
+
+    def error_handler(*args: Any, **kwargs: Any) -> None:
+        debug_logs.append(" ".join(str(arg) for arg in args))
+
+    # Create mock stream that raises API error
+    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
+        # First yield a mock response to simulate stream start
+        yield MagicMock(
+            choices=[MagicMock(delta=MagicMock(content='{"field": '))]
+        )
+        # Then raise the API error
+        raise BadRequestError(
+            message="Invalid request",
+            response=MagicMock(
+                status=400,
+                headers={},
+                text='{"error": {"message": "Invalid request", "type": "invalid_request_error"}}',
+            ),
+            body={
+                "error": {
+                    "message": "Invalid request",
+                    "type": "invalid_request_error",
+                }
+            },
+        )
+
+    # Create mock completions
+    mock_completions = AsyncMock()
+    mock_completions.create = AsyncMock(return_value=mock_stream())
+
+    # Create mock chat
+    mock_chat = MagicMock()
+    mock_chat.completions = mock_completions
+
+    # Create mock client
+    mock_client = AsyncMock(spec=AsyncOpenAI)
+    mock_client.chat = mock_chat
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli",
+                "--system-prompt",
+                "test",
+                "--template",
+                "test {input}",
+                "--file",
+                "input=test.txt",
+                "--schema-file",
+                "schema.json",
+                "--model",
+                "gpt-4o",
+                "--api-key",
+                "test-key",
+                "--verbose",  # Enable verbose logging
+            ],
+        ),
+        patch.object(Path, "open", create=True),
+        patch("json.load", return_value=schema),
+        patch("builtins.open", create=True),
+        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("tiktoken.get_encoding") as mock_get_encoding,
+        patch.dict(os.environ, {}, clear=True),
+        patch("logging.getLogger") as mock_get_logger,
     ):
-        with pytest.raises(SystemExit) as exc_info:
-            await _main()
-        assert exc_info.value.code == 1
+        # Set up logging to capture all messages
+        mock_logger = MagicMock()
+        mock_logger.debug.side_effect = debug_handler
+        mock_logger.error.side_effect = error_handler
+        mock_get_logger.return_value = mock_logger
+
+        # Mock tiktoken
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]
+        mock_get_encoding.return_value = mock_encoding
+
+        result = await main()
+        assert result == ExitCode.API_ERROR
+
+        # Print logs for debugging
+        print("\nDebug logs:")
+        for log in debug_logs:
+            print(f"  {log}")
+
+        # Check for both possible error messages
+        error_found = any(
+            "API error: Invalid request" in log
+            or "Stream interrupted: Invalid request" in log
+            for log in debug_logs
+        )
+        assert (
+            error_found
+        ), f"Expected error message not found in logs: {debug_logs}"

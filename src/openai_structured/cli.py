@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import sys
-from pathlib import Path
+from enum import IntEnum
 from typing import Any, Dict, List, Optional, Set, Type
 
 import tiktoken
@@ -21,8 +21,19 @@ from openai import (
 )
 from pydantic import BaseModel, ConfigDict, create_model
 
-from .client import openai_structured_call
-from .errors import ModelNotSupportedError, OpenAIClientError
+from .client import async_openai_structured_stream, supports_structured_output
+from .errors import (
+    APIResponseError,
+    EmptyResponseError,
+    InvalidResponseFormatError,
+    JSONParseError,
+    ModelNotSupportedError,
+    ModelVersionError,
+    OpenAIClientError,
+    StreamBufferError,
+    StreamInterruptedError,
+    StreamParseError,
+)
 
 # Check Python version
 if sys.version_info < (3, 9):
@@ -110,7 +121,9 @@ def create_dynamic_model(schema: Dict[str, Any]) -> Type[BaseModel]:
     return model
 
 
-def validate_template(template: str, available_files: Set[str]) -> None:
+def validate_template_placeholders(
+    template: str, available_files: Set[str]
+) -> None:
     """Validate that all placeholders in the template have corresponding files."""
     placeholders = {m.group(1) for m in re.finditer(r"\{([^}]+)\}", template)}
     missing = placeholders - available_files
@@ -218,8 +231,20 @@ def validate_token_limits(
         )
 
 
-async def _main() -> None:
-    """Main async function."""
+class ExitCode(IntEnum):
+    """Exit codes for the CLI."""
+
+    SUCCESS = 0
+    VALIDATION_ERROR = 1  # Schema/response validation errors
+    USAGE_ERROR = 2  # Command line usage errors
+    API_ERROR = 3  # OpenAI API errors
+    IO_ERROR = 4  # File/network IO errors
+    UNKNOWN_ERROR = 5  # Unexpected errors
+    INTERRUPTED = 6  # Operation cancelled by user
+
+
+async def _main() -> ExitCode:
+    """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description="Make structured OpenAI API calls from the command line."
     )
@@ -253,18 +278,56 @@ async def _main() -> None:
         ),
     )
     parser.add_argument(
-        "--max-token-limit",
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="Temperature for sampling (default: 0.0)",
+    )
+    parser.add_argument(
+        "--max-tokens",
         type=int,
-        help="Maximum tokens allowed. Set to 0 or negative to disable check.",
+        help=(
+            "Maximum number of tokens to generate. Set to 0 or negative to disable "
+            "token limit checks. Defaults to model-specific limit."
+        ),
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=1.0,
+        help="Top-p sampling parameter (default: 1.0)",
+    )
+    parser.add_argument(
+        "--frequency-penalty",
+        type=float,
+        default=0.0,
+        help="Frequency penalty parameter (default: 0.0)",
+    )
+    parser.add_argument(
+        "--presence-penalty",
+        type=float,
+        default=0.0,
+        help="Presence penalty parameter (default: 0.0)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=60.0,
+        help="Timeout in seconds for API calls (default: 60.0)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging",
     )
     parser.add_argument(
         "--output-file",
         help="Write JSON output to this file instead of stdout",
     )
     parser.add_argument(
-        "--log-level",
-        default="INFO",
-        help="Logging level: DEBUG, INFO, WARNING, or ERROR",
+        "--validate-schema",
+        action="store_true",
+        help="Validate the JSON schema file and the response",
     )
     parser.add_argument(
         "--api-key",
@@ -273,163 +336,212 @@ async def _main() -> None:
             "Warning: Key might be visible in process list or shell history."
         ),
     )
-    parser.add_argument(
-        "--validate-schema",
-        action="store_true",
-        help="Validate the JSON schema file and the response",
-    )
 
-    args = parser.parse_args()
-    logging.basicConfig(level=args.log_level.upper())
-    logger = logging.getLogger("oai-structured-cli")
-
-    # 1) Load JSON schema
     try:
-        with open(args.schema_file, "r", encoding="utf-8") as sf:
-            schema_data = json.load(sf)
+        args = parser.parse_args()
+    except Exception:
+        return ExitCode.USAGE_ERROR
 
-        # Validate the schema if requested
+    # Set up logging
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(message)s",
+    )
+    logger = logging.getLogger("ostruct")
+
+    # Load and validate schema
+    try:
+        with open(args.schema_file, "r", encoding="utf-8") as f:
+            schema = json.load(f)
         if args.validate_schema:
             try:
-                validate_json_schema(schema_data)
+                validate_json_schema(schema)
                 logger.debug("JSON Schema validation passed")
             except ValueError as e:
-                parser.error(str(e))
-
+                logger.error(str(e))
+                return ExitCode.VALIDATION_ERROR
     except json.JSONDecodeError as e:
-        parser.error(f"Invalid JSON in schema file: {e}")
-    except Exception as e:
-        parser.error(f"Cannot read schema file '{args.schema_file}': {e}")
+        logger.error(f"Invalid JSON in schema file: {e}")
+        return ExitCode.VALIDATION_ERROR
+    except OSError as e:
+        logger.error(f"Cannot read schema file '{args.schema_file}': {e}")
+        return ExitCode.IO_ERROR
 
-    # Create Pydantic model from schema
-    try:
-        output_schema = create_dynamic_model(schema_data)
-    except Exception as e:
-        parser.error(f"Failed to create model from schema: {e}")
-
-    # 2) Gather file contents
-    files_map: Dict[str, str] = {}
-    for file_arg in args.file:
-        if "=" not in file_arg:
-            parser.error("--file must be 'name=path'")
-        name, fpath = file_arg.split("=", 1)
+    # Parse file mappings and handle stdin
+    file_mappings = {}
+    for mapping in args.file:
         try:
-            with open(fpath, "r", encoding="utf-8") as f:
-                files_map[name] = f.read()
-        except Exception as e:
-            parser.error(f"Cannot read {fpath}: {e}")
+            name, path = mapping.split("=", 1)
+            with open(path, "r", encoding="utf-8") as f:
+                file_mappings[name] = f.read()
+        except ValueError:
+            logger.error(f"Invalid file mapping: {mapping}")
+            return ExitCode.USAGE_ERROR
+        except OSError as e:
+            logger.error(f"Cannot read file '{path}': {e}")
+            return ExitCode.IO_ERROR
 
-    # 3) Read from stdin if needed
+    # Handle stdin if referenced in template
     if "{stdin}" in args.template:
         if not sys.stdin.isatty():
-            files_map["stdin"] = sys.stdin.read()
+            file_mappings["stdin"] = sys.stdin.read()
         else:
-            parser.error(
+            logger.error(
                 "Template references {stdin} but no input provided on stdin"
             )
+            return ExitCode.USAGE_ERROR
 
-    # 4) Validate template and build user prompt
+    # Validate template and build user prompt
     try:
-        validate_template(args.template, set(files_map.keys()))
+        validate_template_placeholders(
+            args.template, set(file_mappings.keys())
+        )
+        user_prompt = args.template.format(**file_mappings)
+    except KeyError as e:
+        logger.error(f"Template placeholder not found: {e}")
+        return ExitCode.USAGE_ERROR
     except ValueError as e:
-        parser.error(str(e))
+        logger.error(str(e))
+        return ExitCode.VALIDATION_ERROR
 
-    user_prompt = args.template
-    for name, content in files_map.items():
-        user_prompt = user_prompt.replace(f"{{{name}}}", content)
-
-    # 5) Estimate tokens if needed
+    # Estimate tokens and validate limits
     messages = [
         {"role": "system", "content": args.system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-
-    max_tokens = (
-        args.max_token_limit
-        if args.max_token_limit is not None
-        else get_default_token_limit(args.model)
-    )
-    if max_tokens > 0:  # Explicitly check > 0 to match spec
+    try:
         total_tokens = estimate_tokens_for_chat(messages, args.model)
-        if total_tokens > max_tokens:
-            logger.error(
-                f"Prompt requires {total_tokens} tokens, exceeds limit of {max_tokens}"
-            )
-            sys.exit(1)
+        validate_token_limits(args.model, total_tokens, args.max_tokens)
+        logger.debug(f"Total tokens in prompt: {total_tokens:,}")
+    except (ValueError, OpenAIClientError) as e:
+        logger.error(str(e))
+        return ExitCode.VALIDATION_ERROR
 
-    # 6) Get API key
-    openai_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    if not openai_key:
-        parser.error(
+    # Create dynamic model for validation
+    try:
+        model_class = create_dynamic_model(schema)
+    except Exception as e:
+        logger.error(f"Failed to create model from schema: {e}")
+        return ExitCode.VALIDATION_ERROR
+
+    # Get API key
+    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.error(
             "No OpenAI API key provided (--api-key or OPENAI_API_KEY env var)"
         )
+        return ExitCode.USAGE_ERROR
 
-    # 7) Make the API call
-    openai_client = AsyncOpenAI(api_key=openai_key)
+    client = AsyncOpenAI(api_key=api_key)
+
     try:
-        result = await openai_structured_call(
-            client=openai_client,
-            model=args.model,
-            output_schema=output_schema,  # Use dynamic model
-            user_prompt=user_prompt,
-            system_prompt=args.system_prompt,
-            logger=logger,
-        )
-    except ModelNotSupportedError as e:
-        logger.error(f"Model not supported: {e}")
-        sys.exit(1)
-    except RateLimitError as e:
-        logger.error(f"Rate limit exceeded: {e}")
-        sys.exit(1)
-    except (APIConnectionError, AuthenticationError, BadRequestError) as e:
+        if not supports_structured_output(args.model):
+            logger.error(
+                f"Model '{args.model}' does not support structured output"
+            )
+            return ExitCode.API_ERROR
+
+        # Make API call
+        first_result = True
+        try:
+            async for result in async_openai_structured_stream(
+                client=client,
+                model=args.model,
+                output_schema=model_class,
+                system_prompt=args.system_prompt,
+                user_prompt=user_prompt,
+                temperature=args.temperature,
+                max_tokens=args.max_tokens,
+                top_p=args.top_p,
+                frequency_penalty=args.frequency_penalty,
+                presence_penalty=args.presence_penalty,
+                timeout=args.timeout,
+                on_log=logger.debug if args.verbose else None,
+            ):
+                result_dict = result.model_dump()
+                if args.validate_schema:
+                    validate_response(result_dict, schema)
+
+                json_str = json.dumps(result_dict)
+                if args.output_file:
+                    mode = "w" if first_result else "a"
+                    with open(args.output_file, mode, encoding="utf-8") as f:
+                        if not first_result:
+                            f.write("\n")
+                        f.write(json_str)
+                else:
+                    if not first_result:
+                        print()
+                    print(json_str, flush=True)
+                first_result = False
+
+        except StreamInterruptedError as e:
+            logger.error(f"Stream interrupted: {e}")
+            return ExitCode.API_ERROR
+        except (StreamParseError, StreamBufferError) as e:
+            logger.error(f"Stream processing error: {e}")
+            return ExitCode.API_ERROR
+
+    except (
+        AuthenticationError,
+        BadRequestError,
+        RateLimitError,
+        APIConnectionError,
+        InternalServerError,
+    ) as e:
         logger.error(f"API error: {e}")
-        sys.exit(1)
-    except InternalServerError as e:
-        logger.error(f"OpenAI server error: {e}")
-        sys.exit(1)
-    except OpenAIClientError as e:
-        logger.error(f"Client error: {e}")
-        sys.exit(1)
+        return ExitCode.API_ERROR
+    except (
+        ModelNotSupportedError,
+        ModelVersionError,
+        APIResponseError,
+        InvalidResponseFormatError,
+        EmptyResponseError,
+        JSONParseError,
+        OpenAIClientError,
+    ) as e:
+        logger.error(str(e))
+        return ExitCode.VALIDATION_ERROR
     except Exception as e:
+        if args.verbose:
+            logging.exception("Unexpected error")
         logger.error(f"Unexpected error: {e}")
-        sys.exit(1)
+        return ExitCode.API_ERROR
 
-    # 8) Output the result
+    return ExitCode.SUCCESS
+
+
+async def main() -> ExitCode:
+    """Async main entry point for the CLI."""
     try:
-        # Convert result to dict
-        result_dict = result.model_dump()
-
-        # Validate response if requested (and jsonschema is available)
-        if args.validate_schema:
-            try:
-                validate_response(result_dict, schema_data)
-                logger.debug("Response validation passed")
-            except ValueError as e:
-                logger.error(str(e))
-                sys.exit(1)
-
-        # Convert to string for output
-        json_str = json.dumps(result_dict, indent=2)
-
+        return await _main()
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user", file=sys.stderr)
+        return ExitCode.INTERRUPTED
     except Exception as e:
-        logger.error(f"Failed to process result: {e}")
-        sys.exit(1)
-
-    if args.output_file:
-        # Ensure output directory exists
-        output_path = Path(args.output_file)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_path, "w", encoding="utf-8") as out:
-            out.write(json_str)
-    else:
-        print(json_str)
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        return ExitCode.UNKNOWN_ERROR
 
 
-def main() -> None:
-    """Main CLI entrypoint."""
-    asyncio.run(_main())
+def cli_main() -> int:
+    """Synchronous entry point for command line usage."""
+    try:
+        return int(asyncio.run(main()))
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        return int(ExitCode.UNKNOWN_ERROR)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli_main())
+
+# Export public API
+__all__ = [
+    "create_dynamic_model",
+    "validate_template_placeholders",
+    "estimate_tokens_for_chat",
+    "get_context_window_limit",
+    "get_default_token_limit",
+    "validate_token_limits",
+    "supports_structured_output",
+]
