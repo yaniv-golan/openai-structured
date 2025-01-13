@@ -5,15 +5,7 @@ import logging
 import re
 from collections import deque
 from dataclasses import dataclass
-from typing import (
-    Any,
-    AsyncGenerator,
-    Deque,
-    List,
-    Optional,
-    Type,
-    cast,
-)
+from typing import Any, AsyncGenerator, Deque, List, Optional, Type, cast
 
 from openai import (
     APIConnectionError,
@@ -28,10 +20,10 @@ from pydantic import BaseModel, ValidationError
 
 # Import custom exceptions
 from .errors import (
+    BufferOverflowError,
     EmptyResponseError,
     InvalidResponseFormatError,
     ModelNotSupportedError,
-    ModelVersionError,
     OpenAIClientError,
 )
 from .model_version import ModelVersion
@@ -82,9 +74,9 @@ MODEL_VERSION_PATTERN = re.compile(r"^([\w-]+?)-(\d{4}-\d{2}-\d{2})$")
 # Model version mapping - maps aliases to minimum supported versions
 OPENAI_API_SUPPORTED_MODELS = {
     # Aliases map to minimum supported versions
-    "gpt-4o": ModelVersion(2024, 8, 6),      # Minimum supported version
-    "gpt-4o-mini": ModelVersion(2024, 7, 18), # Minimum supported version
-    "o1": ModelVersion(2024, 12, 17),         # Minimum supported version
+    "gpt-4o": ModelVersion(2024, 8, 6),  # Minimum supported version
+    "gpt-4o-mini": ModelVersion(2024, 7, 18),  # Minimum supported version
+    "o1": ModelVersion(2024, 12, 17),  # Minimum supported version
 }
 
 DEFAULT_TEMPERATURE = 0.2
@@ -148,12 +140,6 @@ class StreamBuffer:
         self.last_valid_json_pos = 0
 
 
-class BufferOverflowError(BufferError):
-    """Raised when the streaming buffer exceeds size limits."""
-
-    pass
-
-
 class JSONParseError(InvalidResponseFormatError):
     """Raised when JSON parsing fails."""
 
@@ -162,24 +148,20 @@ class JSONParseError(InvalidResponseFormatError):
 
 def supports_structured_output(model_name: str) -> bool:
     """Check if a model supports structured output.
-    
+
     This function validates whether a given model name supports structured output,
     handling both aliases and dated versions. For dated versions, it ensures they meet
     minimum version requirements.
-    
+
     Args:
         model_name: The model name, which can be either:
                    - an alias (e.g., "gpt-4o")
                    - dated version (e.g., "gpt-4o-2024-08-06")
                    - newer version (e.g., "gpt-4o-2024-09-01")
-    
+
     Returns:
         bool: True if the model supports structured output
-        
-    Raises:
-        ModelVersionError: If a dated version format is invalid or doesn't meet
-                          minimum version requirements
-        
+
     Examples:
         >>> supports_structured_output("gpt-4o")
         True
@@ -193,14 +175,14 @@ def supports_structured_output(model_name: str) -> bool:
     # Check for exact matches (aliases)
     if model_name in OPENAI_API_SUPPORTED_MODELS:
         return True
-        
+
     # Try to parse as a dated version
     match = MODEL_VERSION_PATTERN.match(model_name)
     if not match:
         return False
-        
+
     base_model, version_str = match.groups()
-    
+
     # Check if the base model has a minimum version requirement
     if base_model in OPENAI_API_SUPPORTED_MODELS:
         try:
@@ -209,7 +191,7 @@ def supports_structured_output(model_name: str) -> bool:
             return version >= min_version
         except ValueError:
             return False
-            
+
     return False
 
 
