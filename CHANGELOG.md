@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON parsing error handling with context information
 - Model version validation and comparison
 - Type hints and validation in API responses
+- Added missing aiohttp type hints for mypy
 
 ## [0.5.0] - 2025-01-12
 
