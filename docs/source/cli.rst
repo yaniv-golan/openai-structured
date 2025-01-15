@@ -615,14 +615,14 @@ Generate and manage TOC:
 Code Blocks
 ~~~~~~~~~
 
-Process fenced code blocks:
+Process code blocks:
 
 .. code-block:: jinja
 
     {% set blocks = extract_code_blocks(content) %}
     {% for block in blocks %}
         Language: {{ block.lang }}
-        {{ block.code|syntax_highlight(block.lang) }}
+        {{ block.code|process_code(block.lang, 'plain') }}
     {% endfor %}
 
 Complex Markdown Example
@@ -655,7 +655,7 @@ Comprehensive markdown processing:
             {{ section.title|heading(2) }}
             
             {% if section.code is is_fenced_code %}
-                {{ section.code|code_block(section.language) }}
+                {{ section.code|process_code(section.language, 'plain') }}
             {% else %}
                 {{ section.text|urlize }}
             {% endif %}
@@ -764,4 +764,114 @@ Generating Reports
     {% set pivot = pivot_table(data, "category", "value", "mean") %}
     {{ pivot|dict_to_table }}
     '
+
+Template Filters and Globals
+-------------------------
+
+The CLI provides several template filters and globals for advanced text processing and data manipulation.
+
+Filters
+~~~~~~~
+
+* ``remove_comments(text)``
+    Remove comments from code
+    
+* ``dedent(text)``
+    Remove common leading whitespace
+    
+* ``normalize(text)``
+    Normalize whitespace
+    
+* ``wrap(text, width=80)``
+    Wrap text to specified width
+    
+* ``indent(text, width=4)``
+    Indent text by specified width
+
+Data Processing
+~~~~~~~~~~~~~
+
+* ``sort_by(items, key)``
+    Sort items by key
+    
+* ``group_by(items, key)``
+    Group items by key
+    
+* ``filter_by(items, key, value)``
+    Filter items by key-value pair
+    
+* ``pluck(items, key)``
+    Extract values for key
+    
+* ``unique(items)``
+    Get unique values
+    
+* ``frequency(items)``
+    Count value frequencies
+    
+* ``aggregate(items, key=None)``
+    Calculate aggregate statistics
+
+Table Formatting
+~~~~~~~~~~~~~~
+
+* ``table(headers, rows)``
+    Create markdown table
+    
+* ``align_table(headers, rows, alignments)``
+    Create aligned markdown table
+    
+* ``dict_to_table(data)``
+    Convert dict to table
+    
+* ``list_to_table(items, headers=None)``
+    Convert list to table
+    
+* ``auto_table(data)``
+    Auto-format data as table
+
+Globals
+~~~~~~~
+
+* ``estimate_tokens(text, model=None)``
+    Estimate token count using tiktoken
+    
+* ``format_json(obj)``
+    Format JSON with indentation
+    
+* ``now()``
+    Current datetime
+    
+* ``validate_json(text)``
+    Validate JSON string
+    
+* ``count_tokens(text, model=None)``
+    Count tokens using tiktoken
+
+Template Functions
+----------------
+
+The template engine provides several functions for file operations and code processing:
+
+``read_file(path, encoding='utf-8', use_cache=True)``
+    Read file contents safely with path validation and caching
+    - Prevents directory traversal attacks
+    - Optional content caching for performance
+    - Example: ``{{ read_file('config.json') }}``
+
+``process_code(text, lang='python', format='terminal')``
+    Process code by removing comments and normalizing whitespace
+    - Removes comments and normalizes whitespace
+    - Example: ``{{ code|process_code('python', 'plain') }}``
+
+Progress Indicators
+----------------
+
+The CLI provides progress feedback during template rendering:
+
+- Visual progress bars when ``rich`` is installed
+- Fallback to simple logging when ``rich`` is not available
+- Configurable through environment variables:
+    - ``OSTRUCT_PROGRESS=0``: Disable progress indicators
+    - ``OSTRUCT_PROGRESS=1``: Enable progress indicators (default)
 
