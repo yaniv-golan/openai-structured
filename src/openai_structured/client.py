@@ -61,7 +61,6 @@ import asyncio
 import json
 import logging
 import re
-from dataclasses import dataclass, field
 from functools import wraps
 from typing import (
     Any,
@@ -80,7 +79,6 @@ from typing import (
 
 # Third-party imports
 import aiohttp
-import ijson  # type: ignore # missing stubs
 from openai import (
     APIConnectionError,
     APITimeoutError,

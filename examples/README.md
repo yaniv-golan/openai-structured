@@ -43,14 +43,14 @@ Basic CLI usage examples:
 # Simple analysis
 openai-structured \
   --system-prompt "Analyze the text" \
-  --template "Content: {input}" \
+  --template "Content: {{ input }}" \
   --file input=data.txt \
   --schema-file analysis_schema.json
 
 # Multiple files
 openai-structured \
   --system-prompt "Compare the files" \
-  --template "File A: {file_a}\nFile B: {file_b}" \
+  --template "File A: {{ file_a }}\nFile B: {{ file_b }}" \
   --file file_a=a.txt \
   --file file_b=b.txt \
   --schema-file comparison_schema.json \
@@ -59,7 +59,7 @@ openai-structured \
 # With validation
 openai-structured \
   --system-prompt "Analyze code" \
-  --template "Code: {source}" \
+  --template "Code: {{ source }}" \
   --file source=code.py \
   --schema-file code_analysis_schema.json \
   --validate-schema \

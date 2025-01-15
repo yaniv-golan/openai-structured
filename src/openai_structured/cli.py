@@ -10,6 +10,7 @@ import sys
 from enum import IntEnum
 from typing import Any, Dict, List, Optional, Set, Type
 
+import jinja2
 import tiktoken
 from openai import (
     APIConnectionError,
@@ -119,6 +120,12 @@ def create_dynamic_model(schema: Dict[str, Any]) -> Type[BaseModel]:
         "DynamicModel", __config__=model_config, **field_definitions
     )
     return model
+
+
+def render_template(template_str: str, context: Dict[str, Any]) -> str:
+    """Render a Jinja2 template with the given context."""
+    template = jinja2.Template(template_str)
+    return template.render(context)
 
 
 def validate_template_placeholders(
@@ -396,7 +403,7 @@ async def _main() -> ExitCode:
         validate_template_placeholders(
             args.template, set(file_mappings.keys())
         )
-        user_prompt = args.template.format(**file_mappings)
+        user_prompt = render_template(args.template, file_mappings)
     except KeyError as e:
         logger.error(f"Template placeholder not found: {e}")
         return ExitCode.USAGE_ERROR

@@ -65,7 +65,7 @@ The CLI provides a powerful way to make structured API calls from the command li
 ```bash
 ostruct \
   --system-prompt "You are a helpful assistant" \
-  --template "Analyze this text: {input}" \
+  --template "Analyze this text: {{ input }}" \
   --file input=data.txt \
   --schema-file schema.json \
   --model gpt-4o \
@@ -75,7 +75,7 @@ ostruct \
 ### Key CLI Features
 
 * **Streaming by Default:** All responses are streamed for optimal performance
-* **File Input:** Process multiple input files with template placeholders
+* **File Input:** Process multiple input files with template placeholders using Jinja2
 * **Schema Validation:** Automatic JSON schema validation
 * **Token Management:** Automatic token counting and limit validation
 * **Flexible Output:** Write to file or stdout with progress indication
@@ -86,7 +86,7 @@ Required:
 
 ```bash
 --system-prompt TEXT    # System prompt for the model
---template TEXT        # Template with {file} placeholders
+--template TEXT        # Template with {{ file }} placeholders using Jinja2
 --schema-file PATH     # JSON schema for response structure
 ```
 

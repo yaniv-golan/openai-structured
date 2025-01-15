@@ -11,7 +11,7 @@ Arguments
 Required:
 
 * ``--system-prompt TEXT``: System prompt for the model.
-* ``--template TEXT``: Template with {file} placeholders for input substitution.
+* ``--template TEXT``: Template with {{ file }} placeholders for input substitution using Jinja2.
 * ``--schema-file PATH``: JSON Schema file defining the expected response structure.
 
 Optional:
@@ -320,7 +320,7 @@ Analyze a text file with a custom schema::
 
     ostruct \
       --system-prompt "You are an expert analyst." \
-      --template "Analyze this text: {input}" \
+      --template "Analyze this text: {{ input }}" \
       --schema-file schema.json \
       --file input=document.txt \
       --output-file analysis.json \
@@ -333,7 +333,7 @@ Compare two documents::
 
     ostruct \
       --system-prompt "You are a legal AI." \
-      --template "Compare these documents:\n1: {doc1}\n2: {doc2}" \
+      --template "Compare these documents:\n1: {{ doc1 }}\n2: {{ doc2 }}" \
       --schema-file comparison_schema.json \
       --file doc1=contract1.txt \
       --file doc2=contract2.txt \
@@ -346,8 +346,19 @@ Process data from stdin::
 
     cat data.txt | ostruct \
       --system-prompt "Analyze this data" \
-      --template "Process this: {stdin}" \
+      --template "Process this: {{ stdin }}" \
       --schema-file schema.json \
       --model gpt-4o \
       --temperature 0.7
+
+### Using Jinja2 Templates
+
+The CLI now supports Jinja2 templates, allowing for more complex logic and maintainability in your templates. Here is an example of how to use Jinja2 syntax:
+
+.. code-block:: jinja
+
+    {# Jinja2 template example #}
+    Hello, {{ name }}!
+
+This allows you to use Jinja2's full feature set, including loops and conditionals, in your templates.
 
