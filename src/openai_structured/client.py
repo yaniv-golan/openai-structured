@@ -95,6 +95,7 @@ from pydantic import BaseModel, ValidationError
 from typing_extensions import ParamSpec
 
 # Local imports
+from .buffer import StreamBuffer, StreamConfig
 from .errors import (
     BufferOverflowError,
     EmptyResponseError,
@@ -115,11 +116,6 @@ R = TypeVar("R")
 
 # Constants
 DEFAULT_TEMPERATURE = 0.2
-MAX_BUFFER_SIZE = 1024 * 1024  # 1MB max buffer size
-BUFFER_CLEANUP_THRESHOLD = (
-    512 * 1024
-)  # Clean up buffer if it exceeds 512KB without valid JSON
-CHUNK_SIZE = 8192  # 8KB chunks for buffer management
 DEFAULT_TIMEOUT = 60.0  # Default timeout in seconds
 
 # Format: "{base_model}-{YYYY}-{MM}-{DD}"
@@ -203,15 +199,6 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-@dataclass
-class StreamConfig:
-    """Configuration for stream behavior."""
-
-    max_buffer_size: int = 1024 * 1024  # 1MB max buffer size
-    cleanup_threshold: int = 512 * 1024  # Clean up at 512KB
-    chunk_size: int = 8192  # 8KB chunks
-
-
 class StreamParseError(StreamInterruptedError):
     """Raised when stream content cannot be parsed after multiple attempts."""
 
@@ -221,182 +208,6 @@ class StreamParseError(StreamInterruptedError):
         )
         self.attempts = attempts
         self.last_error = last_error
-
-
-@dataclass
-class StreamBuffer:
-    """Efficient buffer management for streaming responses."""
-
-    chunks: List[str] = field(default_factory=list)
-    total_bytes: int = 0
-    cleanup_attempts: int = 0
-    parse_errors: int = 0
-    MAX_CLEANUP_ATTEMPTS: int = 3
-    MAX_PARSE_ERRORS: int = 5
-    _last_logged_size: int = 0
-    LOG_SIZE_THRESHOLD: int = 100 * 1024
-    config: StreamConfig = field(default_factory=StreamConfig)
-    _current_content: Optional[str] = None
-    _cleanup_stats: dict[str, Any] = field(default_factory=dict)
-
-    def write(self, content: str) -> None:
-        """Write content to the buffer with improved error handling."""
-        if not content:
-            return
-
-        chunk_bytes = len(content.encode("utf-8"))
-        new_total = self.total_bytes + chunk_bytes
-
-        # Try cleanup even if we know it won't help, to maintain consistent behavior
-        while new_total > self.config.max_buffer_size:
-            if self.cleanup_attempts >= self.MAX_CLEANUP_ATTEMPTS:
-                raise BufferOverflowError(
-                    f"Buffer exceeded {self.config.max_buffer_size} bytes after "
-                    f"{self.cleanup_attempts} cleanup attempts. "
-                    f"Current size: {self.total_bytes}, "
-                    f"Attempted to add: {chunk_bytes} bytes. "
-                    f"Consider increasing max_buffer_size or adjusting cleanup_threshold."
-                )
-            self.cleanup()
-            self.cleanup_attempts += 1
-            new_total = self.total_bytes + chunk_bytes
-
-        self.chunks.append(content)
-        self.total_bytes = new_total
-        self._current_content = None  # Invalidate cache
-
-    def cleanup(self) -> None:
-        """Clean up the buffer with improved JSON parsing strategy."""
-        content = self.getvalue()
-        if not content:
-            return
-
-        original_length = len(content)
-        original_bytes = len(content.encode("utf-8"))
-
-        try:
-            # Use ijson to find the last complete object
-            from io import StringIO
-
-            parser = ijson.parse(StringIO(content))
-            stack = []
-            last_complete = 0
-            current_pos = 0
-
-            for prefix, event, value in parser:
-                current_pos = parser.pos
-                if event == "start_map":
-                    stack.append(current_pos)
-                elif event == "end_map":
-                    if stack:
-                        stack.pop()
-                        if not stack:  # Complete object found
-                            last_complete = current_pos + 1
-
-            if last_complete > 0:
-                self._update_buffer(content[last_complete:])
-                self._log_cleanup_stats(
-                    original_length,
-                    original_bytes,
-                    last_complete,
-                    "ijson_parsing",
-                )
-                return
-
-            # Fallback to pattern matching if ijson parsing fails
-            patterns = ["}", '"]', "]"]
-            positions = [content.rfind(p) for p in patterns]
-            last_pos = max(pos for pos in positions if pos != -1)
-
-            if last_pos > 0:
-                self._update_buffer(content[last_pos + 1 :])
-                self._log_cleanup_stats(
-                    original_length,
-                    original_bytes,
-                    last_pos + 1,
-                    "pattern_matching",
-                )
-                return
-
-        except Exception as e:
-            self._cleanup_stats.update(
-                {"error": str(e), "error_type": type(e).__name__}
-            )
-
-        # If all strategies fail, increment error count
-        self.parse_errors += 1
-        if self.parse_errors >= self.MAX_PARSE_ERRORS:
-            raise StreamParseError(
-                "Failed to parse stream content",
-                self.parse_errors,
-                ValueError(
-                    f"All cleanup strategies failed. Stats: {self._cleanup_stats}"
-                ),
-            )
-
-    def _update_buffer(self, new_content: str) -> None:
-        """Update buffer contents efficiently."""
-        if new_content:
-            self.chunks = [new_content]
-            self.total_bytes = len(new_content.encode("utf-8"))
-        else:
-            self.chunks = []
-            self.total_bytes = 0
-        self._current_content = new_content
-        self.cleanup_attempts = 0
-
-    def reset(self) -> None:
-        """Reset the buffer state while reusing the object."""
-        self.chunks = []
-        self.total_bytes = 0
-        self.cleanup_attempts = 0
-        self.parse_errors = 0
-        self._last_logged_size = 0
-        self._current_content = None
-
-    def should_log_size(self) -> bool:
-        """Determine if current size should be logged based on threshold."""
-        # Only log significant changes to reduce overhead
-        if self.total_bytes > self._last_logged_size + self.LOG_SIZE_THRESHOLD:
-            self._last_logged_size = self.total_bytes
-            return True
-        return False
-
-    def getvalue(self) -> str:
-        """Get the current buffer contents as a string."""
-        if self._current_content is None:
-            self._current_content = "".join(self.chunks)
-        return self._current_content
-
-    def _log_cleanup_stats(
-        self,
-        original_length: int,
-        original_bytes: int,
-        cleanup_position: int,
-        strategy: str,
-    ) -> None:
-        """Log statistics about buffer cleanup."""
-        new_content = self.getvalue()
-        new_length = len(new_content)
-        new_bytes = len(new_content.encode("utf-8"))
-
-        self._cleanup_stats.update(
-            {
-                "attempt": self.cleanup_attempts + 1,
-                "strategy": strategy,
-                "original_length": original_length,
-                "original_bytes": original_bytes,
-                "cleanup_position": cleanup_position,
-                "chars_removed": original_length - new_length,
-                "bytes_removed": original_bytes - new_bytes,
-                "remaining_length": new_length,
-                "remaining_bytes": new_bytes,
-            }
-        )
-
-    def close(self) -> None:
-        """Close the buffer and clean up resources."""
-        self.reset()
 
 
 def supports_structured_output(model_name: str) -> bool:
