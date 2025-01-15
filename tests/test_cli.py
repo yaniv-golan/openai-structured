@@ -51,13 +51,17 @@ def test_validate_template_placeholders() -> None:
     available_files = {"file1", "file2"}
 
     # Valid template
-    validate_template_placeholders("Test {file1} and {file2}", available_files)
+    validate_template_placeholders(
+        "Test {{ file1 }} and {{ file2 }}", available_files
+    )
 
     # Missing placeholder
     with pytest.raises(
         ValueError, match="Template placeholders missing files"
     ):
-        validate_template_placeholders("Test {file3}", available_files)
+        validate_template_placeholders(
+            "Test {{ file1 }} and {{ file3 }}", available_files
+        )
 
 
 def test_estimate_tokens_for_chat() -> None:
@@ -103,13 +107,19 @@ async def test_cli_validation_error() -> None:
                 "--system-prompt",
                 "test",
                 "--template",
-                "test {missing}",  # Missing file mapping
+                "test {{ missing }}",  # Missing file mapping
                 "--schema-file",
                 "schema.json",
+                "--api-key",
+                "dummy-key",  # Add API key to prevent auth error
             ],
         ),
         patch.object(Path, "open", create=True),
         patch("json.load", return_value={}),
+        patch(
+            "openai_structured.cli.AsyncOpenAI",
+            side_effect=Exception("Should not be called"),
+        ),
     ):
         result = await main()
         assert result == ExitCode.VALIDATION_ERROR

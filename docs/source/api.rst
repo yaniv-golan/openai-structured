@@ -775,3 +775,122 @@ Example logging implementation::
         on_log=log_callback
     ):
         process_chunk(chunk) 
+
+Data Processing Features
+=====================
+
+The template engine includes powerful data processing capabilities for analyzing and transforming structured data.
+
+Data Transformation
+-----------------
+
+.. code-block:: python
+
+    # Sort items by a key
+    {{ items|sort_by('timestamp') }}
+
+    # Group items by category
+    {% set grouped = items|group_by('category') %}
+    {% for category, items in grouped.items() %}
+        {{ category }}: {{ items|length }} items
+    {% endfor %}
+
+    # Filter items
+    {{ items|filter_by('status', 'active') }}
+
+    # Extract values
+    {{ items|pluck('name') }}
+
+    # Get unique values
+    {{ items|unique }}
+
+    # Count frequencies
+    {{ items|frequency }}
+
+Aggregation Functions
+-------------------
+
+.. code-block:: python
+
+    # Basic aggregation
+    {% set stats = data|aggregate('value') %}
+    Count: {{ stats.count }}
+    Sum: {{ stats.sum }}
+    Average: {{ stats.avg }}
+    Min: {{ stats.min }}
+    Max: {{ stats.max }}
+
+    # Aggregate nested data
+    {% set user_stats = users|aggregate('age') %}
+    Average age: {{ user_stats.avg }}
+
+Data Analysis
+------------
+
+.. code-block:: python
+
+    # Generate data summary
+    {% set summary = summarize(data) %}
+    Total records: {{ summary.total_records }}
+    {% for field, stats in summary.fields.items() %}
+        {{ field }}:
+        - Type: {{ stats.type }}
+        - Unique values: {{ stats.unique_values }}
+        - Null count: {{ stats.null_count }}
+    {% endfor %}
+
+    # Create pivot tables
+    {% set pivot = pivot_table(data, index='category', values='amount', aggfunc='sum') %}
+    {{ pivot|dict_to_table }}
+
+Table Formatting
+--------------
+
+.. code-block:: python
+
+    # Basic table
+    {{ table(['Name', 'Age'], [['Alice', 25], ['Bob', 30]]) }}
+
+    # Aligned table
+    {{ align_table(['Name', 'Age'], [['Alice', 25], ['Bob', 30]], ['left', 'right']) }}
+
+    # Convert dict to table
+    {{ stats|dict_to_table }}
+
+    # Convert list to table
+    {{ users|list_to_table(headers=['Name', 'Age']) }}
+
+    # Auto-format any data structure
+    {{ data|auto_table }}
+
+Examples
+--------
+
+Here are some practical examples combining multiple features:
+
+.. code-block:: python
+
+    # Analyze user activity by category
+    {% set user_activity = data|group_by('category') %}
+    {% for category, items in user_activity.items() %}
+        Category: {{ category }}
+        {{ items|aggregate('duration')|dict_to_table }}
+    {% endfor %}
+
+    # Generate summary report
+    {% set stats = data|aggregate('value') %}
+    {% set distribution = data|pluck('category')|frequency %}
+    
+    Summary Statistics:
+    {{ stats|dict_to_table }}
+    
+    Category Distribution:
+    {{ distribution|dict_to_table }}
+
+    # Create detailed pivot analysis
+    {% set pivot_data = pivot_table(data, 
+                                  index='category',
+                                  values='amount',
+                                  aggfunc='mean') %}
+    Average Amount by Category:
+    {{ pivot_data|dict_to_table }} 

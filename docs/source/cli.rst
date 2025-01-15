@@ -353,12 +353,414 @@ Process data from stdin::
 
 ### Using Jinja2 Templates
 
-The CLI now supports Jinja2 templates, allowing for more complex logic and maintainability in your templates. Here is an example of how to use Jinja2 syntax:
+The CLI supports comprehensive Jinja2 template features for advanced content processing.
+
+Line Statements and Comments
+-------------------------
+
+Use line-based syntax for cleaner templates:
 
 .. code-block:: jinja
 
-    {# Jinja2 template example #}
-    Hello, {{ name }}!
+    ## This is a line comment
+    # for item in items
+        {{ item }}
+    # endfor
 
-This allows you to use Jinja2's full feature set, including loops and conditionals, in your templates.
+    ## Using line statements for control flow
+    # if content is multiline
+        {{ content|wrap(80)|indent(4) }}
+    # endif
+
+Whitespace Control
+---------------
+
+Fine-grained control over template whitespace:
+
+.. code-block:: jinja
+
+    {%- if header %}
+    {{ header }}
+    {% endif -%}
+    
+    {#- Remove whitespace around this comment -#}
+    
+    {{- content|normalize -}}
+
+Block Scoping and Inheritance
+--------------------------
+
+Create reusable template hierarchies:
+
+.. code-block:: jinja
+
+    {# base_analysis.j2 #}
+    {% block metadata %}
+    Generated: {{ now() }}
+    Analysis ID: {{ uuid() }}
+    {% endblock %}
+
+    {% block content %}{% endblock %}
+
+    {% block footer %}
+    Token count: {{ estimate_tokens(content) }}
+    {% endblock %}
+
+    {# code_analysis.j2 #}
+    {% extends "base_analysis.j2" %}
+    
+    {% block content %}
+        {% if content is contains_code %}
+            {%- filter indent %}
+            Language: Python
+            {{ content|remove_comments|syntax_highlight('python') }}
+            {%- endfilter %}
+        {% endif %}
+    {% endblock %}
+
+Advanced Text Processing
+---------------------
+
+Comprehensive text manipulation:
+
+.. code-block:: jinja
+
+    {# Text wrapping and indentation #}
+    {{ long_text|wrap(80)|indent(4) }}
+    
+    {# Clean up text #}
+    {{ messy_text|dedent|normalize }}
+    
+    {# Format documentation #}
+    {% if content is is_markdown %}
+        Clean text: {{ content|strip_markdown }}
+    {% endif %}
+
+Environment and File Operations
+---------------------------
+
+Access system information and files:
+
+.. code-block:: jinja
+
+    API Key: {{ env('OPENAI_API_KEY', '[not set]') }}
+    
+    {% if file_exists('config.json') %}
+        Config: {{ read_file('config.json')|from_json }}
+    {% endif %}
+
+Content Validation
+---------------
+
+Enhanced content testing:
+
+.. code-block:: jinja
+
+    {% if content is not is_empty %}
+        {% if content is is_markdown %}
+            Markdown content detected
+        {% endif %}
+        
+        {% if content is has_urls %}
+            URLs found in content
+        {% endif %}
+        
+        {% if content is is_multiline %}
+            Multi-line content detected
+        {% endif %}
+    {% endif %}
+
+Example Usage
+-----------
+
+Complex template combining multiple features:
+
+.. code-block:: jinja
+
+    {# template.j2 #}
+    {% extends "base_analysis.j2" %}
+    
+    {% block content %}
+        ## Process each file with appropriate handling
+        # for name, content in files.items()
+            {%- if not content is is_empty %}
+                File: {{ name }}
+                {% if content is contains_code %}
+                    {%- filter indent %}
+                    {{ content|remove_comments|syntax_highlight('python') }}
+                    {%- endfilter %}
+                {% elif content is is_markdown %}
+                    {%- filter indent %}
+                    {{ content|strip_markdown|wrap(80) }}
+                    {%- endfilter %}
+                {% elif content is is_json %}
+                    {%- filter indent %}
+                    {{ content|from_json|to_json }}
+                    {%- endfilter %}
+                {% endif %}
+                
+                Stats:
+                - Lines: {{ content|count('\n') + 1 }}
+                - Words: {{ content|word_count }}
+                - Chars: {{ content|char_count }}
+                - Estimated tokens: {{ estimate_tokens(content) }}
+            {% endif -%}
+        # endfor
+    {% endblock %}
+
+Command line usage:
+
+.. code-block:: bash
+
+    ostruct \
+      --system-prompt "Analyze multiple file types" \
+      --template template.j2 \
+      --file code=source.py \
+      --file docs=README.md \
+      --file config=settings.json \
+      --schema-file analysis_schema.json
+
+The template engine provides comprehensive features for content processing, validation, and formatting while maintaining clean and maintainable templates.
+
+Markdown Processing
+------------------
+
+The template engine provides comprehensive markdown processing capabilities:
+
+Raw Blocks
+~~~~~~~~~
+
+Escape Jinja2 syntax in markdown:
+
+.. code-block:: jinja
+
+    {% raw %}
+    # Template Example
+    Use {{ variable }} for substitution
+    {% endraw %}
+
+Markdown Formatting
+~~~~~~~~~~~~~~~~
+
+Generate markdown elements:
+
+.. code-block:: jinja
+
+    {# Headings #}
+    {{ title|heading(1) }}
+    {{ subtitle|heading(2) }}
+
+    {# Text formatting #}
+    {{ text|bold }}
+    {{ text|italic }}
+    {{ code|inline_code }}
+    {{ code|code_block('python') }}
+
+    {# Lists #}
+    {{ items|unordered_list }}
+    {{ items|ordered_list }}
+
+    {# Blockquotes #}
+    {{ quote|blockquote }}
+
+Tables and Links
+~~~~~~~~~~~~~
+
+Create tables and process links:
+
+.. code-block:: jinja
+
+    {# Tables #}
+    {{ table(headers=['Name', 'Value'], rows=data) }}
+
+    {# Auto-link URLs #}
+    {{ text|urlize }}
+
+Footnotes
+~~~~~~~~
+
+Add and manage footnotes:
+
+.. code-block:: jinja
+
+    {{ text|footnote('ref1') }}
+    {{ 'Additional information'|footnote_def('ref1') }}
+
+Front Matter
+~~~~~~~~~~
+
+Process YAML front matter:
+
+.. code-block:: jinja
+
+    {% if content is has_frontmatter %}
+        {% set meta = extract_frontmatter(content) %}
+        Title: {{ meta.title }}
+        Date: {{ meta.date }}
+    {% endif %}
+
+Table of Contents
+~~~~~~~~~~~~~~~
+
+Generate and manage TOC:
+
+.. code-block:: jinja
+
+    {% if content is has_toc %}
+        ## Table of Contents
+        {{ generate_toc(content, max_depth=3) }}
+    {% endif %}
+
+Code Blocks
+~~~~~~~~~
+
+Process fenced code blocks:
+
+.. code-block:: jinja
+
+    {% set blocks = extract_code_blocks(content) %}
+    {% for block in blocks %}
+        Language: {{ block.lang }}
+        {{ block.code|syntax_highlight(block.lang) }}
+    {% endfor %}
+
+Complex Markdown Example
+~~~~~~~~~~~~~~~~~~~~
+
+Comprehensive markdown processing:
+
+.. code-block:: jinja
+
+    {# template.j2 #}
+    {% extends "base.j2" %}
+    
+    {% block content %}
+        {# Extract and process front matter #}
+        {% if content is has_frontmatter %}
+            {% set meta = extract_frontmatter(content) %}
+            {{ meta.title|heading(1) }}
+            Author: {{ meta.author|bold }}
+            Date: {{ meta.date }}
+        {% endif %}
+
+        {# Generate TOC for long content #}
+        {% if content is has_toc %}
+            {{ "Table of Contents"|heading(2) }}
+            {{ generate_toc(content) }}
+        {% endif %}
+
+        {# Process main content #}
+        {% for section in sections %}
+            {{ section.title|heading(2) }}
+            
+            {% if section.code is is_fenced_code %}
+                {{ section.code|code_block(section.language) }}
+            {% else %}
+                {{ section.text|urlize }}
+            {% endif %}
+            
+            {% if section.notes %}
+                {{ "Notes"|heading(3) }}
+                {{ section.notes|blockquote }}
+            {% endif %}
+        {% endfor %}
+
+        {# Add footnotes #}
+        {% if footnotes %}
+            {{ "Footnotes"|heading(2) }}
+            {% for ref, text in footnotes.items() %}
+                {{ text|footnote_def(ref) }}
+            {% endfor %}
+        {% endif %}
+    {% endblock %}
+
+Command line usage:
+
+.. code-block:: bash
+
+    ostruct \
+      --system-prompt "Process markdown documentation" \
+      --template template.j2 \
+      --file content=document.md \
+      --schema-file output_schema.json
+
+The template engine provides comprehensive markdown processing capabilities while maintaining clean and maintainable templates.
+
+Data Processing with Templates
+=========================
+
+The CLI supports advanced data processing through templates. Here are some examples:
+
+Processing JSON Data
+------------------
+
+.. code-block:: bash
+
+    # Analyze API response data
+    $ cat response.json | ostruct process --template '
+    {% set data = from_json(_input) %}
+    
+    Response Summary:
+    {{ summarize(data)|dict_to_table }}
+    
+    Status Distribution:
+    {{ data|pluck("status")|frequency|dict_to_table }}
+    '
+
+    # Generate pivot analysis
+    $ cat metrics.json | ostruct process --template '
+    {% set data = from_json(_input) %}
+    
+    Average Values by Category:
+    {{ pivot_table(data, "category", "value", "mean")|dict_to_table }}
+    '
+
+Transforming Data
+---------------
+
+.. code-block:: bash
+
+    # Sort and filter data
+    $ cat users.json | ostruct process --template '
+    {% set users = from_json(_input) %}
+    
+    Active Users by Age:
+    {{ users|filter_by("status", "active")|sort_by("age")|list_to_table(["name", "age"]) }}
+    '
+
+    # Group and aggregate data
+    $ cat transactions.json | ostruct process --template '
+    {% set txns = from_json(_input) %}
+    {% set by_type = txns|group_by("type") %}
+    
+    Transaction Summary by Type:
+    {% for type, items in by_type.items() %}
+    {{ type }}:
+    {{ items|aggregate("amount")|dict_to_table }}
+    {% endfor %}
+    '
+
+Generating Reports
+---------------
+
+.. code-block:: bash
+
+    # Create detailed analysis report
+    $ cat data.json | ostruct process --template '
+    {% set data = from_json(_input) %}
+    
+    # Data Overview
+    {{ summarize(data)|dict_to_table }}
+    
+    # Key Metrics
+    {{ data|aggregate(["value", "count"])|dict_to_table }}
+    
+    # Distribution Analysis
+    {% set dist = data|pluck("category")|frequency %}
+    {{ dist|dict_to_table }}
+    
+    # Pivot Analysis
+    {% set pivot = pivot_table(data, "category", "value", "mean") %}
+    {{ pivot|dict_to_table }}
+    '
 

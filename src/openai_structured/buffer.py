@@ -180,7 +180,7 @@ class StreamBuffer:
     def cleanup(self) -> None:
         """Find and preserve the last complete JSON object using multiple strategies."""
         self.cleanup_attempts += 1
-        if self.cleanup_attempts > self.config.max_cleanup_attempts:
+        if self.cleanup_attempts >= self.config.max_cleanup_attempts:
             raise ParseError(
                 f"Exceeded maximum cleanup attempts ({self.config.max_cleanup_attempts})"
             )
@@ -247,7 +247,11 @@ class StreamBuffer:
                         {"json_error": str(e), "error_type": type(e).__name__}
                     )
                     self.parse_errors += 1
-                    raise ParseError(f"Failed to parse JSON content: {e}")
+                    if (
+                        self.cleanup_attempts == 1
+                    ):  # Only raise on first attempt
+                        raise ParseError(f"Failed to parse JSON content: {e}")
+                    # On subsequent attempts, let max attempts check handle it
 
             # Strategy 2: Pattern matching as fallback
             if is_json_like:
