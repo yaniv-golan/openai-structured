@@ -31,6 +31,19 @@ Optional Arguments
     Repeatable. Associates file contents with a name for template substitution.
     Example: ``--file doc1=contract.txt --file doc2=terms.txt``
 
+* ``--output-file PATH``
+    Write JSON output to file instead of stdout.
+    - Creates parent directories if needed
+    - Writes output as it's received
+    - Supports both relative and absolute paths
+    - Overwrites existing file if present
+
+* ``--api-key TEXT``
+    OpenAI API key. Overrides OPENAI_API_KEY environment variable.
+    - Securely handled and not logged
+    - Not visible in process list
+    - Can be provided via environment variable for better security
+
 * ``--model TEXT``
     OpenAI model with Structured Outputs support (default: "gpt-4o-2024-08-06")
 
@@ -69,11 +82,6 @@ Optional Arguments
     - Applies to both streaming and validation
     - Adjust for large responses
 
-* ``--output-file PATH``
-    Write JSON output to file instead of stdout.
-    - Creates parent directories if needed
-    - Writes output as it's received
-
 * ``--verbose``
     Enable detailed logging including:
     - Token usage statistics
@@ -85,10 +93,6 @@ Optional Arguments
     - Schema validation: Checks JSON Schema Draft 7 compliance
     - Response validation: Ensures response matches schema
     - Type validation: Verifies data types and constraints
-
-* ``--api-key TEXT``
-    OpenAI API key. Overrides OPENAI_API_KEY environment variable.
-    Warning: Key might be visible in process list or shell history.
 
 Streaming Behavior
 ----------------
@@ -105,7 +109,7 @@ All responses are streamed by default:
 * Error Handling
     - StreamBufferError for buffer overflow
     - StreamParseError after 5 failed parse attempts
-    - StreamInterruptedError for network issues
+    - StreamInterruptedError for network issues and connection problems
     - ValidationError for schema violations
     - Automatic resource cleanup on errors
     - Detailed error messages with context
@@ -127,19 +131,19 @@ The CLI uses efficient buffer management for streaming responses:
     - Default cleanup threshold: 512KB
     - Default chunk size: 8KB
     - Automatic cleanup when buffer exceeds threshold
-    - Buffer overflow protection with clear error messages
+    - StreamBufferError protection with clear error messages
 
 * Cleanup Strategy
     - Uses ijson for efficient JSON parsing and finding complete objects
-    - Fallback to pattern matching if ijson parsing fails
-    - Maximum 3 cleanup attempts before overflow error
+    - Fallback to regex pattern matching for partial JSON objects
+    - Maximum 3 cleanup attempts before StreamBufferError
     - Tracks cleanup statistics for debugging
     - Preserves partial valid responses when possible
 
 * Error Handling
-    - BufferOverflowError when size exceeds limit
+    - StreamBufferError when size exceeds limit
     - StreamParseError after 5 failed parse attempts
-    - StreamInterruptedError for network issues
+    - StreamInterruptedError for network and connection issues
     - Automatic resource cleanup on errors
 
 * Memory Efficiency
@@ -188,6 +192,7 @@ The CLI validates model versions to ensure compatibility with OpenAI Structured 
 * Version Format: ``{base_model}-{YYYY}-{MM}-{DD}``
     * Example: ``gpt-4o-2024-08-06``
     * Validation regex: ``^[\w-]+?-\d{4}-\d{2}-\d{2}$``
+    * Supports hyphens and underscores in base model name
 
 * Alias Resolution
     * Aliases automatically use latest compatible version
@@ -216,11 +221,14 @@ Response Validation
 * Required field validation
 * Array and object validation
 * Detailed error messages with context
-* Validation occurs after each complete object in stream
+* Real-time validation of each complete object in stream
+* Immediate error reporting for validation failures
 
 Error Types
 ~~~~~~~~~~
 
+* APIResponseError (API response errors with response ID and content)
+* ModelVersionError (invalid or unsupported model versions)
 * Schema validation errors (invalid schema format)
 * JSON parse errors (with position and context)
 * Type mismatches (wrong data type)
@@ -228,8 +236,8 @@ Error Types
 * Invalid field values
 * Token limit errors (input too long, output limit exceeded)
 * Stream parse errors (after 5 attempts)
-* Buffer overflow errors
-* Stream interruption errors
+* StreamBufferError (buffer size exceeded)
+* StreamInterruptedError (network issues)
 
 Exit Codes
 ---------

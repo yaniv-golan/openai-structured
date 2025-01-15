@@ -32,7 +32,7 @@ The client module provides functions for working with OpenAI Structured Outputs,
 Functions
 ~~~~~~~~~
 
-.. function:: async_openai_structured_stream(messages: List[ChatCompletionMessageParam], schema: Dict[str, Any], *, model: str = "gpt-4o", temperature: float = 0.0, max_tokens: Optional[int] = None, top_p: float = 1.0, frequency_penalty: float = 0.0, presence_penalty: float = 0.0, timeout: float = 60.0, stream_config: Optional[StreamConfig] = None, validate_schema: bool = True, on_log: Optional[Callable[[LogEvent], None]] = None) -> AsyncGenerator[Dict[str, Any], None]
+.. function:: async_openai_structured_stream(*, messages: List[Dict[str, str]], schema: Dict[str, Any], model: str = "gpt-4o", temperature: float = 0.0, max_tokens: Optional[int] = None, top_p: float = 1.0, frequency_penalty: float = 0.0, presence_penalty: float = 0.0, timeout: float = 60.0, stream_config: Optional[StreamConfig] = None, validate_schema: bool = True, on_log: Optional[Callable[[str, Any], Awaitable[None]]] = None) -> AsyncGenerator[Dict[str, Any], None]
 
     Make a streaming OpenAI API call using OpenAI Structured Outputs.
 
@@ -366,18 +366,26 @@ Basic Error Recovery
 
     from openai_structured import (
         APIResponseError, StreamBufferError, StreamInterruptedError,
-        StreamParseError, ValidationError, ModelNotSupportedError
+        StreamParseError, ValidationError, ModelNotSupportedError,
+        StreamBuffer
     )
+    from openai_structured.errors import TokenLimitError
     from openai import APIError, RateLimitError, APITimeoutError
 
     async def process_with_basic_recovery():
+        stream_config = StreamConfig(
+            max_buffer_size=1024 * 1024,  # 1MB
+            cleanup_threshold=512 * 1024   # 512KB
+        )
+        buffer = StreamBuffer(config=stream_config)
+        
         try:
             async for chunk in async_openai_structured_stream(
-                client=client,
                 model="gpt-4o",
                 output_schema=OutputSchema,
                 system_prompt="Analyze this",
-                user_prompt="Sample text"
+                user_prompt="Sample text",
+                stream_config=stream_config
             ):
                 process_chunk(chunk)
 
@@ -407,24 +415,6 @@ Basic Error Recovery
             # Handle API response issues with detailed info
             print(f"API Response Error (ID: {e.response_id})")
             print(f"Response content: {e.content}")
-            
-        except APITimeoutError:
-            # Handle timeouts differently from other API errors
-            print("Request timed out. Consider adjusting the timeout value")
-            
-        except RateLimitError as e:
-            # Handle rate limiting with retry logic
-            print(f"Rate limited: {e}")
-            print("Waiting before retry...")
-            await asyncio.sleep(30)
-            
-        except APIError as e:
-            # Handle other API errors
-            print(f"API error: {e}")
-            
-        finally:
-            # Always clean up resources
-            await client.close()
 
 Advanced Error Recovery
 ^^^^^^^^^^^^^^^^^^^
@@ -766,10 +756,10 @@ Example logging implementation::
     import logging
     logger = logging.getLogger(__name__)
 
-    def log_callback(event: LogEvent):
+    async def log_callback(event: LogEvent, level: str):
         # All events are automatically redacted for security
         if event.type == "error":
-            logger.error("Error: %s", event.data)  # API keys and auth data redacted
+            logger.error("Error: %s", event.data, exc_info=True)  # API keys and auth data redacted
         elif event.type == "buffer.size":
             logger.info("Buffer size: %d bytes", event.data["size"])
         elif event.type == "cleanup.stats":
@@ -778,7 +768,6 @@ Example logging implementation::
             logger.debug("Event %s: %s", event.type, event.data)
 
     async for chunk in async_openai_structured_stream(
-        client=client,
         model="gpt-4o-2024-08-06",
         output_schema=OutputSchema,
         system_prompt="Analyze this text",

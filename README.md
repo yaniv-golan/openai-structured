@@ -63,7 +63,7 @@ poetry shell
 The CLI provides a powerful way to make structured API calls from the command line:
 
 ```bash
-openai-structured \
+ostruct \
   --system-prompt "You are a helpful assistant" \
   --template "Analyze this text: {input}" \
   --file input=data.txt \
@@ -167,6 +167,7 @@ from openai_structured import (
     StreamBufferError,        # Buffer management issues
     StreamParseError,        # Stream parsing failures
     BufferOverflowError,     # Buffer size exceeded
+    TokenLimitError,         # ValueError: Token limit exceeded
 )
 
 try:
@@ -188,7 +189,7 @@ except OpenAIClientError as e:
 ```python
 from typing import List
 from openai import OpenAI
-from openai_structured import openai_structured_stream
+from openai_structured import async_openai_structured_stream
 from pydantic import BaseModel, Field
 
 class TodoItem(BaseModel):
@@ -205,7 +206,7 @@ class TodoList(BaseModel):
 client = OpenAI()  # Uses OPENAI_API_KEY environment variable
 
 # Process streamed response using OpenAI Structured Outputs
-async for result in openai_structured_stream(
+async for result in async_openai_structured_stream(
     client=client,
     model="gpt-4o-2024-08-06",
     output_schema=TodoList,
@@ -223,7 +224,7 @@ async for result in openai_structured_stream(
 Control streaming behavior with `StreamConfig`:
 
 ```python
-from openai_structured import StreamConfig, openai_structured_stream
+from openai_structured import StreamConfig, async_openai_structured_stream
 
 stream_config = StreamConfig(
     max_buffer_size=1024 * 1024,  # 1MB max buffer
@@ -231,7 +232,7 @@ stream_config = StreamConfig(
     chunk_size=8192,  # 8KB chunks
 )
 
-async for result in openai_structured_stream(
+async for result in async_openai_structured_stream(
     client=client,
     model="gpt-4o",
     output_schema=MySchema,
@@ -257,7 +258,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential())
 async def resilient_call():
-    async for result in openai_structured_stream(...):
+    async for result in async_openai_structured_stream(...):
         yield result
 ```
 
@@ -267,7 +268,7 @@ async def resilient_call():
 from asyncio_throttle import Throttler
 
 async with Throttler(rate_limit=100, period=60):
-    async for result in openai_structured_stream(...):
+    async for result in async_openai_structured_stream(...):
         process_result(result)
 ```
 
@@ -275,7 +276,7 @@ async with Throttler(rate_limit=100, period=60):
 
 ```python
 try:
-    async for result in openai_structured_stream(...):
+    async for result in async_openai_structured_stream(...):
         process_result(result)
 except StreamInterruptedError:
     handle_interruption()

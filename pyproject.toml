@@ -22,7 +22,7 @@ ijson = "^3.2.3"
 typing-extensions = "^4.9.0"
 
 [tool.poetry.scripts]
-ostruct = "openai_structured.cli:main"
+ostruct = "openai_structured.cli:cli_main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
