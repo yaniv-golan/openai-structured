@@ -21,7 +21,7 @@ Optional:
 * ``--model TEXT``: Model to use (default: gpt-4o-2024-08-06).
 * ``--temperature FLOAT``: Temperature for sampling (default: 0.0).
 * ``--max-tokens INTEGER``: Maximum tokens to generate (defaults to model-specific limit).
-* ``--validate-schema``: Validate response against schema.
+* ``--validate-schema``: Validate the JSON schema file and the response.
 * ``--verbose``: Enable verbose logging.
 
 Optional Arguments
@@ -89,10 +89,12 @@ Optional Arguments
     - Error context and stack traces
 
 * ``--validate-schema``
-    Validate both schema and response:
+    Validate both the JSON schema file and response:
     - Schema validation: Checks JSON Schema Draft 7 compliance
     - Response validation: Ensures response matches schema
     - Type validation: Verifies data types and constraints
+    - Raises validation error if schema or response is invalid
+    - Exits with code 1 on validation failure
 
 Streaming Behavior
 ----------------
@@ -126,32 +128,31 @@ Buffer Management
 
 The CLI uses efficient buffer management for streaming responses:
 
-* Buffer Size Control
+* Buffer Configuration
     - Default maximum buffer size: 1MB
     - Default cleanup threshold: 512KB
     - Default chunk size: 8KB
-    - Automatic cleanup when buffer exceeds threshold
-    - StreamBufferError protection with clear error messages
+    - Configurable via StreamConfig
 
-* Cleanup Strategy
-    - Uses ijson for efficient JSON parsing and finding complete objects
-    - Fallback to regex pattern matching for partial JSON objects
-    - Maximum 3 cleanup attempts before StreamBufferError
-    - Tracks cleanup statistics for debugging
-    - Preserves partial valid responses when possible
+* Cleanup Strategies
+    - ijson parsing for efficient JSON detection
+    - Pattern matching for partial JSON
+    - Maximum 3 cleanup attempts
+    - Error context tracking
+    - Cleanup statistics for debugging
 
 * Error Handling
-    - StreamBufferError when size exceeds limit
-    - StreamParseError after 5 failed parse attempts
-    - StreamInterruptedError for network and connection issues
-    - Automatic resource cleanup on errors
+    - BufferOverflowError for size limits
+    - ParseError for JSON parsing issues
+    - StreamBufferError for general buffer issues
+    - Automatic resource cleanup
+    - Detailed error messages with context
 
-* Memory Efficiency
-    - Chunk-based processing using write() method
-    - Content cache invalidation on write
-    - Automatic buffer reset after successful parse
-    - Total bytes tracking for size management
-    - Cleanup triggered at configurable threshold
+* Schema Validation
+    - Optional Pydantic model validation
+    - JSON syntax validation
+    - Error position tracking
+    - Validation error context
 
 Model Support
 ------------

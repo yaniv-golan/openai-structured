@@ -126,107 +126,67 @@ Classes
     Configuration for streaming behavior with OpenAI Structured Outputs.
 
     :param max_buffer_size: Maximum buffer size in bytes (default: 1MB)
-        - Minimum: 64KB
-        - Maximum: 1GB
-        - Recommended: 1-4MB for most uses
     :param cleanup_threshold: Buffer cleanup threshold in bytes (default: 512KB)
-        - Should be 40-60% of max_buffer_size
-        - Triggers cleanup of processed chunks
     :param chunk_size: Stream chunk size in bytes (default: 8KB)
-        - Minimum: 1KB
-        - Maximum: 64KB
-        - Affects throughput and latency
+    :param max_cleanup_attempts: Maximum number of cleanup attempts (default: 3)
+    :param max_parse_errors: Maximum number of parse errors before failing (default: 5)
+    :param log_size_threshold: Size change that triggers logging (default: 100KB)
 
     Example::
 
         config = StreamConfig(
-            max_buffer_size=2 * 1024 * 1024,  # 2MB
-            cleanup_threshold=1024 * 1024,     # 1MB
-            chunk_size=16 * 1024              # 16KB
+            max_buffer_size=1024 * 1024,  # 1MB
+            cleanup_threshold=512 * 1024,  # 512KB
+            chunk_size=8192               # 8KB
         )
 
 .. class:: StreamBuffer
 
-    Internal buffer management for streaming OpenAI Structured Outputs responses. Handles efficient chunk processing,
-    cleanup, and error recovery.
+    Internal buffer management for streaming OpenAI Structured Outputs responses.
 
     :param config: StreamConfig instance controlling buffer behavior
-    :param chunks: List of string chunks (default: empty list)
-    :param total_bytes: Current buffer size in bytes (default: 0)
-    :param cleanup_attempts: Number of cleanup attempts performed (default: 0)
-    :param parse_errors: Number of parse errors encountered (default: 0)
+    :param schema: Optional Pydantic model class for validation
 
     Attributes:
-        MAX_CLEANUP_ATTEMPTS: int = 3
-            Maximum number of cleanup attempts before raising an error
-        MAX_PARSE_ERRORS: int = 5
-            Maximum number of parse errors before giving up
-        LOG_SIZE_THRESHOLD: int = 100 * 1024
-            Size threshold (in bytes) for logging buffer size changes
-        _cleanup_stats: dict
-            Statistics about cleanup operations for debugging:
-            - attempts: Number of cleanup attempts
-            - bytes_before: Buffer size before cleanup
-            - bytes_after: Buffer size after cleanup
-            - success_rate: Percentage of successful cleanups
+        total_bytes: Current buffer size in bytes
+        parse_errors: Number of parse errors encountered
+        cleanup_attempts: Number of cleanup attempts performed
+        _cleanup_stats: Dictionary tracking cleanup operations:
+            - strategy: Cleanup strategy used (ijson_parsing or pattern_matching)
+            - cleaned_bytes: Number of bytes cleaned
+            - error_context: Context around errors when they occur
+            - validation_error: Details of validation errors
+            - json_error: Details of JSON parsing errors
 
     Methods:
         write(content: str) -> None
-            Write content to the buffer. Manages size limits and triggers cleanup.
-            Raises BufferOverflowError if size exceeds limit after cleanup attempts.
+            Write content to the buffer. Raises BufferOverflowError if size exceeds limit.
 
-        cleanup() -> bool
-            Attempt to clean the buffer by removing processed chunks.
-            Returns True if cleanup was successful in reducing buffer size.
+        process_stream_chunk(content: str, on_log: Optional[Callable]) -> Optional[Any]
+            Process a stream chunk and return parsed content if complete.
+
+        cleanup() -> None
+            Attempt to clean the buffer by finding and preserving valid JSON.
 
         reset() -> None
-            Reset the buffer to initial state. Clears all chunks and statistics.
+            Reset the buffer state while preserving configuration.
 
-        getvalue() -> str
-            Get the current buffer contents as a string.
-            Used internally for parsing attempts.
+        close() -> None
+            Close the buffer and clean up resources.
 
     Example::
 
-        buffer = StreamBuffer(config=StreamConfig(
-            max_buffer_size=2 * 1024 * 1024,  # 2MB
-            cleanup_threshold=1024 * 1024      # 1MB
-        ))
+        buffer = StreamBuffer(
+            config=StreamConfig(),
+            schema=MyPydanticModel
+        )
 
         try:
-            # Write chunks as they arrive
-            buffer.write(chunk)
-
-            # Check cleanup stats if needed
-            if buffer._cleanup_stats:
-                print(f"Cleanup attempts: {buffer._cleanup_stats['attempts']}")
-                print(f"Success rate: {buffer._cleanup_stats['success_rate']}%")
-
-        except BufferOverflowError as e:
-            print(f"Buffer exceeded size limit: {e}")
-            print(f"Last cleanup stats: {buffer._cleanup_stats}")
-
-    Buffer Management Strategy:
-        1. Chunks are accumulated until they can be parsed as valid JSON
-        2. When buffer size exceeds cleanup_threshold:
-           - Attempt to parse and remove processed chunks
-           - If parse succeeds, those chunks are removed
-           - If parse fails, keep accumulating
-        3. If size exceeds max_buffer_size:
-           - Make up to MAX_CLEANUP_ATTEMPTS cleanup attempts
-           - If cleanup fails, raise BufferOverflowError
-        4. Parse errors are tracked:
-           - Up to MAX_PARSE_ERRORS allowed
-           - Reset when successful parse occurs
-           - Helps distinguish between partial and invalid JSON
-
-    Cleanup Process:
-        1. Try to find complete JSON objects in buffer
-        2. If found, remove those objects and keep remainder
-        3. Update cleanup statistics for monitoring
-        4. If cleanup fails MAX_CLEANUP_ATTEMPTS times:
-           - Log detailed cleanup stats
-           - Raise BufferOverflowError with context
+            result = buffer.process_stream_chunk(chunk)
+            if result:
+                print(f"Valid data: {result}")
+        except BufferError as e:
+            print(f"Buffer error: {e}")
 
 Errors
 ------
@@ -460,7 +420,7 @@ Advanced Error Recovery
                     await self.handle_timeout()
 
                 except RateLimitError:
-                    # Wait before retry
+                    # Retry with increased wait time
                     await self.handle_rate_limit()
 
                 except APIResponseError as e:
