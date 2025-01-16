@@ -159,7 +159,7 @@ async def test_cli_validation_error() -> None:
         patch.object(Path, "open", create=True),
         patch("json.load", return_value={}),
         patch(
-            "openai_structured.cli.AsyncOpenAI",
+            "openai_structured.cli.cli.AsyncOpenAI",
             side_effect=Exception("Should not be called"),
         ),
         patch("sys.stdin.isatty", return_value=True),
@@ -246,7 +246,7 @@ async def test_cli_streaming_success() -> None:
         patch("builtins.open", create=True),
         patch("json.load", return_value=schema),
         patch("tiktoken.get_encoding", mock_get_encoding),
-        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
         patch.object(
             sys,
             "argv",
@@ -317,7 +317,7 @@ async def test_cli_streaming_interruption() -> None:
         patch.object(Path, "open", create=True),
         patch("json.load", return_value=schema),
         patch("builtins.open", create=True),
-        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
         patch("tiktoken.get_encoding") as mock_get_encoding,
         patch("sys.stdin.isatty", return_value=True),
     ):
@@ -379,7 +379,7 @@ async def test_cli_streaming_parse_error() -> None:
         patch.object(Path, "open", create=True),
         patch("json.load", return_value=schema),
         patch("builtins.open", create=True),
-        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
         patch("tiktoken.get_encoding") as mock_get_encoding,
         patch("sys.stdin.isatty", return_value=True),
     ):
@@ -445,7 +445,7 @@ async def test_cli_streaming_with_output_file() -> None:
         patch.object(Path, "open", create=True),
         patch("json.load", return_value=schema),
         patch("builtins.open", create=True),
-        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
         patch("tiktoken.get_encoding") as mock_get_encoding,
         patch.object(Path, "mkdir", create=True),
         patch("sys.stdin.isatty", return_value=True),
@@ -527,13 +527,13 @@ async def test_cli_api_error() -> None:
                 "gpt-4o",
                 "--api-key",
                 "test-key",
-                "--verbose",  # Enable verbose logging
+                "--verbose",
             ],
         ),
         patch.object(Path, "open", create=True),
         patch("json.load", return_value=schema),
         patch("builtins.open", create=True),
-        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
         patch("tiktoken.get_encoding") as mock_get_encoding,
         patch.dict(os.environ, {}, clear=True),
         patch("logging.getLogger") as mock_get_logger,
@@ -613,7 +613,7 @@ async def test_stdin_handling() -> None:
         ),
         patch("builtins.open", mock_open(read_data='{"type": "string"}')),
         patch("sys.stdin.isatty", return_value=False),
-        patch("openai_structured.cli.AsyncOpenAI", return_value=mock_client),
+        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
         patch("tiktoken.get_encoding") as mock_get_encoding,
     ):
         # Mock tiktoken

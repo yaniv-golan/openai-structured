@@ -56,8 +56,12 @@ try:
 except ImportError:
     HAVE_JSONSCHEMA = False
 
-from .client import async_openai_structured_stream, supports_structured_output
-from .errors import (
+from .. import (
+    StreamConfig,
+    async_openai_structured_stream,
+    supports_structured_output,
+)
+from ..errors import (
     APIResponseError,
     EmptyResponseError,
     InvalidResponseFormatError,

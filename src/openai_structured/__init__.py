@@ -17,6 +17,7 @@ from .client import (
     openai_structured_stream,
     supports_structured_output,
 )
+from .cli import ExitCode, main
 from .errors import (
     APIResponseError,
     BufferOverflowError,
@@ -45,6 +46,9 @@ __all__ = [
     "ModelVersion",
     # Utility functions
     "parse_model_version",
+    # CLI
+    "main",
+    "ExitCode",
     # Exceptions
     "OpenAIClientError",
     "ModelNotSupportedError",
