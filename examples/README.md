@@ -13,15 +13,6 @@ Demonstrates streaming with OpenAI Structured Outputs:
 - Progress tracking
 - Error handling
 
-### schema_validation.py
-
-Shows how to use Pydantic's validation features with OpenAI Structured Outputs:
-
-- Custom field types and validators
-- Complex nested models
-- Field constraints and descriptions
-- Schema validation errors
-
 ### error_handling.py
 
 Comprehensive error handling examples:

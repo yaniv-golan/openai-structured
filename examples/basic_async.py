@@ -8,33 +8,35 @@ from pydantic import BaseModel, Field
 from openai_structured import async_openai_structured_call
 
 
-class WeatherForecast(BaseModel):
-    """A structured weather forecast."""
+class Person(BaseModel):
+    """A simple person schema."""
 
-    temperature: float = Field(..., description="Temperature in Celsius")
-    conditions: str = Field(..., pattern="^(sunny|cloudy|rainy|snowy)$")
-    wind_speed: float = Field(..., ge=0, description="Wind speed in km/h")
-    humidity: int = Field(..., ge=0, le=100, description="Humidity percentage")
+    name: str = Field(..., description="Full name of the person")
+    age: int = Field(..., ge=0, le=120, description="Age in years")
+    occupation: str = Field(..., description="Current occupation or job title")
+    hobbies: list[str] = Field(..., min_items=1, max_items=5, description="List of hobbies (1-5 items)")
 
 
 async def main():
     """Run the basic async example."""
     client = AsyncOpenAI()
 
-    # Make a structured call to get weather forecast
-    forecast = await async_openai_structured_call(
+    # Make a structured call to get person info
+    person = await async_openai_structured_call(
         client=client,
         model="gpt-4o-2024-08-06",
-        system_prompt="You are a weather forecasting assistant.",
-        user_prompt="What's the weather forecast for Tokyo today?",
-        output_schema=WeatherForecast,
+        system_prompt="You are a helpful assistant that provides example person profiles.",
+        user_prompt="Generate a profile for a software engineer.",
+        output_schema=Person,
     )
 
-    print("\nWeather Forecast for Tokyo:")
-    print(f"Temperature: {forecast.temperature}°C")
-    print(f"Conditions: {forecast.conditions}")
-    print(f"Wind Speed: {forecast.wind_speed} km/h")
-    print(f"Humidity: {forecast.humidity}%")
+    print("\nPerson Profile:")
+    print(f"Name: {person.name}")
+    print(f"Age: {person.age}")
+    print(f"Occupation: {person.occupation}")
+    print("Hobbies:")
+    for hobby in person.hobbies:
+        print(f"- {hobby}")
 
 
 if __name__ == "__main__":
