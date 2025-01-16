@@ -340,6 +340,177 @@ def read_file(
         raise
 
 
+def summarize(
+    data: Sequence[Any], keys: Optional[Sequence[str]] = None
+) -> Dict[str, Any]:
+    """Generate summary statistics for data fields.
+
+    Args:
+        data: Sequence of dictionaries or objects to analyze
+        keys: Optional sequence of keys to analyze (default: all keys)
+
+    Returns:
+        Dictionary containing:
+        - total_records: Total number of records
+        - fields: Per-field statistics including type, unique values, null count,
+                 min/max (for numeric fields), and most common values
+
+    Raises:
+        ValueError: If data is empty or keys are invalid
+    """
+    if not data:
+        return {"total_records": 0, "fields": {}}
+
+    def get_field_value(item: Any, field: str) -> Any:
+        """Extract field value from dict or object safely."""
+        try:
+            if isinstance(item, dict):
+                return item.get(field)
+            return getattr(item, field, None)
+        except Exception:
+            return None
+
+    def get_field_type(values: List[Any]) -> str:
+        """Determine field type from non-null values."""
+        non_null = [v for v in values if v is not None]
+        if not non_null:
+            return "NoneType"
+
+        # Check if all values are of the same type
+        types = {type(v) for v in non_null}
+        if len(types) == 1:
+            return next(iter(types)).__name__
+
+        # Handle mixed numeric types
+        if all(isinstance(v, (int, float)) for v in non_null):
+            return "number"
+
+        # Default to most specific common ancestor type
+        return "mixed"
+
+    def analyze_field(field: str) -> Dict[str, Any]:
+        """Generate comprehensive field statistics."""
+        values = [get_field_value(x, field) for x in data]
+        non_null_values = [v for v in values if v is not None]
+
+        stats = {
+            "type": get_field_type(values),
+            "unique_values": len(set(non_null_values)),
+            "null_count": len(values) - len(non_null_values),
+            "total_count": len(values),
+        }
+
+        # Add numeric statistics if applicable
+        if stats["type"] in ("int", "float", "number"):
+            try:
+                numeric_values = [float(v) for v in non_null_values]
+                stats.update(
+                    {
+                        "min": min(numeric_values) if numeric_values else None,
+                        "max": max(numeric_values) if numeric_values else None,
+                        "mean": (
+                            sum(numeric_values) / len(numeric_values)
+                            if numeric_values
+                            else None
+                        ),
+                    }
+                )
+            except (ValueError, TypeError):
+                pass
+
+        # Add most common values (up to 5)
+        if non_null_values:
+            from collections import Counter
+
+            most_common = Counter(non_null_values).most_common(5)
+            stats["most_common"] = [
+                {"value": v, "count": c} for v, c in most_common
+            ]
+
+        return stats
+
+    try:
+        # Determine available keys if not provided
+        available_keys = keys or (
+            list(data[0].keys())
+            if isinstance(data[0], dict)
+            else [k for k in dir(data[0]) if not k.startswith("_")]
+        )
+
+        if not available_keys:
+            raise ValueError("No valid keys found in data")
+
+        return {
+            "total_records": len(data),
+            "fields": {key: analyze_field(key) for key in available_keys},
+        }
+    except Exception as e:
+        raise ValueError(f"Failed to analyze data: {str(e)}")
+
+
+def pivot_table(
+    data: Sequence[Dict[str, Any]],
+    index: str,
+    value: str,
+    aggfunc: str = "sum",
+) -> Dict[str, Dict[str, Any]]:
+    """Create a pivot table from data with specified index and value columns.
+
+    Args:
+        data: List of dictionaries containing the data
+        index: Column to use as index
+        value: Column to aggregate
+        aggfunc: Aggregation function (sum, mean, count)
+
+    Returns:
+        Dictionary containing aggregated results and metadata
+    """
+    if not data:
+        return {
+            "aggregates": {},
+            "metadata": {"total_records": 0, "null_index_count": 0},
+        }
+
+    # Count records with null index
+    null_index_count = sum(1 for row in data if row.get(index) is None)
+
+    # Group by index
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for row in data:
+        idx = row.get(index)
+        if idx is not None:
+            idx_str = str(idx)
+            if idx_str not in groups:
+                groups[idx_str] = []
+            groups[idx_str].append(row)
+
+    # Aggregate values
+    result: Dict[str, Dict[str, Any]] = {"aggregates": {}, "metadata": {}}
+
+    for idx, group in groups.items():
+        values = [
+            float(row[value]) for row in group if row.get(value) is not None
+        ]
+        if not values:
+            continue
+
+        if aggfunc == "sum":
+            result["aggregates"][idx] = {"value": sum(values)}
+        elif aggfunc == "mean":
+            result["aggregates"][idx] = {"value": sum(values) / len(values)}
+        elif aggfunc == "count":
+            result["aggregates"][idx] = {"count": len(values)}
+        else:
+            raise ValueError(f"Invalid aggfunc: {aggfunc}")
+
+    result["metadata"] = {
+        "total_records": len(data),
+        "null_index_count": null_index_count,
+    }
+
+    return result
+
+
 def render_template(template_str: str, context: Dict[str, Any]) -> str:
     """Render a Jinja2 template with the given context.
 
@@ -847,6 +1018,28 @@ def validate_token_limits(
         )
 
 
+def get_template_variables(template: Union[str, Template]) -> Set[str]:
+    """Extract all variable names from a Jinja2 template.
+
+    Args:
+        template: Either a string template or a Jinja2 Template object
+
+    Returns:
+        Set of variable names used in the template
+    """
+    # Always parse the template string to avoid issues with Template objects
+    if isinstance(template, str):
+        template_str = template
+    else:
+        # Fallback if ".source" is not available, converting the Template to a string
+        template_str = getattr(template, "source", str(template))
+
+    env = Environment()
+    parsed_content = env.parse(template_str)
+    variables = meta.find_undeclared_variables(parsed_content)
+    return variables
+
+
 class ExitCode(IntEnum):
     """Exit codes for the CLI."""
 
@@ -944,6 +1137,11 @@ async def _main() -> ExitCode:
         "--validate-schema",
         action="store_true",
         help="Validate the JSON schema file and the response",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate API call and show parameters without making the actual call",
     )
     parser.add_argument(
         "--api-key",
@@ -1067,6 +1265,30 @@ async def _main() -> ExitCode:
     except (ValueError, OpenAIClientError) as e:
         logger.error(str(e))
         return ExitCode.VALIDATION_ERROR
+
+    # Handle dry run mode
+    if args.dry_run:
+        logger.info("*** DRY RUN MODE - No API call will be made ***\n")
+        logger.info("System Prompt:\n%s\n", args.system_prompt)
+        logger.info("User Prompt:\n%s\n", user_prompt)
+        logger.info("Estimated Tokens: %s", total_tokens)
+        logger.info("Model: %s", args.model)
+        logger.info("Temperature: %s", args.temperature)
+
+        if args.max_tokens is not None:
+            logger.info("Max Tokens: %s", args.max_tokens)
+
+        logger.info("Top P: %s", args.top_p)
+        logger.info("Frequency Penalty: %s", args.frequency_penalty)
+        logger.info("Presence Penalty: %s", args.presence_penalty)
+
+        if args.validate_schema:
+            logger.info("Schema: Valid")
+
+        if args.output_file:
+            logger.info("Output would be written to: %s", args.output_file)
+
+        return ExitCode.SUCCESS
 
     # Create dynamic model for validation
     try:
@@ -1200,196 +1422,3 @@ __all__ = [
     "summarize",
     "pivot_table",
 ]
-
-
-def summarize(
-    data: Sequence[Any], keys: Optional[Sequence[str]] = None
-) -> Dict[str, Any]:
-    """Generate summary statistics for data fields.
-
-    Args:
-        data: Sequence of dictionaries or objects to analyze
-        keys: Optional sequence of keys to analyze (default: all keys)
-
-    Returns:
-        Dictionary containing:
-        - total_records: Total number of records
-        - fields: Per-field statistics including type, unique values, null count,
-                 min/max (for numeric fields), and most common values
-
-    Raises:
-        ValueError: If data is empty or keys are invalid
-    """
-    if not data:
-        return {"total_records": 0, "fields": {}}
-
-    def get_field_value(item: Any, field: str) -> Any:
-        """Extract field value from dict or object safely."""
-        try:
-            if isinstance(item, dict):
-                return item.get(field)
-            return getattr(item, field, None)
-        except Exception:
-            return None
-
-    def get_field_type(values: List[Any]) -> str:
-        """Determine field type from non-null values."""
-        non_null = [v for v in values if v is not None]
-        if not non_null:
-            return "NoneType"
-
-        # Check if all values are of the same type
-        types = {type(v) for v in non_null}
-        if len(types) == 1:
-            return next(iter(types)).__name__
-
-        # Handle mixed numeric types
-        if all(isinstance(v, (int, float)) for v in non_null):
-            return "number"
-
-        # Default to most specific common ancestor type
-        return "mixed"
-
-    def analyze_field(field: str) -> Dict[str, Any]:
-        """Generate comprehensive field statistics."""
-        values = [get_field_value(x, field) for x in data]
-        non_null_values = [v for v in values if v is not None]
-
-        stats = {
-            "type": get_field_type(values),
-            "unique_values": len(set(non_null_values)),
-            "null_count": len(values) - len(non_null_values),
-            "total_count": len(values),
-        }
-
-        # Add numeric statistics if applicable
-        if stats["type"] in ("int", "float", "number"):
-            try:
-                numeric_values = [float(v) for v in non_null_values]
-                stats.update(
-                    {
-                        "min": min(numeric_values) if numeric_values else None,
-                        "max": max(numeric_values) if numeric_values else None,
-                        "mean": (
-                            sum(numeric_values) / len(numeric_values)
-                            if numeric_values
-                            else None
-                        ),
-                    }
-                )
-            except (ValueError, TypeError):
-                pass
-
-        # Add most common values (up to 5)
-        if non_null_values:
-            from collections import Counter
-
-            most_common = Counter(non_null_values).most_common(5)
-            stats["most_common"] = [
-                {"value": v, "count": c} for v, c in most_common
-            ]
-
-        return stats
-
-    try:
-        # Determine available keys if not provided
-        available_keys = keys or (
-            list(data[0].keys())
-            if isinstance(data[0], dict)
-            else [k for k in dir(data[0]) if not k.startswith("_")]
-        )
-
-        if not available_keys:
-            raise ValueError("No valid keys found in data")
-
-        return {
-            "total_records": len(data),
-            "fields": {key: analyze_field(key) for key in available_keys},
-        }
-    except Exception as e:
-        raise ValueError(f"Failed to analyze data: {str(e)}")
-
-
-def pivot_table(
-    data: Sequence[Dict[str, Any]],
-    index: str,
-    value: str,
-    aggfunc: str = "sum",
-) -> Dict[str, Dict[str, Any]]:
-    """Create a pivot table from data with specified index and value columns.
-
-    Args:
-        data: List of dictionaries containing the data
-        index: Column to use as index
-        value: Column to aggregate
-        aggfunc: Aggregation function (sum, mean, count)
-
-    Returns:
-        Dictionary containing aggregated results and metadata
-    """
-    if not data:
-        return {
-            "aggregates": {},
-            "metadata": {"total_records": 0, "null_index_count": 0},
-        }
-
-    # Count records with null index
-    null_index_count = sum(1 for row in data if row.get(index) is None)
-
-    # Group by index
-    groups: Dict[str, List[Dict[str, Any]]] = {}
-    for row in data:
-        idx = row.get(index)
-        if idx is not None:
-            idx_str = str(idx)
-            if idx_str not in groups:
-                groups[idx_str] = []
-            groups[idx_str].append(row)
-
-    # Aggregate values
-    result: Dict[str, Dict[str, Any]] = {"aggregates": {}, "metadata": {}}
-
-    for idx, group in groups.items():
-        values = [
-            float(row[value]) for row in group if row.get(value) is not None
-        ]
-        if not values:
-            continue
-
-        if aggfunc == "sum":
-            result["aggregates"][idx] = {"value": sum(values)}
-        elif aggfunc == "mean":
-            result["aggregates"][idx] = {"value": sum(values) / len(values)}
-        elif aggfunc == "count":
-            result["aggregates"][idx] = {"count": len(values)}
-        else:
-            raise ValueError(f"Invalid aggfunc: {aggfunc}")
-
-    result["metadata"] = {
-        "total_records": len(data),
-        "null_index_count": null_index_count,
-    }
-
-    return result
-
-
-def get_template_variables(template: Union[str, Template]) -> Set[str]:
-    """Extract all variable names from a Jinja2 template.
-
-    Args:
-        template: Either a string template or a Jinja2 Template object
-
-    Returns:
-        Set of variable names used in the template
-    """
-    # Always parse the template string to avoid issues with Template objects
-    if isinstance(template, str):
-        template_str = template
-    else:
-        # Fallback if ".source" is not available, converting the Template to a string
-        template_str = getattr(template, "source", str(template))
-
-    env = Environment()
-    parsed_content = env.parse(template_str)
-    variables = meta.find_undeclared_variables(parsed_content)
-    return variables

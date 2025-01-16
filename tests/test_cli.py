@@ -78,27 +78,27 @@ def test_validate_template_placeholders_extended() -> None:
     {{ estimate_tokens(input, model='gpt-4') }}
     """
     validate_template_placeholders(template, {"input"})  # Should not raise
-    
+
     # Test valid template with filters and options
     template = """
     {{ input | process_code('python', 'html') }}
     {{ input | estimate_tokens(model='gpt-4') }}
     """
     validate_template_placeholders(template, {"input"})  # Should not raise
-    
+
     # Test valid template with nested functions and options
     template = """
     {{ process_code(read_file('test.txt', encoding='utf-8'), 'python', 'html') }}
     {{ estimate_tokens(read_file('test.txt'), model='gpt-4') }}
     """
     validate_template_placeholders(template, set())  # Should not raise
-    
+
     # Test invalid syntax
     template = "{{ {% }}"  # Invalid syntax
     with pytest.raises(ValueError) as exc_info:
         validate_template_placeholders(template, set())
     assert "Invalid template syntax" in str(exc_info.value)
-    
+
     # Test undefined variables
     template = "{{ undefined_var }}"
     with pytest.raises(ValueError) as exc_info:
@@ -636,7 +636,7 @@ def test_read_file_security() -> None:
     ):
         with pytest.raises(ValueError, match="Access denied"):
             read_file("../outside.txt")
-    
+
     # Test valid path
     with (
         patch("builtins.open", mock_open(read_data="test content")),
@@ -644,14 +644,14 @@ def test_read_file_security() -> None:
     ):
         content = read_file("test.txt")
         assert content == "test content"
-    
+
     # Test encoding error by simulating a file that raises UnicodeDecodeError when read
     mock = mock_open()
     handle = mock.return_value
     handle.read.side_effect = UnicodeDecodeError(
         "utf-8", b"test", 0, 1, "invalid byte"
     )
-    
+
     with (
         patch("builtins.open", mock),
         patch("os.path.getmtime", return_value=current_time),
@@ -680,3 +680,84 @@ def test_template_filters() -> None:
     assert "pass" in result
     assert "# comment" not in result
     assert "    This is a long text" in result
+
+
+@pytest.mark.asyncio
+async def test_cli_dry_run() -> None:
+    """Test dry run mode."""
+    schema_content = (
+        '{"type": "object", "properties": {"field": {"type": "string"}}}'
+    )
+    file_content = "test content"
+    template = "Content: {{ file1 }}"
+    system_prompt = "You are a helpful assistant"
+
+    # Mock file operations and logging
+    mock_schema = mock_open(read_data=schema_content)
+    mock_file = mock_open(read_data=file_content)
+
+    def mock_open_factory(filename: str, *args: Any, **kwargs: Any) -> Any:
+        if filename == "schema.json":
+            return mock_schema(filename, *args, **kwargs)
+        return mock_file(filename, *args, **kwargs)
+
+    info_messages = []
+
+    def info_handler(*args: Any, **kwargs: Any) -> None:
+        info_messages.append(" ".join(str(arg) for arg in args))
+
+    with (
+        patch("builtins.open", mock_open_factory),
+        patch("sys.stdin.isatty", return_value=True),
+        patch("logging.getLogger") as mock_logger,
+        patch("tiktoken.get_encoding") as mock_get_encoding,
+        patch.object(
+            sys,
+            "argv",
+            [
+                "ostruct",
+                "--system-prompt",
+                system_prompt,
+                "--template",
+                template,
+                "--schema-file",
+                "schema.json",
+                "--file",
+                "file1=input.txt",
+                "--dry-run",
+                "--validate-schema",
+                "--api-key",
+                "test-key",
+            ],
+        ),
+    ):
+        # Mock tiktoken
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]  # Mock token IDs
+        mock_get_encoding.return_value = mock_encoding
+
+        mock_logger.return_value.info = info_handler
+        mock_logger.return_value.debug = lambda *args, **kwargs: None
+        mock_logger.return_value.error = lambda *args, **kwargs: None
+
+        exit_code = await main()
+        assert exit_code == ExitCode.SUCCESS
+
+        # Print actual messages for debugging
+        print("\nActual log messages:")
+        for msg in info_messages:
+            print(f"  {msg}")
+
+        # Verify dry run output
+        assert any("DRY RUN MODE" in msg for msg in info_messages)
+        assert any("System Prompt:" in msg for msg in info_messages)
+        assert any("User Prompt:" in msg for msg in info_messages)
+        assert any("Content: test content" in msg for msg in info_messages)
+        assert any("Schema: Valid" in msg for msg in info_messages)
+        assert any(
+            "Model: %s gpt-4o-2024-08-06" in msg for msg in info_messages
+        )
+        assert any("Temperature: %s 0.0" in msg for msg in info_messages)
+        assert any("Top P: %s 1.0" in msg for msg in info_messages)
+        assert any("Frequency Penalty: %s 0.0" in msg for msg in info_messages)
+        assert any("Presence Penalty: %s 0.0" in msg for msg in info_messages)
