@@ -90,9 +90,10 @@ Required:
 --schema-file PATH     # JSON schema for response structure
 ```
 
-Input:
+Optional:
 
 ```bash
+--dry-run             # Simulate API call without making the actual request
 --file NAME=PATH      # File mapping (name=path), use multiple times
                       # Example: --file input=data.txt
 ```

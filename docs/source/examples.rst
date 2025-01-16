@@ -8,6 +8,32 @@ This section provides examples of common use cases for working with `OpenAI Stru
 Basic Examples
 ------------
 
+CLI Examples
+~~~~~~~~~~
+
+Testing with Dry Run
+^^^^^^^^^^^^^^^^^
+
+Use ``--dry-run`` to preview what the CLI would do without making an API call:
+
+.. code-block:: bash
+
+    ostruct \
+      --system-prompt "You are a helpful assistant that summarizes text." \
+      --template "Please summarize this text: {{ input }}" \
+      --schema-file schema.json \
+      --file input=document.txt \
+      --dry-run \
+      --validate-schema
+
+This will show:
+- The rendered system and user prompts
+- Estimated token count
+- Model parameters
+- Schema validation status
+- Output file path (if specified)
+- No API call will be made
+
 Movie Review Analysis
 ~~~~~~~~~~~~~~~~~~
 

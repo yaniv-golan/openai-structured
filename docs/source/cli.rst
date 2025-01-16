@@ -96,6 +96,16 @@ Optional Arguments
     - Raises validation error if schema or response is invalid
     - Exits with code 1 on validation failure
 
+* ``--dry-run``
+    Simulate API call and show parameters without making the actual call:
+    - Shows system prompt and rendered user prompt
+    - Displays estimated token count
+    - Shows all model parameters (temperature, top_p, etc.)
+    - Validates schema if --validate-schema is used
+    - Shows output file path if specified
+    - No API call is made, safe for testing
+    - Useful for verifying template rendering and configuration
+
 Streaming Behavior
 ----------------
 
