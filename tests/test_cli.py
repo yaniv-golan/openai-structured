@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
+import jinja2
 import pytest
 from openai import AsyncOpenAI, BadRequestError
 from pydantic import BaseModel
@@ -246,7 +247,9 @@ async def test_cli_streaming_success() -> None:
         patch("builtins.open", create=True),
         patch("json.load", return_value=schema),
         patch("tiktoken.get_encoding", mock_get_encoding),
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client
+        ),
         patch.object(
             sys,
             "argv",
@@ -317,7 +320,9 @@ async def test_cli_streaming_interruption() -> None:
         patch.object(Path, "open", create=True),
         patch("json.load", return_value=schema),
         patch("builtins.open", create=True),
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client
+        ),
         patch("tiktoken.get_encoding") as mock_get_encoding,
         patch("sys.stdin.isatty", return_value=True),
     ):
@@ -379,7 +384,9 @@ async def test_cli_streaming_parse_error() -> None:
         patch.object(Path, "open", create=True),
         patch("json.load", return_value=schema),
         patch("builtins.open", create=True),
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client
+        ),
         patch("tiktoken.get_encoding") as mock_get_encoding,
         patch("sys.stdin.isatty", return_value=True),
     ):
@@ -445,7 +452,9 @@ async def test_cli_streaming_with_output_file() -> None:
         patch.object(Path, "open", create=True),
         patch("json.load", return_value=schema),
         patch("builtins.open", create=True),
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client
+        ),
         patch("tiktoken.get_encoding") as mock_get_encoding,
         patch.object(Path, "mkdir", create=True),
         patch("sys.stdin.isatty", return_value=True),
@@ -533,7 +542,9 @@ async def test_cli_api_error() -> None:
         patch.object(Path, "open", create=True),
         patch("json.load", return_value=schema),
         patch("builtins.open", create=True),
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client
+        ),
         patch("tiktoken.get_encoding") as mock_get_encoding,
         patch.dict(os.environ, {}, clear=True),
         patch("logging.getLogger") as mock_get_logger,
@@ -613,7 +624,9 @@ async def test_stdin_handling() -> None:
         ),
         patch("builtins.open", mock_open(read_data='{"type": "string"}')),
         patch("sys.stdin.isatty", return_value=False),
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client
+        ),
         patch("tiktoken.get_encoding") as mock_get_encoding,
     ):
         # Mock tiktoken
@@ -675,7 +688,13 @@ def test_template_filters() -> None:
         "text": "This is a long text that needs to be wrapped and indented properly for formatting purposes.",
     }
 
-    result = render_template(template, context)
+    env = jinja2.Environment(
+        autoescape=True,
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+
+    result = render_template(template, context, jinja_env=env)
     assert "def test():" in result
     assert "pass" in result
     assert "# comment" not in result

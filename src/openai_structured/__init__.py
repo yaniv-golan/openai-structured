@@ -9,6 +9,7 @@ A Python library for structured output from OpenAI's API.
 """
 __version__ = "0.6.0"  # Follow Semantic Versioning
 
+from .cli.cli import ExitCode, main
 from .client import (
     StreamConfig,
     async_openai_structured_call,
@@ -17,7 +18,6 @@ from .client import (
     openai_structured_stream,
     supports_structured_output,
 )
-from .cli import ExitCode, main
 from .errors import (
     APIResponseError,
     BufferOverflowError,
