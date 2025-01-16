@@ -665,8 +665,9 @@ def test_read_file_security() -> None:
 def test_template_filters() -> None:
     """Test template filters."""
     template = """
-    {{ code | remove_comments | dedent }}
-    {{ text | wrap(80) | indent(4) }}
+    {%- set code = code | process_code -%}
+    {{ code }}
+    {{ text | wrap | indent }}
     """
 
     context = {
@@ -675,7 +676,7 @@ def test_template_filters() -> None:
     }
 
     result = render_template(template, context)
-        assert "def test():" in result
-        assert "pass" in result
+    assert "def test():" in result
+    assert "pass" in result
     assert "# comment" not in result
     assert "    This is a long text" in result
