@@ -14,7 +14,12 @@ class Person(BaseModel):
     name: str = Field(..., description="Full name of the person")
     age: int = Field(..., ge=0, le=120, description="Age in years")
     occupation: str = Field(..., description="Current occupation or job title")
-    hobbies: list[str] = Field(..., min_items=1, max_items=5, description="List of hobbies (1-5 items)")
+    hobbies: list[str] = Field(
+        ...,
+        min_items=1,
+        max_items=5,
+        description="List of hobbies (1-5 items)",
+    )
 
 
 async def main():
