@@ -424,7 +424,9 @@ Create reusable template hierarchies:
         {% if content is contains_code %}
             {%- filter indent %}
             Language: Python
-            {{ content|remove_comments|syntax_highlight('python') }}
+            {# Separate comment removal from syntax highlighting #}
+            {% set clean_code = content|strip_comments('python') %}
+            {{ clean_code|format_code('python', 'plain') }}
             {%- endfilter %}
         {% endif %}
     {% endblock %}
@@ -498,7 +500,9 @@ Complex template combining multiple features:
                 File: {{ name }}
                 {% if content is contains_code %}
                     {%- filter indent %}
-                    {{ content|remove_comments|syntax_highlight('python') }}
+                    {# Separate comment removal from syntax highlighting #}
+                    {% set clean_code = content|strip_comments('python') %}
+                    {{ clean_code|format_code('python', 'plain') }}
                     {%- endfilter %}
                 {% elif content is is_markdown %}
                     {%- filter indent %}
@@ -625,14 +629,17 @@ Generate and manage TOC:
 Code Blocks
 ~~~~~~~~~
 
-Process code blocks:
+Process code blocks with separate comment removal and syntax highlighting:
 
 .. code-block:: jinja
 
     {% set blocks = extract_code_blocks(content) %}
     {% for block in blocks %}
         Language: {{ block.lang }}
-        {{ block.code|process_code(block.lang, 'plain') }}
+        {# First strip comments if needed #}
+        {% set clean_code = block.code|strip_comments(block.lang) %}
+        {# Then apply syntax highlighting #}
+        {{ clean_code|format_code(block.lang, 'plain') }}
     {% endfor %}
 
 Complex Markdown Example
@@ -775,16 +782,21 @@ Generating Reports
     {{ pivot|dict_to_table }}
     '
 
-Template Filters and Globals
--------------------------
+Template Functions and Utilities
+==========================
 
-The CLI provides several template filters and globals for advanced text processing and data manipulation.
+The CLI provides a comprehensive set of template functions and utilities for data processing, formatting, and analysis. These functions are designed to be used within Jinja2 templates to manipulate and analyze data efficiently.
 
-Filters
-~~~~~~~
+Text Processing
+-------------
 
-* ``remove_comments(text)``
-    Remove comments from code
+* ``format_code(text, lang='python', format='terminal')``
+    Format and syntax highlight code (requires Pygments). If the language is not supported,
+    falls back to a generic text lexer. Does not modify comments.
+    
+* ``strip_comments(text, lang='python')``
+    Remove comments from code. If the language is not supported, returns the original text
+    with a warning. Supports common programming languages like Python, JavaScript, Java, etc.
     
 * ``dedent(text)``
     Remove common leading whitespace
@@ -798,9 +810,17 @@ Filters
 * ``indent(text, width=4)``
     Indent text by specified width
 
-Data Processing
-~~~~~~~~~~~~~
+Data Analysis
+-----------
 
+* ``pivot_table(data, index, value, aggfunc='sum')``
+    Create pivot tables with aggregation
+    Example: ``{{ data|pivot_table("category", "amount", "mean") }}``
+    
+* ``summarize(data, keys=None)``
+    Generate summary statistics
+    Example: ``{{ data|summarize(["age", "status"]) }}``
+    
 * ``sort_by(items, key)``
     Sort items by key
     
@@ -810,7 +830,7 @@ Data Processing
 * ``filter_by(items, key, value)``
     Filter items by key-value pair
     
-* ``pluck(items, key)``
+* ``extract_field(items, key)``
     Extract values for key
     
 * ``unique(items)``
@@ -823,13 +843,10 @@ Data Processing
     Calculate aggregate statistics
 
 Table Formatting
-~~~~~~~~~~~~~~
+-------------
 
 * ``table(headers, rows)``
     Create markdown table
-    
-* ``align_table(headers, rows, alignments)``
-    Create aligned markdown table
     
 * ``dict_to_table(data)``
     Convert dict to table
@@ -840,11 +857,11 @@ Table Formatting
 * ``auto_table(data)``
     Auto-format data as table
 
-Globals
-~~~~~~~
+Utility Functions
+--------------
 
-* ``estimate_tokens(text, model=None)``
-    Estimate token count using tiktoken
+* ``estimate_tokens(text)``
+    Estimate token count
     
 * ``format_json(obj)``
     Format JSON with indentation
@@ -854,34 +871,38 @@ Globals
     
 * ``validate_json(text)``
     Validate JSON string
+
+Best Practices
+------------
+
+When using template functions:
+
+1. For large code blocks (>1000 lines), use format='plain' with format_code
+2. Specify keys in summarize() for better performance with large datasets
+3. Use appropriate aggregation functions for your data size
+4. Consider chunking large datasets when using pivot_table
+
+Examples
+-------
+
+Data Analysis Report::
+
+    # Create detailed analysis report
+    $ cat data.json | ostruct process --template '
+    {% set data = from_json(_input) %}
     
-* ``count_tokens(text, model=None)``
-    Count tokens using tiktoken
-
-Template Functions
-----------------
-
-The template engine provides several functions for file operations and code processing:
-
-``read_file(path, encoding='utf-8', use_cache=True)``
-    Read file contents safely with path validation and caching
-    - Prevents directory traversal attacks
-    - Optional content caching for performance
-    - Example: ``{{ read_file('config.json') }}``
-
-``process_code(text, lang='python', format='terminal')``
-    Process code by removing comments and normalizing whitespace
-    - Removes comments and normalizes whitespace
-    - Example: ``{{ code|process_code('python', 'plain') }}``
-
-Progress Indicators
-----------------
-
-The CLI provides progress feedback during template rendering:
-
-- Visual progress bars when ``rich`` is installed
-- Fallback to simple logging when ``rich`` is not available
-- Configurable through environment variables:
-    - ``OSTRUCT_PROGRESS=0``: Disable progress indicators
-    - ``OSTRUCT_PROGRESS=1``: Enable progress indicators (default)
+    # Data Overview
+    {{ summarize(data)|dict_to_table }}
+    
+    # Key Metrics
+    {{ data|aggregate(["value", "count"])|dict_to_table }}
+    
+    # Distribution Analysis
+    {% set dist = data|extract_field("category")|frequency %}
+    {{ dist|dict_to_table }}
+    
+    # Pivot Analysis
+    {% set pivot = pivot_table(data, "category", "value", "mean") }}
+    {{ pivot|dict_to_table }}
+    '
 

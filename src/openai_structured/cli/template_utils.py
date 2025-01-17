@@ -1,5 +1,6 @@
 """Template utilities for the CLI."""
 
+# Standard library imports
 import datetime
 import itertools
 import json
@@ -7,14 +8,16 @@ import logging
 import os
 import re
 import textwrap
+from collections import Counter
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Sequence, Set, TypeVar, Union
 
+# Third-party imports
 import jinja2
 import tiktoken
 from jinja2 import Environment, Template, meta
 
-# Make jsonschema optional
+# Optional dependencies
 try:
     from jsonschema import Draft7Validator, SchemaError
 
@@ -22,6 +25,20 @@ try:
 except ImportError:
     HAVE_JSONSCHEMA = False
 
+try:
+    import pygments
+    from pygments.formatters import (
+        HtmlFormatter,
+        NullFormatter,
+        TerminalFormatter,
+    )
+    from pygments.lexers import TextLexer, get_lexer_by_name
+
+    HAVE_PYGMENTS = True
+except ImportError:
+    HAVE_PYGMENTS = False
+
+# Local imports
 from .progress import ProgressContext
 
 logger = logging.getLogger(__name__)
@@ -139,6 +156,207 @@ def read_file(
         raise
 
 
+def _format_markdown_table_row(cells: Sequence[Any]) -> str:
+    """Format a row of cells as a markdown table row."""
+    return f"| {' | '.join(str(cell) for cell in cells)} |"
+
+
+def _format_markdown_table_separator(
+    widths: Sequence[int], alignments: Optional[Sequence[str]] = None
+) -> str:
+    """Format markdown table separator row with optional alignments."""
+    if not alignments:
+        return f"| {' | '.join('-' * max(w, 3) for w in widths)} |"
+
+    markers = []
+    for w, a in zip(widths, alignments):
+        if a == "center":
+            markers.append(":---:")
+        elif a == "right":
+            markers.append("---:")
+        else:  # left or default
+            markers.append(":---")
+    return f"| {' | '.join(markers)} |"
+
+
+def strip_comments(text: str, lang: str = "python") -> str:
+    """Remove comments from code text based on language.
+
+    Args:
+        text: Code text to process
+        lang: Programming language
+
+    Returns:
+        Text with comments removed if language is supported,
+        otherwise returns original text with a warning
+    """
+    # Define comment patterns for different languages
+    single_line_comments = {
+        "python": "#",
+        "javascript": "//",
+        "typescript": "//",
+        "java": "//",
+        "c": "//",
+        "cpp": "//",
+        "go": "//",
+        "rust": "//",
+        "swift": "//",
+        "ruby": "#",
+        "perl": "#",
+        "shell": "#",
+        "bash": "#",
+        "php": "//",
+    }
+
+    multi_line_comments = {
+        "javascript": ("/*", "*/"),
+        "typescript": ("/*", "*/"),
+        "java": ("/*", "*/"),
+        "c": ("/*", "*/"),
+        "cpp": ("/*", "*/"),
+        "go": ("/*", "*/"),
+        "rust": ("/*", "*/"),
+        "swift": ("/*", "*/"),
+        "php": ("/*", "*/"),
+    }
+
+    # Return original text if language is not supported
+    if lang not in single_line_comments and lang not in multi_line_comments:
+        logger.debug(
+            f"Language '{lang}' is not supported for comment removal. "
+            f"Comments will be preserved in the output."
+        )
+        return text
+
+    lines = text.splitlines()
+    cleaned_lines = []
+
+    # Handle single-line comments
+    if lang in single_line_comments:
+        comment_char = single_line_comments[lang]
+        for line in lines:
+            # Remove inline comments
+            line = re.sub(f"\\s*{re.escape(comment_char)}.*$", "", line)
+            # Keep non-empty lines
+            if line.strip():
+                cleaned_lines.append(line)
+        text = "\n".join(cleaned_lines)
+
+    # Handle multi-line comments
+    if lang in multi_line_comments:
+        start, end = multi_line_comments[lang]
+        # Remove multi-line comments
+        text = re.sub(
+            f"{re.escape(start)}.*?{re.escape(end)}", "", text, flags=re.DOTALL
+        )
+
+    return text
+
+
+def format_json(obj: Any, indent: int = 2) -> str:
+    """Format JSON with indentation.
+
+    Args:
+        obj: Object to format as JSON
+        indent: Number of spaces for indentation
+
+    Returns:
+        Formatted JSON string
+    """
+    return json.dumps(obj, indent=indent, default=str)
+
+
+def format_table(
+    headers: Sequence[Any],
+    rows: Sequence[Sequence[Any]],
+    alignments: Optional[Sequence[str]] = None,
+) -> str:
+    """Format data as a markdown table with optional column alignments."""
+    header_widths = [max(3, len(str(h))) for h in headers]
+    header_row = _format_markdown_table_row(headers)
+    separator_row = _format_markdown_table_separator(header_widths, alignments)
+    data_rows = [_format_markdown_table_row(row) for row in rows]
+    return "\n".join([header_row, separator_row] + data_rows)
+
+
+def dict_to_table(data: Dict[Any, Any]) -> str:
+    """Convert a dictionary to a markdown table."""
+    headers = ["Key", "Value"]
+    rows = [[k, v] for k, v in data.items()]
+    return format_table(headers, rows)
+
+
+def list_to_table(
+    items: Sequence[Any], headers: Optional[Sequence[str]] = None
+) -> str:
+    """Convert a list to a markdown table."""
+    if not headers:
+        headers = ["#", "Value"]
+        rows: list[list[Any]] = [[i + 1, item] for i, item in enumerate(items)]
+    else:
+        rows = [[*row] for row in items]  # Convert each row to a list
+    return format_table(headers, rows)
+
+
+def format_code(
+    text: str,
+    lang: str = "python",
+    format: str = "terminal",
+) -> str:
+    """Format and syntax highlight code.
+
+    Args:
+        text: Code text to format
+        lang: Programming language for syntax highlighting
+        format: Output format ('terminal', 'html', or 'plain')
+
+    Returns:
+        Formatted code string
+
+    Raises:
+        ValueError: If format is not one of 'terminal', 'html', or 'plain'
+    """
+    if not text.strip():
+        logger.debug("Empty text provided to format_code")
+        return ""
+
+    if format not in ("terminal", "html", "plain"):
+        raise ValueError(
+            f"Invalid format: {format}. Must be 'terminal', 'html', or 'plain'"
+        )
+
+    if not HAVE_PYGMENTS:
+        logger.debug("Pygments not available, returning plain text")
+        return text
+
+    # Get lexer
+    try:
+        lexer = get_lexer_by_name(lang)
+    except Exception as e:
+        logger.debug(f"Using generic lexer for language '{lang}': {e}")
+        lexer = TextLexer()
+
+    # Get formatter
+    formatter: Union[
+        HtmlFormatter[str], TerminalFormatter[str], NullFormatter[str]
+    ]
+    if format == "html":
+        formatter = HtmlFormatter[str]()
+    elif format == "terminal":
+        formatter = TerminalFormatter[str]()
+    else:
+        formatter = NullFormatter[str]()
+
+    # Format code with error handling
+    try:
+        formatted = pygments.highlight(text, lexer, formatter)
+    except Exception as e:
+        logger.error(f"Failed to format code: {e}")
+        return text
+
+    return formatted
+
+
 def frequency(items: Sequence[T]) -> Dict[T, int]:
     """Count frequency of items in a sequence."""
     from collections import Counter
@@ -188,7 +406,7 @@ def unique(items: Sequence[Any]) -> List[Any]:
     return list(dict.fromkeys(items))
 
 
-def pluck(items: Sequence[Any], key: str) -> List[Any]:
+def extract_field(items: Sequence[Any], key: str) -> List[Any]:
     """Extract a specific field from each item."""
     return [
         x.get(key) if isinstance(x, dict) else getattr(x, key) for x in items
@@ -222,24 +440,70 @@ def pivot_table(
     value: str,
     aggfunc: str = "sum",
 ) -> Dict[str, Dict[str, Any]]:
-    """Create a pivot table from data with specified index and value columns."""
+    """Create a pivot table from data with specified index and value columns.
+
+    Args:
+        data: Sequence of dictionaries containing the data
+        index: Column to use as index
+        value: Column to aggregate
+        aggfunc: Aggregation function ('sum', 'mean', or 'count')
+
+    Returns:
+        Dictionary containing aggregated data and metadata
+
+    Raises:
+        ValueError: If aggfunc is invalid or if index/value columns don't exist
+    """
     if not data:
+        logger.debug("Empty data provided to pivot_table")
         return {
             "aggregates": {},
             "metadata": {"total_records": 0, "null_index_count": 0},
         }
 
+    # Validate aggfunc
+    valid_aggfuncs = {"sum", "mean", "count"}
+    if aggfunc not in valid_aggfuncs:
+        raise ValueError(
+            f"Invalid aggfunc: {aggfunc}. Must be one of {valid_aggfuncs}"
+        )
+
+    # Validate columns exist in first row
+    if data and (index not in data[0] or value not in data[0]):
+        missing = []
+        if index not in data[0]:
+            missing.append(f"index column '{index}'")
+        if value not in data[0]:
+            missing.append(f"value column '{value}'")
+        raise ValueError(f"Missing required columns: {', '.join(missing)}")
+
     # Count records with null index
     null_index_count = sum(1 for row in data if row.get(index) is None)
+    if null_index_count:
+        logger.warning(f"Found {null_index_count} rows with null index values")
 
     # Group by index
     groups: Dict[str, List[float]] = {}
+    invalid_values = 0
     for row in data:
         idx = str(row.get(index, ""))
-        val = float(row.get(value, 0))
+        try:
+            val = float(row.get(value, 0))
+        except (TypeError, ValueError):
+            invalid_values += 1
+            logger.warning(
+                f"Invalid value for {value} in row with index {idx}, using 0"
+            )
+            val = 0.0
+
         if idx not in groups:
             groups[idx] = []
         groups[idx].append(val)
+
+    if invalid_values:
+        logger.warning(
+            f"Found {invalid_values} invalid values in column {value}"
+        )
 
     result: Dict[str, Dict[str, Any]] = {"aggregates": {}, "metadata": {}}
     for idx, values in groups.items():
@@ -247,14 +511,13 @@ def pivot_table(
             result["aggregates"][idx] = {"value": sum(values)}
         elif aggfunc == "mean":
             result["aggregates"][idx] = {"value": sum(values) / len(values)}
-        elif aggfunc == "count":
+        else:  # count
             result["aggregates"][idx] = {"value": len(values)}
-        else:
-            raise ValueError(f"Invalid aggfunc: {aggfunc}")
 
     result["metadata"] = {
         "total_records": len(data),
         "null_index_count": null_index_count,
+        "invalid_values": invalid_values,
     }
     return result
 
@@ -262,16 +525,34 @@ def pivot_table(
 def summarize(
     data: Sequence[Any], keys: Optional[Sequence[str]] = None
 ) -> Dict[str, Any]:
-    """Generate summary statistics for data fields."""
+    """Generate summary statistics for data fields.
+
+    Args:
+        data: Sequence of dictionaries or objects to analyze
+        keys: Optional sequence of keys/attributes to analyze
+
+    Returns:
+        Dictionary containing summary statistics for each field
+
+    Raises:
+        ValueError: If data is empty or no valid keys are found
+        TypeError: If data items are not dictionaries or objects
+    """
     if not data:
+        logger.debug("Empty data provided to summarize")
         return {"total_records": 0, "fields": {}}
+
+    # Validate data type
+    if not isinstance(data[0], dict) and not hasattr(data[0], "__dict__"):
+        raise TypeError("Data items must be dictionaries or objects")
 
     def get_field_value(item: Any, field: str) -> Any:
         try:
             if isinstance(item, dict):
                 return item.get(field)
             return getattr(item, field, None)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Error accessing field {field}: {e}")
             return None
 
     def get_field_type(values: List[Any]) -> str:
@@ -293,8 +574,10 @@ def summarize(
         return "mixed"
 
     def analyze_field(field: str) -> Dict[str, Any]:
+        logger.debug(f"Analyzing field: {field}")
         values = [get_field_value(x, field) for x in data]
         non_null = [v for v in values if v is not None]
+
         stats = {
             "type": get_field_type(values),
             "total": len(values),
@@ -313,17 +596,22 @@ def summarize(
                         "avg": sum(nums) / len(nums) if nums else None,
                     }
                 )
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    f"Error calculating numeric stats for {field}: {e}"
+                )
 
         # Add most common values
         if non_null:
-            from collections import Counter
-
-            most_common = Counter(non_null).most_common(5)
-            stats["most_common"] = [
-                {"value": v, "count": c} for v, c in most_common
-            ]
+            try:
+                most_common = Counter(non_null).most_common(5)
+                stats["most_common"] = [
+                    {"value": str(v), "count": c} for v, c in most_common
+                ]
+            except TypeError as e:
+                logger.warning(
+                    f"Error calculating most common values for {field}: {e}"
+                )
 
         return stats
 
@@ -337,11 +625,18 @@ def summarize(
         if not available_keys:
             raise ValueError("No valid keys found in data")
 
-        return {
+        logger.debug(
+            f"Analyzing {len(data)} records with {len(available_keys)} fields"
+        )
+        result = {
             "total_records": len(data),
             "fields": {k: analyze_field(k) for k in available_keys},
         }
+        logger.debug("Analysis complete")
+        return result
+
     except Exception as e:
+        logger.error(f"Failed to analyze data: {e}", exc_info=True)
         raise ValueError(f"Failed to analyze data: {str(e)}")
 
 
@@ -359,6 +654,9 @@ def render_template(
 
     Returns:
         Rendered template string
+
+    Raises:
+        OSError: If template cannot be loaded or rendered
     """
     with ProgressContext("Rendering template", enabled=True) as progress:
         try:
@@ -459,105 +757,8 @@ def render_template(
                     )
                 )
 
-            def process_code(
-                text: str, lang: str = "python", format: str = "terminal"
-            ) -> str:
-                """Process code by removing comments and dedenting.
-
-                Args:
-                    text: Code to process
-                    lang: Language for syntax highlighting (unused)
-                    format: Output format (unused)
-
-                Returns:
-                    Processed code
-                """
-                processed = text
-                if processed := jinja_env.filters["remove_comments"](
-                    processed
-                ):
-                    processed = jinja_env.filters["dedent"](processed)
-                    return processed
-                return text
-
-            def format_prompt(text: str) -> str:
-                """Format prompt text with normalization, wrapping, and indentation."""
-                return str(
-                    jinja_env.filters["normalize"](text)
-                    | jinja_env.filters["wrap"](text, 80)
-                    | jinja_env.filters["indent"](text, 4)
-                )
-
             def escape_special(text: str) -> str:
                 return re.sub(r'([{}\[\]"\'\\])', r"\\\1", text)
-
-            def debug_format(obj: Any) -> str:
-                return (
-                    f"Type: {type(obj).__name__}\n"
-                    f"Length: {len(str(obj))}\n"
-                    f"Content: {str(obj)[:200]}..."
-                )
-
-            def format_table_cell(x: Any) -> str:
-                return str(x).replace("|", "\\|").replace("\n", "<br>")
-
-            def auto_table(data: Any) -> str:
-                """Convert data to a markdown table format."""
-                if isinstance(data, dict):
-                    return str(jinja_env.filters["dict_to_table"](data))
-                if isinstance(data, (list, tuple)):
-                    return str(jinja_env.filters["list_to_table"](data))
-                return str(data)
-
-            # Add custom filters
-            jinja_env.filters.update(
-                {
-                    "extract_keywords": extract_keywords,
-                    "word_count": word_count,
-                    "char_count": char_count,
-                    "to_json": to_json,
-                    "from_json": from_json,
-                    "remove_comments": remove_comments,
-                    "wrap": wrap_text,
-                    "indent": indent_text,
-                    "dedent": dedent_text,
-                    "normalize": normalize_text,
-                    "strip_markdown": strip_markdown,
-                    # Data processing filters
-                    "sort_by": sort_by,
-                    "group_by": group_by,
-                    "filter_by": filter_by,
-                    "pluck": pluck,
-                    "unique": unique,
-                    "frequency": frequency,
-                    "aggregate": aggregate,
-                    # Table formatting filters
-                    "table": format_table,
-                    "align_table": align_table,
-                    "dict_to_table": dict_to_table,
-                    "list_to_table": list_to_table,
-                    # Advanced content processing
-                    "process_code": process_code,
-                    "format_prompt": format_prompt,
-                    "escape_special": escape_special,
-                    "debug_format": debug_format,
-                }
-            )
-
-            def estimate_tokens(text: str, model: Optional[str] = None) -> int:
-                """Estimate tokens using tiktoken."""
-                try:
-                    if model:
-                        encoding = tiktoken.encoding_for_model(model)
-                    else:
-                        encoding = tiktoken.get_encoding("cl100k_base")
-                    return len(encoding.encode(text))
-                except Exception:
-                    # Fallback to basic estimation only if tiktoken fails
-                    return int(len(text.split()) * 1.3)
-
-            def format_json(obj: Any) -> str:
-                return json.dumps(obj, indent=2)
 
             def debug_print(x: Any) -> None:
                 print(f"DEBUG: {x}")
@@ -571,9 +772,6 @@ def render_template(
             def len_of(x: Any) -> Optional[int]:
                 return len(x) if hasattr(x, "__len__") else None
 
-            def create_prompt(template: str, **kwargs: Any) -> str:
-                return jinja_env.from_string(template).render(**kwargs)
-
             def validate_json(text: str) -> bool:
                 if not text:
                     return False
@@ -583,12 +781,71 @@ def render_template(
                 except json.JSONDecodeError:
                     return False
 
-            def count_tokens(text: str, model: Optional[str] = None) -> int:
-                """Count tokens using tiktoken."""
-                return estimate_tokens(text, model)  # Use same implementation
-
             def format_error(e: Exception) -> str:
                 return f"{type(e).__name__}: {str(e)}"
+
+            def estimate_tokens(text: str) -> int:
+                """Estimate the number of tokens in a text string."""
+                try:
+                    encoding = tiktoken.encoding_for_model("gpt-4")
+                    return len(encoding.encode(str(text)))
+                except Exception as e:
+                    logger.warning(f"Failed to estimate tokens: {e}")
+                    return len(str(text).split())
+
+            def format_json(obj: Any) -> str:
+                """Format JSON with indentation."""
+                return json.dumps(obj, indent=2, default=str)
+
+            def auto_table(data: Any) -> str:
+                """Automatically format data as a table based on its type."""
+                if isinstance(data, dict):
+                    return dict_to_table(data)
+                if isinstance(data, (list, tuple)):
+                    return list_to_table(data)
+                return str(data)
+
+            # Add custom filters
+            jinja_env.filters.update(
+                {
+                    "extract_keywords": extract_keywords,
+                    "word_count": word_count,
+                    "char_count": char_count,
+                    "to_json": format_json,
+                    "from_json": from_json,
+                    "remove_comments": remove_comments,
+                    "wrap": wrap_text,
+                    "indent": indent_text,
+                    "dedent": dedent_text,
+                    "normalize": normalize_text,
+                    "strip_markdown": strip_markdown,
+                    # Data processing filters
+                    "sort_by": sort_by,
+                    "group_by": group_by,
+                    "filter_by": filter_by,
+                    "extract_field": extract_field,
+                    "unique": unique,
+                    "frequency": frequency,
+                    "aggregate": aggregate,
+                    # Table formatting filters
+                    "table": format_table,
+                    "align_table": align_table,
+                    "dict_to_table": dict_to_table,
+                    "list_to_table": list_to_table,
+                    # Code processing filters
+                    "format_code": format_code,
+                    "strip_comments": strip_comments,
+                    # Special character handling
+                    "escape_special": escape_special,
+                    # Table utilities
+                    "auto_table": auto_table,
+                    # File utilities
+                    "read_file": read_file,
+                    # Code utilities
+                    "format_code": format_code,
+                    "strip_comments": strip_comments,
+                }
+            )
 
             # Add template globals
             jinja_env.globals.update(
@@ -600,23 +857,23 @@ def render_template(
                     "type_of": type_of,
                     "dir_of": dir_of,
                     "len_of": len_of,
-                    "create_prompt": create_prompt,
                     "validate_json": validate_json,
-                    "count_tokens": count_tokens,
                     "format_error": format_error,
                     # Data analysis globals
                     "summarize": summarize,
                     "pivot_table": pivot_table,
                     # Table utilities
-                    "format_table_cell": format_table_cell,
                     "auto_table": auto_table,
                     # File utilities
                     "read_file": read_file,
-                    "process_code": process_code,
+                    # Code utilities
+                    "format_code": format_code,
+                    "strip_comments": strip_comments,
                 }
             )
 
             # Create template from string or file
+            template: Optional[jinja2.Template] = None
             if template_str.endswith((".j2", ".jinja2", ".md")):
                 if not os.path.isfile(template_str):
                     raise OSError(f"Template file not found: {template_str}")
@@ -629,6 +886,9 @@ def render_template(
                     template = jinja_env.from_string(template_str)
                 except jinja2.TemplateSyntaxError as e:
                     raise OSError(f"Template syntax error: {str(e)}")
+
+            if template is None:
+                raise OSError("Failed to create template")
 
             # Add debug context
             template.globals["template_name"] = getattr(
@@ -645,17 +905,28 @@ def render_template(
 
             # Render template with error handling
             try:
+                # Attempt to render the template
                 return template.render(**context)
-            except jinja2.UndefinedError as e:
-                raise OSError(f"Undefined template variable: {str(e)}")
-            except jinja2.TemplateRuntimeError as e:
-                raise OSError(f"Template rendering error: {str(e)}")
-            except jinja2.TemplateError as e:
-                raise OSError(f"Template error: {str(e)}")
+            except (
+                jinja2.UndefinedError,
+                jinja2.TemplateRuntimeError,
+                jinja2.TemplateError,
+            ) as e:
+                # Convert all Jinja2 errors to OSError with specific messages
+                error_type = type(e).__name__.replace("Template", "")
+                raise OSError(f"Template {error_type.lower()}: {str(e)}")
+            except Exception as e:
+                # Convert any other exceptions to OSError
+                if isinstance(e, OSError):
+                    raise
+                raise OSError(f"Template processing error: {str(e)}")
 
-        except jinja2.TemplateError as e:
-            # Catch any other Jinja2 errors
-            raise OSError(f"Template error: {str(e)}")
+        except OSError:
+            # Re-raise OSError exceptions as is
+            raise
+        except Exception as e:
+            # Convert any other exceptions to OSError
+            raise OSError(f"Template processing error: {str(e)}")
 
 
 def validate_template_placeholders(
@@ -699,21 +970,21 @@ def validate_template_placeholders(
             "type_of",
             "dir_of",
             "len_of",
-            "create_prompt",
             "validate_json",
-            "count_tokens",
             "format_error",
+            # Data analysis functions
             "summarize",
             "pivot_table",
-            "format_table_cell",
+            # Table utilities
             "auto_table",
+            # File utilities
             "read_file",
-            "process_code",
+            "format_code",
             # Data processing functions
             "sort_by",
             "group_by",
             "filter_by",
-            "pluck",
+            "extract_field",
             "unique",
             "frequency",
             "aggregate",
@@ -729,14 +1000,13 @@ def validate_template_placeholders(
             "to_json",
             "from_json",
             "remove_comments",
+            "strip_comments",
             "wrap",
             "indent",
             "dedent",
             "normalize",
             "strip_markdown",
-            "format_prompt",
             "escape_special",
-            "debug_format",
         }
         variables = variables - builtin_vars
 
@@ -766,7 +1036,10 @@ def get_template_variables(template: Union[str, Template]) -> Set[str]:
         # Fallback if ".source" is not available, converting the Template to a string
         template_str = getattr(template, "source", str(template))
 
-    env = Environment()
+    # Create environment that allows undefined filters
+    env = Environment(undefined=jinja2.StrictUndefined)
+    env.filters["filter"] = lambda x: x  # Add dummy filter
+
     parsed_content = env.parse(template_str)
     variables = meta.find_undeclared_variables(parsed_content)
     return variables

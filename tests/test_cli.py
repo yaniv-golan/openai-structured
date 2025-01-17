@@ -75,21 +75,21 @@ def test_validate_template_placeholders_extended() -> None:
     # Test valid template with functions and options
     template = """
     {{ read_file('test.txt', encoding='utf-8', use_cache=True) }}
-    {{ process_code(input, 'python', 'plain') }}
+    {{ format_code(input, 'python', 'plain') }}
     {{ estimate_tokens(input, model='gpt-4') }}
     """
     validate_template_placeholders(template, {"input"})  # Should not raise
 
     # Test valid template with filters and options
     template = """
-    {{ input | process_code('python', 'html') }}
+    {{ input | format_code('python', 'html') }}
     {{ input | estimate_tokens(model='gpt-4') }}
     """
     validate_template_placeholders(template, {"input"})  # Should not raise
 
     # Test valid template with nested functions and options
     template = """
-    {{ process_code(read_file('test.txt', encoding='utf-8'), 'python', 'html') }}
+    {{ format_code(read_file('test.txt', encoding='utf-8'), 'python', 'html') }}
     {{ estimate_tokens(read_file('test.txt'), model='gpt-4') }}
     """
     validate_template_placeholders(template, set())  # Should not raise
@@ -678,7 +678,7 @@ def test_read_file_security() -> None:
 def test_template_filters() -> None:
     """Test template filters."""
     template = """
-    {%- set code = code | process_code -%}
+    {%- set code = code | strip_comments | format_code(format='plain') -%}
     {{ code }}
     {{ text | wrap | indent }}
     """
