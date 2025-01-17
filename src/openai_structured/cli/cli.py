@@ -34,6 +34,7 @@ from ..errors import (
     StreamInterruptedError,
     StreamParseError,
 )
+from .file_utils import TemplateValue, collect_files
 from .progress import ProgressContext
 from .template_utils import (
     SystemPromptError,
@@ -268,6 +269,33 @@ async def _main() -> ExitCode:
         help="File mapping in name=path format. Can be specified multiple times.",
     )
     parser.add_argument(
+        "--files",
+        action="append",
+        default=[],
+        help="Multiple file mapping in name=pattern format. Can be specified multiple times.",
+    )
+    parser.add_argument(
+        "--dir",
+        action="append",
+        default=[],
+        help="Directory mapping in name=path format. Can be specified multiple times.",
+    )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Process directories recursively.",
+    )
+    parser.add_argument(
+        "--ext",
+        help="Comma-separated list of file extensions to include (e.g. '.py,.js').",
+    )
+    parser.add_argument(
+        "--value",
+        action="append",
+        default=[],
+        help="Value mapping in name=value format. Can be specified multiple times.",
+    )
+    parser.add_argument(
         "--schema-file",
         required=True,
         help="Path to JSON schema file defining the response structure",
@@ -373,7 +401,7 @@ async def _main() -> ExitCode:
                 validate_json_schema(schema)
                 logger.debug("JSON Schema validation passed")
             except ValueError as e:
-                logger.error(str(e))
+                logger.error(f"Invalid JSON Schema: {e}")
                 return ExitCode.VALIDATION_ERROR
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in schema file: {e}")
@@ -382,30 +410,65 @@ async def _main() -> ExitCode:
         logger.error(f"Cannot read schema file '{args.schema_file}': {e}")
         return ExitCode.IO_ERROR
 
-    # Parse file mappings and handle stdin
-    file_mappings = {}
-    for mapping in args.file:
-        try:
-            name, value = mapping.split("=", 1)
-            if value.startswith(":"):  # Literal value syntax
-                file_mappings[name] = value[1:]  # Remove the : prefix
-            else:  # File path
-                with open(value, "r", encoding="utf-8") as f:
-                    file_mappings[name] = f.read()
-        except ValueError:
-            logger.error(f"Invalid file mapping: {mapping}")
-            return ExitCode.USAGE_ERROR
-        except OSError as e:
-            logger.error(f"Cannot read file '{value}': {e}")
-            return ExitCode.IO_ERROR
+    # Process file extensions
+    allowed_extensions = None
+    if args.ext:
+        allowed_extensions = {ext.strip() for ext in args.ext.split(",")}
 
-    # Read stdin if available
-    if not sys.stdin.isatty():
-        try:
-            file_mappings["stdin"] = sys.stdin.read()
-        except OSError as e:
-            logger.error(f"Cannot read from stdin: {e}")
-            return ExitCode.IO_ERROR
+    # Collect files and values
+    try:
+        # Collect files
+        file_mappings: Dict[str, TemplateValue] = collect_files(
+            file_args=args.file,
+            files_args=args.files,
+            dir_args=args.dir,
+            recursive=args.recursive,
+            allowed_extensions=allowed_extensions,
+            load_content=args.dry_run,
+        )
+
+        # Process values
+        for mapping in args.value:
+            try:
+                name, value = mapping.split("=", 1)
+                if not name:
+                    logger.error(f"Empty name in value mapping: {mapping}")
+                    if 'file_mappings' in locals():
+                        del file_mappings
+                    return ExitCode.USAGE_ERROR
+                file_mappings[name] = value
+            except ValueError:
+                logger.error(f"Invalid value mapping (expected name=value format): {mapping}")
+                if 'file_mappings' in locals():
+                    del file_mappings
+                return ExitCode.USAGE_ERROR
+
+        # Read stdin if available
+        if not sys.stdin.isatty():
+            try:
+                file_mappings["stdin"] = sys.stdin.read()
+            except OSError as e:
+                logger.error(f"Cannot read from stdin: {e}")
+                return ExitCode.IO_ERROR
+
+    except ValueError as e:
+        if "pattern" in str(e).lower():
+            logger.error(f"Invalid glob pattern in file collection: {str(e)}")
+        elif "directory" in str(e).lower():
+            logger.error(f"Directory error in file collection: {str(e)}")
+        elif "outside base directory" in str(e):
+            logger.error(f"Security error in file collection: {str(e)}")
+        else:
+            logger.error(f"File collection error: {str(e)}")
+        return ExitCode.USAGE_ERROR
+    except OSError as e:
+        if e.errno == 2:  # No such file or directory
+            logger.error(f"File or directory not found: {str(e)}")
+        elif e.errno == 13:  # Permission denied
+            logger.error(f"Permission denied accessing file: {str(e)}")
+        else:
+            logger.error(f"File system error: {str(e)}")
+        return ExitCode.IO_ERROR
 
     # Create Jinja2 environment for template parsing
     env = jinja2.Environment(
@@ -424,12 +487,18 @@ async def _main() -> ExitCode:
     template_vars = get_template_variables(template)
 
     # Read stdin if referenced in template
-    if "stdin" in template_vars and not sys.stdin.isatty():
-        try:
-            file_mappings["stdin"] = sys.stdin.read()
-        except OSError as e:
-            logger.error(f"Cannot read from stdin: {e}")
-            return ExitCode.IO_ERROR
+    if "stdin" in template_vars and "stdin" not in file_mappings:
+        if not sys.stdin.isatty():
+            try:
+                file_mappings["stdin"] = sys.stdin.read()
+            except OSError as e:
+                logger.error(f"Cannot read from stdin: {e}")
+                return ExitCode.IO_ERROR
+        else:
+            logger.error(
+                "Template references {{ stdin }} but no input provided on stdin"
+            )
+            return ExitCode.USAGE_ERROR
 
     # Validate template placeholders
     missing_files = [var for var in template_vars if var not in file_mappings]
@@ -438,20 +507,6 @@ async def _main() -> ExitCode:
             f"Template placeholders missing files: {', '.join(missing_files)}"
         )
         return ExitCode.VALIDATION_ERROR
-
-    # Handle stdin if referenced in template
-    if "stdin" in template_vars:
-        if not sys.stdin.isatty() and "stdin" not in file_mappings:
-            try:
-                file_mappings["stdin"] = sys.stdin.read()
-            except OSError as e:
-                logger.error(f"Cannot read from stdin: {e}")
-                return ExitCode.IO_ERROR
-        elif "stdin" not in file_mappings:
-            logger.error(
-                "Template references {{ stdin }} but no input provided on stdin"
-            )
-            return ExitCode.USAGE_ERROR
 
     # Validate template and build user prompt
     try:
@@ -526,6 +581,7 @@ async def _main() -> ExitCode:
 
         if args.output_file:
             logger.info("Output would be written to: %s", args.output_file)
+            return ExitCode.SUCCESS
 
         return ExitCode.SUCCESS
 

@@ -89,6 +89,7 @@ markers = [
     "live: mark test as a live test that should use real API key",
     "asyncio: mark test as requiring async loop",
 ]
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 target-version = "py39"

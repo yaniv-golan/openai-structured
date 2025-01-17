@@ -7,6 +7,7 @@ import pytest
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
+from pyfakefs.fake_filesystem_unittest import Patcher
 
 pytest_plugins = ["pytest_asyncio"]
 
@@ -35,6 +36,25 @@ def env_setup(
     # Only set test key for non-live tests
     else:
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+
+@pytest.fixture
+def fs(fs: Patcher) -> Patcher:
+    """Create a fake filesystem for testing.
+    
+    This fixture is automatically used by tests that have an fs parameter.
+    It provides a clean filesystem for each test, preventing interference
+    between tests.
+    
+    Args:
+        fs: The pyfakefs fixture
+        
+    Returns:
+        The pyfakefs Patcher object
+    """
+    # pyfakefs already sets up common system paths
+    # We can add any additional setup here if needed in the future
+    return fs
 
 
 class MockResponse(BaseModel):

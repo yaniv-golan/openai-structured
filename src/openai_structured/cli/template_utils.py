@@ -21,6 +21,7 @@ from typing import (
     TypeVar,
     Union,
 )
+import threading
 
 # Third-party imports
 import jinja2
@@ -52,8 +53,17 @@ except ImportError:
 
 # Local imports
 from .progress import ProgressContext
+from .file_utils import FileInfo
 
 logger = logging.getLogger(__name__)
+
+# Cache settings
+MAX_CACHE_SIZE = 50 * 1024 * 1024  # 50MB total cache size
+_cache_lock = threading.Lock()
+_file_mtimes: Dict[str, float] = {}
+_cache_size: int = 0
+
+T = TypeVar("T")
 
 
 def validate_json_schema(schema: Dict[str, Any]) -> None:
@@ -96,20 +106,25 @@ def validate_response(
         )
 
 
-_file_mtimes: Dict[str, float] = {}
-
-T = TypeVar("T")
-
-
 @lru_cache(maxsize=128)
 def _cached_read_file(full_path: str, encoding: str) -> str:
     """Cached file reading implementation.
 
     Note: Only successful reads are cached. Errors are always propagated.
     """
+    global _cache_size
     try:
         with open(full_path, "r", encoding=encoding) as f:
-            return f.read()
+            content = f.read()
+            # Update cache size atomically
+            content_size = len(content.encode('utf-8'))
+            with _cache_lock:
+                if _cache_size + content_size > MAX_CACHE_SIZE:
+                    # Clear cache if it would exceed limit
+                    _cached_read_file.cache_clear()
+                    _cache_size = 0
+                _cache_size += content_size
+            return content
     except UnicodeDecodeError as e:
         raise OSError(f"Failed to read file: {str(e)}")
 
@@ -146,18 +161,23 @@ def read_file(
             # Check if file was modified since last cache
             try:
                 current_mtime = os.path.getmtime(full_path)
-                if (
-                    full_path not in _file_mtimes
-                    or current_mtime > _file_mtimes[full_path]
-                ):
-                    _cached_read_file.cache_clear()
-                _file_mtimes[full_path] = current_mtime
+                with _cache_lock:
+                    if (
+                        full_path not in _file_mtimes
+                        or current_mtime > _file_mtimes[full_path]
+                    ):
+                        _cached_read_file.cache_clear()
+                        global _cache_size
+                        _cache_size = 0
+                    _file_mtimes[full_path] = current_mtime
 
                 return _cached_read_file(full_path, encoding)
             except OSError:
-                _cached_read_file.cache_clear()
-                if full_path in _file_mtimes:
-                    del _file_mtimes[full_path]
+                with _cache_lock:
+                    _cached_read_file.cache_clear()
+                    _cache_size = 0
+                    if full_path in _file_mtimes:
+                        del _file_mtimes[full_path]
                 raise
         else:
             with open(full_path, "r", encoding=encoding) as f:
@@ -313,28 +333,28 @@ def list_to_table(
 def format_code(
     text: str,
     lang: str = "python",
-    format: str = "terminal",
+    output_format: str = "terminal",
 ) -> str:
     """Format and syntax highlight code.
 
     Args:
         text: Code text to format
         lang: Programming language for syntax highlighting
-        format: Output format ('terminal', 'html', or 'plain')
+        output_format: Output format ('terminal', 'html', or 'plain')
 
     Returns:
         Formatted code string
 
     Raises:
-        ValueError: If format is not one of 'terminal', 'html', or 'plain'
+        ValueError: If output_format is not one of 'terminal', 'html', or 'plain'
     """
     if not text.strip():
         logger.debug("Empty text provided to format_code")
         return ""
 
-    if format not in ("terminal", "html", "plain"):
+    if output_format not in ("terminal", "html", "plain"):
         raise ValueError(
-            f"Invalid format: {format}. Must be 'terminal', 'html', or 'plain'"
+            f"Invalid format: {output_format}. Must be 'terminal', 'html', or 'plain'"
         )
 
     if not HAVE_PYGMENTS:
@@ -352,9 +372,9 @@ def format_code(
     formatter: Union[
         HtmlFormatter[str], TerminalFormatter[str], NullFormatter[str]
     ]
-    if format == "html":
+    if output_format == "html":
         formatter = HtmlFormatter[str]()
-    elif format == "terminal":
+    elif output_format == "terminal":
         formatter = TerminalFormatter[str]()
     else:
         formatter = NullFormatter[str]()
@@ -404,11 +424,22 @@ def aggregate(
 
 
 def sort_by(items: Sequence[T], key: str) -> List[T]:
-    """Sort items by a key, handling both dict and object attributes."""
-
+    """Sort items by a key, handling both dict and object attributes.
+    
+    Args:
+        items: Sequence of items to sort
+        key: Key or attribute name to sort by
+        
+    Returns:
+        Sorted list of items
+        
+    Note:
+        Missing keys/attributes will use 0 as the default value.
+    """
     def get_key(x: T) -> Any:
-        val = x.get(key) if isinstance(x, dict) else getattr(x, key)
-        return 0 if val is None else val
+        if isinstance(x, dict):
+            return x.get(key, 0)
+        return getattr(x, key, 0)
 
     return sorted(items, key=get_key)
 
@@ -419,30 +450,67 @@ def unique(items: Sequence[Any]) -> List[Any]:
 
 
 def extract_field(items: Sequence[Any], key: str) -> List[Any]:
-    """Extract a specific field from each item."""
+    """Extract a specific field from each item.
+    
+    Args:
+        items: Sequence of items to extract from
+        key: Key or attribute name to extract
+        
+    Returns:
+        List of extracted values
+        
+    Note:
+        Missing keys/attributes will return None.
+    """
     return [
-        x.get(key) if isinstance(x, dict) else getattr(x, key) for x in items
+        x.get(key) if isinstance(x, dict) else getattr(x, key, None)
+        for x in items
     ]
 
 
 def group_by(items: Sequence[T], key: str) -> Dict[Any, List[T]]:
-    """Group items by a key, handling both dict and object attributes."""
-    sorted_items = sort_by(items, key)
+    """Group items by a key, handling both dict and object attributes.
+    
+    Args:
+        items: Sequence of items to group
+        key: Key or attribute name to group by
+        
+    Returns:
+        Dictionary mapping key values to lists of items
+        
+    Note:
+        Missing keys/attributes will use None as the grouping value.
+    """
+    def safe_get_key(x: T) -> Any:
+        if isinstance(x, dict):
+            return x.get(key)
+        return getattr(x, key, None)
 
-    def get_key(x: T) -> Any:
-        return x.get(key) if isinstance(x, dict) else getattr(x, key)
-
+    sorted_items = sorted(items, key=safe_get_key)
     return {
-        k: list(g) for k, g in itertools.groupby(sorted_items, key=get_key)
+        k: list(g) for k, g in itertools.groupby(sorted_items, key=safe_get_key)
     }
 
 
 def filter_by(items: Sequence[T], key: str, value: Any) -> List[T]:
-    """Filter items by a key-value pair."""
+    """Filter items by a key-value pair.
+    
+    Args:
+        items: Sequence of items to filter
+        key: Key or attribute name to filter by
+        value: Value to match against
+        
+    Returns:
+        List of items where the key/attribute matches the value
+        
+    Note:
+        Missing keys/attributes will return None and be compared against the value.
+        This means if value is None, items missing the key/attribute will match.
+    """
     return [
         x
         for x in items
-        if (x.get(key) if isinstance(x, dict) else getattr(x, key)) == value
+        if (x.get(key) if isinstance(x, dict) else getattr(x, key, None)) == value
     ]
 
 
@@ -657,6 +725,8 @@ def render_template(
     context: Dict[str, Any],
     jinja_env: jinja2.Environment,
     progress_enabled: bool = True,
+    lazy_load: bool = True,
+    chunk_size: int = 1024 * 1024  # 1MB chunks
 ) -> str:
     """Render a Jinja2 template with the given context.
 
@@ -665,6 +735,8 @@ def render_template(
         context: Template variables
         jinja_env: Jinja2 environment to use for rendering
         progress_enabled: Whether to show progress indicators
+        lazy_load: Whether to use lazy loading for large files
+        chunk_size: Size of chunks when streaming large files
 
     Returns:
         Rendered template string
@@ -679,6 +751,29 @@ def render_template(
             if progress:
                 task = progress.add_task("Setting up environment")
                 progress.update(task, advance=1)
+
+            # Load file content for FileInfo objects
+            for key, value in context.items():
+                if isinstance(value, FileInfo):
+                    if not lazy_load or os.path.getsize(value.abs_path) < chunk_size:
+                        value.load_content()
+                elif isinstance(value, list) and value and isinstance(value[0], FileInfo):
+                    for file_info in value:
+                        if not lazy_load or os.path.getsize(file_info.abs_path) < chunk_size:
+                            file_info.load_content()
+
+            # Add streaming support to template environment
+            def stream_content(file_info: FileInfo) -> str:
+                if file_info.content is not None:
+                    return file_info.content
+                
+                chunks = []
+                with open(file_info.abs_path, 'r', encoding=file_info.encoding) as f:
+                    while chunk := f.read(chunk_size):
+                        chunks.append(chunk)
+                return ''.join(chunks)
+
+            jinja_env.globals['stream_content'] = stream_content
 
             def extract_keywords(text: str) -> List[str]:
                 return text.split()
@@ -951,77 +1046,53 @@ def validate_template_placeholders(
     """Validate that all placeholders in the template have corresponding files.
 
     Supports Jinja2 syntax including:
-    - Variable references: {{ var }}
+    - Variable references: {{ var }} and {{ var.attr }}
     - Control structures: {% if/for/etc %}
     - Comments: {# comment #}
     """
     try:
         env = jinja2.Environment()
         ast = env.parse(template)
-        variables = {
-            node.name
-            for node in ast.find_all(jinja2.nodes.Name)
-            if isinstance(node.name, str)
-        }
+        variables = set()
+        
+        # Helper to extract base variable name from dotted path
+        def get_base_var(node: jinja2.nodes.Node) -> Optional[str]:
+            if isinstance(node, jinja2.nodes.Name):
+                return node.name
+            elif isinstance(node, jinja2.nodes.Getattr):
+                # For x.y.z, recursively get the base name 'x'
+                return get_base_var(node.node)
+            return None
+
+        # Find all variable references including nested ones
+        for node in ast.find_all((jinja2.nodes.Name, jinja2.nodes.Getattr)):
+            if base_var := get_base_var(node):
+                variables.add(base_var)
 
         # Remove built-in Jinja2 variables and functions
         builtin_vars = {
             # Jinja2 builtins
-            "loop",
-            "self",
-            "range",
-            "dict",
-            "lipsum",
-            "cycler",
-            "namespace",
-            "super",
-            "varargs",
-            "kwargs",
-            "undefined",
+            "loop", "self", "range", "dict", "lipsum", "cycler",
+            "namespace", "super", "varargs", "kwargs", "undefined",
             # Template functions
-            "estimate_tokens",
-            "format_json",
-            "now",
-            "debug",
-            "type_of",
-            "dir_of",
-            "len_of",
-            "validate_json",
+            "estimate_tokens", "format_json", "now", "debug",
+            "type_of", "dir_of", "len_of", "validate_json",
             "format_error",
             # Data analysis functions
-            "summarize",
-            "pivot_table",
+            "summarize", "pivot_table",
             # Table utilities
             "auto_table",
             # File utilities
-            "read_file",
-            "format_code",
+            "read_file", "format_code",
             # Data processing functions
-            "sort_by",
-            "group_by",
-            "filter_by",
-            "extract_field",
-            "unique",
-            "frequency",
-            "aggregate",
+            "sort_by", "group_by", "filter_by", "extract_field",
+            "unique", "frequency", "aggregate",
             # Table formatting functions
-            "table",
-            "align_table",
-            "dict_to_table",
-            "list_to_table",
+            "table", "align_table", "dict_to_table", "list_to_table",
             # Content processing functions
-            "extract_keywords",
-            "word_count",
-            "char_count",
-            "to_json",
-            "from_json",
-            "remove_comments",
-            "strip_comments",
-            "wrap",
-            "indent",
-            "dedent",
-            "normalize",
-            "strip_markdown",
+            "extract_keywords", "word_count", "char_count",
+            "to_json", "from_json", "remove_comments", "strip_comments",
+            "wrap", "indent", "dedent", "normalize", "strip_markdown",
             "escape_special",
         }
         variables = variables - builtin_vars

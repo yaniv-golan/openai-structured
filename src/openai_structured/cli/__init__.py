@@ -12,6 +12,7 @@ from .cli import (
     get_default_token_limit,
     main,
 )
+from .file_utils import FileInfo, collect_files
 from .template_utils import (
     read_file,
     render_template,
@@ -31,4 +32,6 @@ __all__ = [
     "get_default_token_limit",
     "read_file",
     "validate_template_placeholders",
+    "FileInfo",
+    "collect_files",
 ]
