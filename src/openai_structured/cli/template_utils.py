@@ -10,12 +10,24 @@ import re
 import textwrap
 from collections import Counter
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Sequence, Set, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 # Third-party imports
 import jinja2
 import tiktoken
+import yaml
 from jinja2 import Environment, Template, meta
+from typing_extensions import TypedDict
 
 # Optional dependencies
 try:
@@ -1047,3 +1059,86 @@ def get_template_variables(template: Union[str, Template]) -> Set[str]:
     parsed_content = env.parse(template_str)
     variables = meta.find_undeclared_variables(parsed_content)
     return variables
+
+
+class TemplateMetadataError(ValueError):
+    """Base class for template metadata errors."""
+
+    pass
+
+
+class SystemPromptError(TemplateMetadataError):
+    """Error processing system prompt template."""
+
+    pass
+
+
+class TemplateMetadata(TypedDict, total=False):
+    """Type for template metadata from frontmatter."""
+
+    system_prompt: Optional[str]
+
+
+def extract_template_metadata(
+    template_content: str, context: Dict[str, Any], env: jinja2.Environment
+) -> Tuple[TemplateMetadata, str]:
+    """Extract and process template metadata from frontmatter.
+
+    Args:
+        template_content: The full template content including potential frontmatter
+        context: Template context for variable rendering
+        env: Jinja2 environment for rendering
+
+    Returns:
+        Tuple of (metadata dict, remaining template content)
+
+    Raises:
+        TemplateMetadataError: If frontmatter is invalid
+    """
+    frontmatter_match = re.match(
+        r"^---\s*\n(.*?)\n---\s*\n(.*)", template_content, re.DOTALL
+    )
+    if not frontmatter_match:
+        return TemplateMetadata(system_prompt=None), template_content
+
+    try:
+        metadata = yaml.safe_load(frontmatter_match.group(1))
+        if not isinstance(metadata, dict):
+            raise TemplateMetadataError(
+                "Frontmatter must be a YAML dictionary"
+            )
+
+        return TemplateMetadata(
+            system_prompt=metadata.get("system_prompt")
+        ), frontmatter_match.group(2)
+    except yaml.YAMLError as e:
+        raise TemplateMetadataError(f"Invalid YAML frontmatter: {e}")
+
+
+def extract_metadata(template_content: str) -> Optional[Dict[str, Any]]:
+    """Extract YAML frontmatter metadata from template content.
+
+    Args:
+        template_content: The template content to parse
+
+    Returns:
+        Dictionary containing metadata if found, None otherwise
+
+    Raises:
+        ValueError: If YAML frontmatter is invalid
+    """
+    # Match YAML frontmatter between --- delimiters
+    frontmatter_match = re.match(
+        r"^---\s*\n(.*?)\n---\s*\n", template_content, re.DOTALL
+    )
+    if not frontmatter_match:
+        return None
+
+    try:
+        # Parse YAML content
+        metadata = yaml.safe_load(frontmatter_match.group(1))
+        if not isinstance(metadata, dict):
+            raise ValueError("YAML frontmatter must be a dictionary")
+        return metadata
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML frontmatter: {e}")

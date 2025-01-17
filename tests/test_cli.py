@@ -1,5 +1,6 @@
 """Tests for the CLI implementation."""
 
+import json
 import os
 import sys
 import time
@@ -780,3 +781,186 @@ async def test_cli_dry_run() -> None:
         assert any("Top P: %s 1.0" in msg for msg in info_messages)
         assert any("Frequency Penalty: %s 0.0" in msg for msg in info_messages)
         assert any("Presence Penalty: %s 0.0" in msg for msg in info_messages)
+
+
+@pytest.mark.asyncio
+async def test_cli_template_system_prompt() -> None:
+    """Test CLI with system prompt from template."""
+    schema = {
+        "type": "object",
+        "properties": {"field": {"type": "string"}},
+    }
+
+    template_content = """---
+system_prompt: You are analyzing {{ language }} code.
+---
+Here's the code: {{ input }}"""
+
+    # Create mock stream
+    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
+        yield MagicMock(
+            choices=[MagicMock(delta=MagicMock(content='{"field": "test"}'))]
+        )
+
+    # Create mock completions
+    mock_completions = AsyncMock()
+    mock_completions.create = AsyncMock(return_value=mock_stream())
+
+    # Create mock chat
+    mock_chat = MagicMock()
+    mock_chat.completions = mock_completions
+
+    # Create mock client
+    mock_client = AsyncMock(spec=AsyncOpenAI)
+    mock_client.chat = mock_chat
+
+    # Mock file contents
+    file_contents = {
+        "template.txt": template_content,
+        "test.txt": "test code",
+        "language": "python",
+    }
+
+    def mock_open_factory(filename: str, *args: Any, **kwargs: Any) -> Any:
+        if filename == "schema.json":
+            return mock_open(read_data=json.dumps(schema))(
+                filename, *args, **kwargs
+            )
+        return mock_open(read_data=file_contents.get(filename, ""))(
+            filename, *args, **kwargs
+        )
+
+    # Set up debug logging
+    debug_logs = []
+
+    def debug_handler(*args: Any, **kwargs: Any) -> None:
+        debug_logs.append(" ".join(str(arg) for arg in args))
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli",
+                "--template",
+                "template.txt",
+                "--file",
+                "input=test.txt",
+                "--file",
+                "language=:python",
+                "--schema-file",
+                "schema.json",
+                "--model",
+                "gpt-4o",
+                "--verbose",
+            ],
+        ),
+        patch.object(Path, "open", create=True),
+        patch("json.load", return_value=schema),
+        patch("builtins.open", mock_open_factory),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client
+        ),
+        patch("tiktoken.get_encoding") as mock_get_encoding,
+        patch("sys.stdin.isatty", return_value=True),
+        patch("logging.getLogger") as mock_get_logger,
+    ):
+        # Set up logging to capture all messages
+        mock_logger = MagicMock()
+        mock_logger.debug.side_effect = debug_handler
+        mock_get_logger.return_value = mock_logger
+
+        # Mock tiktoken
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]
+        mock_get_encoding.return_value = mock_encoding
+
+        result = await main()
+        assert result == ExitCode.SUCCESS
+
+        # Print debug logs
+        print("\nDebug logs:")
+        for log in debug_logs:
+            print(f"  {log}")
+
+        # Verify system prompt was used from template
+        calls = mock_completions.create.mock_calls
+        assert len(calls) == 1
+        call_kwargs = calls[0].kwargs
+        assert (
+            call_kwargs["messages"][0]["content"]
+            == "You are analyzing python code."
+        )
+
+
+@pytest.mark.asyncio
+async def test_cli_ignore_template_prompt() -> None:
+    """Test CLI with ignore-template-prompt flag."""
+    schema = {
+        "type": "object",
+        "properties": {"field": {"type": "string"}},
+    }
+
+    template_content = """---
+system_prompt: Custom prompt that should be ignored
+---
+Here's the code: {{ input }}"""
+
+    # Create mock stream
+    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
+        yield MagicMock(
+            choices=[MagicMock(delta=MagicMock(content='{"field": "test"}'))]
+        )
+
+    # Create mock completions
+    mock_completions = AsyncMock()
+    mock_completions.create = AsyncMock(return_value=mock_stream())
+
+    # Create mock chat
+    mock_chat = MagicMock()
+    mock_chat.completions = mock_completions
+
+    # Create mock client
+    mock_client = AsyncMock(spec=AsyncOpenAI)
+    mock_client.chat = mock_chat
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli",
+                "--template",
+                "template.txt",
+                "--file",
+                "input=test.txt",
+                "--schema-file",
+                "schema.json",
+                "--model",
+                "gpt-4o",
+                "--ignore-template-prompt",
+            ],
+        ),
+        patch.object(Path, "open", create=True),
+        patch("json.load", return_value=schema),
+        patch("builtins.open", mock_open(read_data=template_content)),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI", return_value=mock_client
+        ),
+        patch("tiktoken.get_encoding") as mock_get_encoding,
+        patch("sys.stdin.isatty", return_value=True),
+    ):
+        # Mock tiktoken
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]
+        mock_get_encoding.return_value = mock_encoding
+
+        result = await main()
+        assert result == ExitCode.SUCCESS
+
+        # Verify default system prompt was used
+        calls = mock_completions.create.mock_calls
+        assert len(calls) == 1
+        call_kwargs = calls[0].kwargs
+        assert (
+            call_kwargs["messages"][0]["content"]
+            == "You are a helpful assistant."
+        )

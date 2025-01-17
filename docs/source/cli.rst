@@ -10,7 +10,18 @@ Arguments
 
 Required:
 
-* ``--system-prompt TEXT``: System prompt for the model.
+* ``--system-prompt TEXT``: System prompt for the model. If provided, overrides any system prompt in template.
+    - Optional: If not provided, will use template system prompt or default
+    - Can be provided via file or directly
+    - Takes precedence over template system prompt
+    - Example: ``--system-prompt "You are a code analyzer"``
+
+* ``--ignore-template-prompt``
+    Ignore system prompt from template even if present.
+    - Forces use of default system prompt if no CLI prompt
+    - Useful for overriding template prompts
+    - Example: ``--ignore-template-prompt``
+
 * ``--template TEXT``: Template with {{ file }} placeholders for input substitution using Jinja2.
 * ``--schema-file PATH``: JSON Schema file defining the expected response structure.
 
@@ -923,4 +934,29 @@ The CLI provides progress feedback during template rendering:
 - Configurable through command-line options:
     - ``--no-progress``: Disable progress indicators
     - By default, progress indicators are enabled
+
+Template System Prompts
+--------------------
+
+Templates can include a system prompt in YAML frontmatter:
+
+.. code-block:: yaml
+
+    ---
+    system_prompt: |
+      You are analyzing {{ language }} code.
+      Focus on {{ aspect }} aspects.
+    ---
+    Here's the code to analyze: {{ code }}
+
+System Prompt Resolution
+--------------------
+
+The system prompt is resolved in the following order:
+
+1. CLI argument (``--system-prompt``) if provided
+2. Template frontmatter if present and not ignored
+3. Default prompt: "You are a helpful assistant."
+
+The ``--ignore-template-prompt`` flag skips step 2.
 

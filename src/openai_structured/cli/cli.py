@@ -36,12 +36,21 @@ from ..errors import (
 )
 from .progress import ProgressContext
 from .template_utils import (
+    SystemPromptError,
+    TemplateMetadataError,
+    extract_metadata,
     get_template_variables,
     render_template,
     validate_json_schema,
     validate_response,
     validate_template_placeholders,
 )
+
+# Set up logging
+logger = logging.getLogger("ostruct")
+
+# Constants
+DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
 
 
 class ExitCode(IntEnum):
@@ -190,13 +199,62 @@ def validate_token_limits(
         )
 
 
+def process_system_prompt(
+    template_content: str,
+    cli_prompt: Optional[str],
+    context: Dict[str, Any],
+    env: jinja2.Environment,
+    ignore_template_prompt: bool = False,
+) -> str:
+    """Process the system prompt from template metadata or CLI argument."""
+    logger = logging.getLogger(__name__)
+    logger.debug("Processing system prompt with context: %s", context)
+
+    if cli_prompt:
+        logger.debug("Using CLI prompt: %s", cli_prompt)
+        return cli_prompt
+
+    if ignore_template_prompt:
+        logger.debug("Ignoring template prompt due to flag")
+        return DEFAULT_SYSTEM_PROMPT
+
+    try:
+        metadata = extract_metadata(template_content)
+        logger.debug("Extracted metadata: %s", metadata)
+        if metadata and "system_prompt" in metadata:
+            system_prompt = metadata["system_prompt"]
+            logger.debug("Found system prompt in metadata: %s", system_prompt)
+            try:
+                # Render the system prompt with the context
+                template = env.from_string(system_prompt)
+                rendered = template.render(**context)
+                logger.debug("Rendered system prompt: %s", rendered)
+                return rendered
+            except Exception as e:
+                logger.error("Failed to render system prompt: %s", e)
+                raise
+    except Exception as e:
+        logger.error("Failed to extract metadata: %s", e)
+        raise
+
+    logger.debug("Using default system prompt")
+    return DEFAULT_SYSTEM_PROMPT
+
+
 async def _main() -> ExitCode:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description="Make structured OpenAI API calls from the command line."
     )
     parser.add_argument(
-        "--system-prompt", required=True, help="System prompt for the model"
+        "--system-prompt",
+        required=False,
+        help="System prompt for the model. If provided, overrides any system prompt in template.",
+    )
+    parser.add_argument(
+        "--ignore-template-prompt",
+        action="store_true",
+        help="Ignore system prompt from template even if present.",
     )
     parser.add_argument(
         "--template",
@@ -328,14 +386,17 @@ async def _main() -> ExitCode:
     file_mappings = {}
     for mapping in args.file:
         try:
-            name, path = mapping.split("=", 1)
-            with open(path, "r", encoding="utf-8") as f:
-                file_mappings[name] = f.read()
+            name, value = mapping.split("=", 1)
+            if value.startswith(":"):  # Literal value syntax
+                file_mappings[name] = value[1:]  # Remove the : prefix
+            else:  # File path
+                with open(value, "r", encoding="utf-8") as f:
+                    file_mappings[name] = f.read()
         except ValueError:
             logger.error(f"Invalid file mapping: {mapping}")
             return ExitCode.USAGE_ERROR
         except OSError as e:
-            logger.error(f"Cannot read file '{path}': {e}")
+            logger.error(f"Cannot read file '{value}': {e}")
             return ExitCode.IO_ERROR
 
     # Read stdin if available
@@ -410,9 +471,30 @@ async def _main() -> ExitCode:
         logger.error(str(e))
         return ExitCode.VALIDATION_ERROR
 
+    # Process system prompt
+    try:
+        logger.debug(
+            "Reading template for system prompt from: %s", args.template
+        )
+        with open(args.template, "r", encoding="utf-8") as f:
+            template_content = f.read()
+        logger.debug("Template content read: %s", template_content)
+        logger.debug("File mappings for context: %s", file_mappings)
+        system_prompt = process_system_prompt(
+            template_content,
+            args.system_prompt,
+            file_mappings,
+            env,
+            args.ignore_template_prompt,
+        )
+        logger.debug("Final system prompt: %s", system_prompt)
+    except (TemplateMetadataError, SystemPromptError) as e:
+        logger.error(str(e))
+        return ExitCode.VALIDATION_ERROR
+
     # Estimate tokens and validate limits
     messages = [
-        {"role": "system", "content": args.system_prompt},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
     try:
@@ -426,7 +508,7 @@ async def _main() -> ExitCode:
     # Handle dry run mode
     if args.dry_run:
         logger.info("*** DRY RUN MODE - No API call will be made ***\n")
-        logger.info("System Prompt:\n%s\n", args.system_prompt)
+        logger.info("System Prompt:\n%s\n", system_prompt)
         logger.info("User Prompt:\n%s\n", user_prompt)
         logger.info("Estimated Tokens: %s", total_tokens)
         logger.info("Model: %s", args.model)
@@ -478,7 +560,7 @@ async def _main() -> ExitCode:
                 client=client,
                 model=args.model,
                 output_schema=model_class,
-                system_prompt=args.system_prompt,
+                system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
