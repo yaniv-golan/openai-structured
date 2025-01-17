@@ -1,6 +1,5 @@
 """Progress indicator utilities."""
 
-import os
 from contextlib import contextmanager
 from typing import Generator, Optional
 
@@ -22,11 +21,7 @@ def ProgressContext(
         description: Progress description
         enabled: Whether to show progress (default: True)
     """
-    if (
-        not enabled
-        or not RICH_AVAILABLE
-        or os.getenv("OSTRUCT_PROGRESS", "1") == "0"
-    ):
+    if not enabled or not RICH_AVAILABLE:
         yield None
         return
 

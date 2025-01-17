@@ -106,6 +106,13 @@ Optional Arguments
     - No API call is made, safe for testing
     - Useful for verifying template rendering and configuration
 
+* ``--no-progress``
+    Disable progress indicators:
+    - Turns off progress bars and spinners
+    - Reduces visual output
+    - Useful for scripting or CI/CD environments
+    - Progress indicators are enabled by default
+
 Streaming Behavior
 ----------------
 
@@ -905,4 +912,15 @@ Data Analysis Report::
     {% set pivot = pivot_table(data, "category", "value", "mean") }}
     {{ pivot|dict_to_table }}
     '
+
+Progress Indicators
+----------------
+
+The CLI provides progress feedback during template rendering:
+
+- Visual progress bars when ``rich`` is installed
+- Fallback to simple logging when ``rich`` is not available
+- Configurable through command-line options:
+    - ``--no-progress``: Disable progress indicators
+    - By default, progress indicators are enabled
 

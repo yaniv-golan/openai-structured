@@ -274,7 +274,12 @@ async def _main() -> ExitCode:
     parser.add_argument(
         "--validate-schema",
         action="store_true",
-        help="Validate the JSON schema file and the response",
+        help="Validate the JSON schema file and response",
+    )
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable progress indicators",
     )
     parser.add_argument(
         "--dry-run",
@@ -393,7 +398,10 @@ async def _main() -> ExitCode:
             args.template, set(file_mappings.keys())
         )
         user_prompt = render_template(
-            args.template, file_mappings, jinja_env=env
+            args.template,
+            file_mappings,
+            jinja_env=env,
+            progress_enabled=not args.no_progress,
         )
     except KeyError as e:
         logger.error(f"Template placeholder not found: {e}")

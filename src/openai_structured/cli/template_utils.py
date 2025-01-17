@@ -644,6 +644,7 @@ def render_template(
     template_str: str,
     context: Dict[str, Any],
     jinja_env: jinja2.Environment,
+    progress_enabled: bool = True,
 ) -> str:
     """Render a Jinja2 template with the given context.
 
@@ -651,6 +652,7 @@ def render_template(
         template_str: Template string or path to template file
         context: Template variables
         jinja_env: Jinja2 environment to use for rendering
+        progress_enabled: Whether to show progress indicators
 
     Returns:
         Rendered template string
@@ -658,7 +660,9 @@ def render_template(
     Raises:
         OSError: If template cannot be loaded or rendered
     """
-    with ProgressContext("Rendering template", enabled=True) as progress:
+    with ProgressContext(
+        "Rendering template", enabled=progress_enabled
+    ) as progress:
         try:
             if progress:
                 task = progress.add_task("Setting up environment")
