@@ -1,962 +1,362 @@
 .. Copyright (c) 2025 Yaniv Golan. All rights reserved.
 
 Command Line Interface
--------------------
+====================
 
-The ``ostruct`` command provides a CLI for working with `OpenAI Structured Outputs <https://platform.openai.com/docs/guides/function-calling>`_ using OpenAI models.
+The ``ostruct`` command line interface provides tools for making structured OpenAI API calls from the command line.
 
-Arguments
---------
+Basic Usage
+----------
 
-Required:
+.. code-block:: bash
 
-* ``--system-prompt TEXT``: System prompt for the model. If provided, overrides any system prompt in template.
-    - Optional: If not provided, will use template system prompt or default
-    - Can be provided via file or directly
-    - Takes precedence over template system prompt
-    - Example: ``--system-prompt "You are a code analyzer"``
+    ostruct--task template.j2 --file input=data.txt
 
-* ``--ignore-template-prompt``
-    Ignore system prompt from template even if present.
-    - Forces use of default system prompt if no CLI prompt
-    - Useful for overriding template prompts
-    - Example: ``--ignore-template-prompt``
+Security and File Access
+----------------------
 
-* ``--template TEXT``: Template with {{ file }} placeholders for input substitution using Jinja2.
-* ``--schema-file PATH``: JSON Schema file defining the expected response structure.
+By default, the CLI only allows access to files within the current working directory and temporary directories. To access files in other directories, use the ``--allowed-dir`` argument.
 
-Optional:
+**--allowed-dir**
+    Specify additional directories that the CLI can access. Can be used multiple times.
+    
+    - Direct specification:
+      
+      .. code-block:: bash
+      
+          ostruct --task template.j2 --dir data=/path/to/data --allowed-dir /path/to/data
+    
+    - Multiple directories:
+      
+      .. code-block:: bash
+      
+          ostruct --task template.j2 --allowed-dir /path/to/data --allowed-dir /another/dir
+    
+    - Using a file list (prefix with @):
+      
+      .. code-block:: bash
+      
+          ostruct --task template.j2 --allowed-dir @allowed_dirs.txt
+      
+      File format (allowed_dirs.txt):
+      
+      .. code-block:: text
+      
+          /path/to/data
+          /another/dir
+          # Lines starting with # are comments
+          /yet/another/dir
 
-* ``--file KEY=PATH``: File to read as input, can be specified multiple times.
-* ``--output-file PATH``: Write JSON output to file instead of stdout.
-* ``--model TEXT``: Model to use (default: gpt-4o-2024-08-06).
-* ``--temperature FLOAT``: Temperature for sampling (default: 0.0).
-* ``--max-tokens INTEGER``: Maximum tokens to generate (defaults to model-specific limit).
-* ``--validate-schema``: Validate the JSON schema file and the response.
-* ``--verbose``: Enable verbose logging.
+Security Considerations
+--------------------
 
-Optional Arguments
-~~~~~~~~~~~~~~~~~
+When using ``--allowed-dir``:
 
-* ``--file NAME=PATH``
-    Repeatable. Associates file contents with a name for template substitution.
-    Example: ``--file doc1=contract.txt --file doc2=terms.txt``
+- Only grant access to trusted directories necessary for your task
+- Avoid including sensitive system directories
+- Use absolute paths to prevent ambiguity
+- Consider using a file list (@) for better maintainability in production
+- Validate all paths before including them in allowed directories
 
-* ``--output-file PATH``
-    Write JSON output to file instead of stdout.
-    - Creates parent directories if needed
-    - Writes output as it's received
-    - Supports both relative and absolute paths
-    - Overwrites existing file if present
+The CLI implements several security measures:
 
-* ``--api-key TEXT``
-    OpenAI API key. Overrides OPENAI_API_KEY environment variable.
-    - Securely handled and not logged
-    - Not visible in process list
-    - Can be provided via environment variable for better security
+- Path traversal prevention
+- Base directory restrictions
+- Explicit directory allowlisting
+- File access validation
 
-* ``--model TEXT``
-    OpenAI model with Structured Outputs support (default: "gpt-4o-2024-08-06")
-
-* ``--temperature FLOAT``
-    Temperature for sampling (default: 0.0)
-    - Higher: More creative, varied outputs
-    - Lower: More focused, deterministic outputs
-    - Range: 0.0 to 2.0
-
-* ``--max-tokens INT``
-    Maximum tokens to generate. Set to 0 or negative to disable token limit checks.
-    Defaults to model-specific limit.
-    - Affects response length and cost
-    - Higher limits increase memory usage
-
-* ``--top-p FLOAT``
-    Top-p sampling parameter (default: 1.0)
-    - Controls output diversity
-    - Lower values: More focused
-    - Range: 0.0 to 1.0
-
-* ``--frequency-penalty FLOAT``
-    Frequency penalty parameter (default: 0.0)
-    - Controls repetition across all generated tokens
-    - Higher: Less repetition
-    - Range: -2.0 to 2.0
-
-* ``--presence-penalty FLOAT``
-    Presence penalty parameter (default: 0.0)
-    - Controls repetition based on token presence
-    - Higher: More topic changes
-    - Range: -2.0 to 2.0
-
-* ``--timeout FLOAT``
-    Timeout in seconds for API calls (default: 60.0)
-    - Applies to both streaming and validation
-    - Adjust for large responses
-
-* ``--verbose``
-    Enable detailed logging including:
-    - Token usage statistics
-    - API request/response details
-    - Error context and stack traces
-
-* ``--validate-schema``
-    Validate both the JSON schema file and response:
-    - Schema validation: Checks JSON Schema Draft 7 compliance
-    - Response validation: Ensures response matches schema
-    - Type validation: Verifies data types and constraints
-    - Raises validation error if schema or response is invalid
-    - Exits with code 1 on validation failure
-
-* ``--dry-run``
-    Simulate API call and show parameters without making the actual call:
-    - Shows system prompt and rendered user prompt
-    - Displays estimated token count
-    - Shows all model parameters (temperature, top_p, etc.)
-    - Validates schema if --validate-schema is used
-    - Shows output file path if specified
-    - No API call is made, safe for testing
-    - Useful for verifying template rendering and configuration
-
-* ``--no-progress``
-    Disable progress indicators:
-    - Turns off progress bars and spinners
-    - Reduces visual output
-    - Useful for scripting or CI/CD environments
-    - Progress indicators are enabled by default
-
-Streaming Behavior
+Arguments Reference
 ----------------
 
-All responses are streamed by default:
-
-* Response Processing
-    - Chunk-based processing with 8KB default chunk size
-    - JSON validation of complete objects
-    - Automatic buffer management
-    - Debug logging of significant size changes
-    - Resource cleanup on completion
-
-* Error Handling
-    - StreamBufferError for buffer overflow
-    - StreamParseError after 5 failed parse attempts
-    - StreamInterruptedError for network issues and connection problems
-    - ValidationError for schema violations
-    - Automatic resource cleanup on errors
-    - Detailed error messages with context
-
-* Resource Management
-    - Automatic buffer cleanup
-    - Connection closing in finally blocks
-    - Buffer reset after successful parse
-    - Proper error propagation
-    - Debug logging support
-
-Buffer Management
----------------
-
-The CLI uses efficient buffer management for streaming responses:
-
-* Buffer Configuration
-    - Default maximum buffer size: 1MB
-    - Default cleanup threshold: 512KB
-    - Default chunk size: 8KB
-    - Configurable via StreamConfig
-
-* Cleanup Strategies
-    - ijson parsing for efficient JSON detection
-    - Pattern matching for partial JSON
-    - Maximum 3 cleanup attempts
-    - Error context tracking
-    - Cleanup statistics for debugging
-
-* Error Handling
-    - BufferOverflowError for size limits
-    - ParseError for JSON parsing issues
-    - StreamBufferError for general buffer issues
-    - Automatic resource cleanup
-    - Detailed error messages with context
-
-* Schema Validation
-    - Optional Pydantic model validation
-    - JSON syntax validation
-    - Error position tracking
-    - Validation error context
-
-Model Support
-------------
-
-The following models support OpenAI Structured Outputs:
-
-Production Models (Recommended)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* ``gpt-4o-2024-08-06``: GPT-4 with OpenAI Structured Outputs
-    * 128K context window
-    * 16K output tokens
-    * Full JSON schema support
-    * Minimum version: 2024-08-06
-
-* ``gpt-4o-mini-2024-07-18``: Smaller GPT-4 variant with OpenAI Structured Outputs
-    * 128K context window
-    * 16K output tokens
-    * Minimum version: 2024-07-18
-
-* ``o1-2024-12-17``: Optimized for OpenAI Structured Outputs
-    * 200K context window
-    * 100K output tokens
-    * Minimum version: 2024-12-17
-
-Development Aliases
-~~~~~~~~~~~~~~~~~
-
-* ``gpt-4o``: Latest GPT-4 with OpenAI Structured Outputs
-* ``gpt-4o-mini``: Latest mini variant with OpenAI Structured Outputs
-* ``o1``: Latest model optimized for OpenAI Structured Outputs
-
-Version Validation
-~~~~~~~~~~~~~~~~
-
-The CLI validates model versions to ensure compatibility with OpenAI Structured Outputs:
-
-* Version Format: ``{base_model}-{YYYY}-{MM}-{DD}``
-    * Example: ``gpt-4o-2024-08-06``
-    * Validation regex: ``^[\w-]+?-\d{4}-\d{2}-\d{2}$``
-    * Supports hyphens and underscores in base model name
-
-* Alias Resolution
-    * Aliases automatically use latest compatible version
-    * Enforces minimum version requirements
-    * Clear error messages for version mismatches
-
-The ``--validate-schema`` option provides validation using JSON Schema Draft 7:
-
-Schema File Validation
-~~~~~~~~~~~~~~~~~~~~
-
-* JSON Schema Draft 7 compliance check using ``jsonschema`` package
-* Required properties validation
-* Type definitions (string, integer, number, boolean, array, object)
-* Basic constraints (minimum, maximum, pattern)
-* Array validation (minItems, maxItems)
-* Object property validation
-* Validation errors include path and message
-
-Response Validation
-~~~~~~~~~~~~~~~~~
-
-* JSON parsing validation
-* Schema compliance verification
-* Type checking against schema
-* Required field validation
-* Array and object validation
-* Detailed error messages with context
-* Real-time validation of each complete object in stream
-* Immediate error reporting for validation failures
-
-Error Types
-~~~~~~~~~~
-
-* APIResponseError (API response errors with response ID and content)
-* ModelVersionError (invalid or unsupported model versions)
-* Schema validation errors (invalid schema format)
-* JSON parse errors (with position and context)
-* Type mismatches (wrong data type)
-* Missing required fields
-* Invalid field values
-* Token limit errors (input too long, output limit exceeded)
-* Stream parse errors (after 5 attempts)
-* StreamBufferError (buffer size exceeded)
-* StreamInterruptedError (network issues)
-
-Exit Codes
----------
-
-The CLI uses these exit codes:
-
-* ``0`` (SUCCESS)
-    Command completed successfully
-
-* ``1`` (VALIDATION_ERROR)
-    - Schema validation failed
-    - Response validation failed
-    - Token limit exceeded (input too long or output limit exceeded)
-    - Invalid template
-    - Type mismatch
-    - Format error
-
-* ``2`` (USAGE_ERROR)
-    - Missing required arguments
-    - Invalid argument values
-    - File not found
-    - Permission denied
-    - Invalid configuration
-    - Schema error
-
-* ``3`` (API_ERROR)
-    - Authentication failed
-    - Rate limit exceeded
-    - Model not supported
-    - Network error
-    - Timeout
-    - Version error
-
-* ``4`` (IO_ERROR)
-    - File read/write error
-    - Directory creation failed
-    - Permission issues
-    - Disk space issues
-    - Network I/O
-    - Buffer overflow
-
-* ``5`` (UNKNOWN_ERROR)
-    - Unexpected exceptions
-    - Internal errors
-    - System errors
-    - Resource errors
-    - State errors
-
-* ``6`` (INTERRUPTED)
-    - User interrupted (Ctrl+C)
-    - Signal received
-    - Forced termination
-    - Cleanup triggered
-    - Resource release
-
-Examples
---------
-
-Basic Analysis
-~~~~~~~~~~~~~
-
-Analyze a text file with a custom schema::
-
-    # schema.json
-    {
-      "type": "object",
-      "properties": {
-        "summary": { "type": "string" },
-        "key_points": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "sentiment": {
-          "type": "string",
-          "enum": ["positive", "neutral", "negative"]
-        }
-      },
-      "required": ["summary", "key_points", "sentiment"]
-    }
-
-    ostruct \
-      --system-prompt "You are an expert analyst." \
-      --template "Analyze this text: {{ input }}" \
-      --schema-file schema.json \
-      --file input=document.txt \
-      --output-file analysis.json \
-      --verbose
-
-Multiple Files
-~~~~~~~~~~~~
-
-Compare two documents::
-
-    ostruct \
-      --system-prompt "You are a legal AI." \
-      --template "Compare these documents:\n1: {{ doc1 }}\n2: {{ doc2 }}" \
-      --schema-file comparison_schema.json \
-      --file doc1=contract1.txt \
-      --file doc2=contract2.txt \
-      --validate-schema
-
-Using stdin
-~~~~~~~~~~
-
-Process data from stdin::
-
-    cat data.txt | ostruct \
-      --system-prompt "Analyze this data" \
-      --template "Process this: {{ stdin }}" \
-      --schema-file schema.json \
-      --model gpt-4o \
-      --temperature 0.7
-
-### Using Jinja2 Templates
-
-The CLI supports comprehensive Jinja2 template features for advanced content processing.
-
-Line Statements and Comments
--------------------------
-
-Use line-based syntax for cleaner templates:
-
-.. code-block:: jinja
-
-    ## This is a line comment
-    # for item in items
-        {{ item }}
-    # endfor
-
-    ## Using line statements for control flow
-    # if content is multiline
-        {{ content|wrap(80)|indent(4) }}
-    # endif
-
-Whitespace Control
----------------
-
-Fine-grained control over template whitespace:
-
-.. code-block:: jinja
-
-    {%- if header %}
-    {{ header }}
-    {% endif -%}
-    
-    {#- Remove whitespace around this comment -#}
-    
-    {{- content|normalize -}}
-
-Block Scoping and Inheritance
---------------------------
-
-Create reusable template hierarchies:
-
-.. code-block:: jinja
-
-    {# base_analysis.j2 #}
-    {% block metadata %}
-    Generated: {{ now() }}
-    Analysis ID: {{ uuid() }}
-    {% endblock %}
-
-    {% block content %}{% endblock %}
-
-    {% block footer %}
-    Token count: {{ estimate_tokens(content) }}
-    {% endblock %}
-
-    {# code_analysis.j2 #}
-    {% extends "base_analysis.j2" %}
-    
-    {% block content %}
-        {% if content is contains_code %}
-            {%- filter indent %}
-            Language: Python
-            {# Separate comment removal from syntax highlighting #}
-            {% set clean_code = content|strip_comments('python') %}
-            {{ clean_code|format_code('python', 'plain') }}
-            {%- endfilter %}
-        {% endif %}
-    {% endblock %}
-
-Advanced Text Processing
----------------------
-
-Comprehensive text manipulation:
-
-.. code-block:: jinja
-
-    {# Text wrapping and indentation #}
-    {{ long_text|wrap(80)|indent(4) }}
-    
-    {# Clean up text #}
-    {{ messy_text|dedent|normalize }}
-    
-    {# Format documentation #}
-    {% if content is is_markdown %}
-        Clean text: {{ content|strip_markdown }}
-    {% endif %}
-
-Environment and File Operations
----------------------------
-
-Access system information and files:
-
-.. code-block:: jinja
-
-    API Key: {{ env('OPENAI_API_KEY', '[not set]') }}
-    
-    {% if file_exists('config.json') %}
-        Config: {{ read_file('config.json')|from_json }}
-    {% endif %}
-
-Content Validation
----------------
-
-Enhanced content testing:
-
-.. code-block:: jinja
-
-    {% if content is not is_empty %}
-        {% if content is is_markdown %}
-            Markdown content detected
-        {% endif %}
-        
-        {% if content is has_urls %}
-            URLs found in content
-        {% endif %}
-        
-        {% if content is is_multiline %}
-            Multi-line content detected
-        {% endif %}
-    {% endif %}
-
-Example Usage
------------
-
-Complex template combining multiple features:
-
-.. code-block:: jinja
-
-    {# template.j2 #}
-    {% extends "base_analysis.j2" %}
-    
-    {% block content %}
-        ## Process each file with appropriate handling
-        # for name, content in files.items()
-            {%- if not content is is_empty %}
-                File: {{ name }}
-                {% if content is contains_code %}
-                    {%- filter indent %}
-                    {# Separate comment removal from syntax highlighting #}
-                    {% set clean_code = content|strip_comments('python') %}
-                    {{ clean_code|format_code('python', 'plain') }}
-                    {%- endfilter %}
-                {% elif content is is_markdown %}
-                    {%- filter indent %}
-                    {{ content|strip_markdown|wrap(80) }}
-                    {%- endfilter %}
-                {% elif content is is_json %}
-                    {%- filter indent %}
-                    {{ content|from_json|to_json }}
-                    {%- endfilter %}
-                {% endif %}
-                
-                Stats:
-                - Lines: {{ content|count('\n') + 1 }}
-                - Words: {{ content|word_count }}
-                - Chars: {{ content|char_count }}
-                - Estimated tokens: {{ estimate_tokens(content) }}
-            {% endif -%}
-        # endfor
-    {% endblock %}
-
-Command line usage:
-
-.. code-block:: bash
-
-    ostruct \
-      --system-prompt "Analyze multiple file types" \
-      --template template.j2 \
-      --file code=source.py \
-      --file docs=README.md \
-      --file config=settings.json \
-      --schema-file analysis_schema.json
-
-The template engine provides comprehensive features for content processing, validation, and formatting while maintaining clean and maintainable templates.
-
-Markdown Processing
-------------------
-
-The template engine provides comprehensive markdown processing capabilities:
-
-Raw Blocks
-~~~~~~~~~
-
-Escape Jinja2 syntax in markdown:
-
-.. code-block:: jinja
-
-    {% raw %}
-    # Template Example
-    Use {{ variable }} for substitution
-    {% endraw %}
-
-Markdown Formatting
-~~~~~~~~~~~~~~~~
-
-Generate markdown elements:
-
-.. code-block:: jinja
-
-    {# Headings #}
-    {{ title|heading(1) }}
-    {{ subtitle|heading(2) }}
-
-    {# Text formatting #}
-    {{ text|bold }}
-    {{ text|italic }}
-    {{ code|inline_code }}
-    {{ code|code_block('python') }}
-
-    {# Lists #}
-    {{ items|unordered_list }}
-    {{ items|ordered_list }}
-
-    {# Blockquotes #}
-    {{ quote|blockquote }}
-
-Tables and Links
-~~~~~~~~~~~~~
-
-Create tables and process links:
-
-.. code-block:: jinja
-
-    {# Tables #}
-    {{ table(headers=['Name', 'Value'], rows=data) }}
-
-    {# Auto-link URLs #}
-    {{ text|urlize }}
-
-Footnotes
-~~~~~~~~
-
-Add and manage footnotes:
-
-.. code-block:: jinja
-
-    {{ text|footnote('ref1') }}
-    {{ 'Additional information'|footnote_def('ref1') }}
-
-Front Matter
-~~~~~~~~~~
-
-Process YAML front matter:
-
-.. code-block:: jinja
-
-    {% if content is has_frontmatter %}
-        {% set meta = extract_frontmatter(content) %}
-        Title: {{ meta.title }}
-        Date: {{ meta.date }}
-    {% endif %}
-
-Table of Contents
+Required Arguments:
+  --task TEMPLATE     Task template string or @file
+
+File Access:
+  --file NAME=PATH   Map file to variable
+  --files NAME=PATTERN  Map glob pattern to variable
+  --dir NAME=PATH    Map directory to variable
+  --allowed-dir PATH Additional allowed directory or @file
+  --recursive        Process directories recursively
+
+Variable Arguments
 ~~~~~~~~~~~~~~~
 
-Generate and manage TOC:
+--var NAME=VALUE
+    Pass simple variables to task template. Can be specified multiple times.
+    Example: ``--var language=python --var style=concise``
+
+--json-var NAME=JSON
+    Pass JSON-structured variables to task template. Can be specified multiple times.
+    Example: ``--json-var settings={"indent": 2}``
+    Example: ``--json-var data={"items": [1, 2, 3]}``
+    Example: ``--json-var config={"any": {"nested": "structure"}}``
+
+The JSON variables can have any structure you need in your templates. Access them using standard Jinja2 dot notation or dictionary syntax:
 
 .. code-block:: jinja
 
-    {% if content is has_toc %}
-        ## Table of Contents
-        {{ generate_toc(content, max_depth=3) }}
-    {% endif %}
+    {{ settings.indent }}
+    {{ data.items[0] }}
+    {{ config.any.nested }}
 
-Code Blocks
-~~~~~~~~~
+File Arguments
+~~~~~~~~~~~~
 
-Process code blocks with separate comment removal and syntax highlighting:
+--file NAME=PATH
+    Map a single file to a name in the template.
+    Example: ``--file input=data.txt``
 
-.. code-block:: jinja
+--files NAME=PATTERN
+    Map multiple files using glob patterns.
+    Example: ``--files sources=src/*.py``
 
-    {% set blocks = extract_code_blocks(content) %}
-    {% for block in blocks %}
-        Language: {{ block.lang }}
-        {# First strip comments if needed #}
-        {% set clean_code = block.code|strip_comments(block.lang) %}
-        {# Then apply syntax highlighting #}
-        {{ clean_code|format_code(block.lang, 'plain') }}
-    {% endfor %}
+--dir NAME=PATH
+    Map an entire directory.
+    Example: ``--dir docs=./documentation``
 
-Complex Markdown Example
-~~~~~~~~~~~~~~~~~~~~
+System Prompt Options
+~~~~~~~~~~~~~~~~~~
 
-Comprehensive markdown processing:
+--system-prompt TEXT
+    Override the system prompt. Takes precedence over task template prompt.
+    Example: ``--system-prompt "You are a helpful assistant."``
+    Example with file: ``--system-prompt @system.txt``
 
-.. code-block:: jinja
+--ignore-task-sysprompt
+    Ignore system prompt from task template.
 
-    {# template.j2 #}
-    {% extends "base.j2" %}
-    
-    {% block content %}
-        {# Extract and process front matter #}
-        {% if content is has_frontmatter %}
-            {% set meta = extract_frontmatter(content) %}
-            {{ meta.title|heading(1) }}
-            Author: {{ meta.author|bold }}
-            Date: {{ meta.date }}
-        {% endif %}
+File Access Options
+~~~~~~~~~~~~~~~~
 
-        {# Generate TOC for long content #}
-        {% if content is has_toc %}
-            {{ "Table of Contents"|heading(2) }}
-            {{ generate_toc(content) }}
-        {% endif %}
+--recursive
+    Process directories recursively when using --dir.
 
-        {# Process main content #}
-        {% for section in sections %}
-            {{ section.title|heading(2) }}
-            
-            {% if section.code is is_fenced_code %}
-                {{ section.code|process_code(section.language, 'plain') }}
-            {% else %}
-                {{ section.text|urlize }}
-            {% endif %}
-            
-            {% if section.notes %}
-                {{ "Notes"|heading(3) }}
-                {{ section.notes|blockquote }}
-            {% endif %}
-        {% endfor %}
+--ext EXTENSIONS
+    Comma-separated list of file extensions to include.
+    Example: ``--ext .py,.js``
 
-        {# Add footnotes #}
-        {% if footnotes %}
-            {{ "Footnotes"|heading(2) }}
-            {% for ref, text in footnotes.items() %}
-                {{ text|footnote_def(ref) }}
-            {% endfor %}
-        {% endif %}
-    {% endblock %}
+Output Options
+~~~~~~~~~~~~
 
-Command line usage:
+--output-file PATH
+    Write JSON output to file instead of stdout.
 
-.. code-block:: bash
+--validate-schema
+    Validate the JSON schema and response structure.
 
-    ostruct \
-      --system-prompt "Process markdown documentation" \
-      --template template.j2 \
-      --file content=document.md \
-      --schema-file output_schema.json
+--dry-run
+    Show what would be sent to the API without making the actual call.
 
-The template engine provides comprehensive markdown processing capabilities while maintaining clean and maintainable templates.
+--no-progress
+    Disable progress indicators.
 
-Data Processing with Templates
-=========================
+Model Options
+~~~~~~~~~~~
 
-The CLI supports advanced data processing through templates. Here are some examples:
+--model TEXT
+    OpenAI model to use (default: gpt-4o-2024-08-06).
+    Supported models:
+    - gpt-4o: 128K context, 16K output
+    - gpt-4o-mini: 128K context, 16K output
+    - o1: 200K context, 100K output
 
-Processing JSON Data
-------------------
+--temperature FLOAT
+    Temperature for sampling (default: 0.0).
 
-.. code-block:: bash
+--max-tokens INTEGER
+    Maximum tokens to generate.
 
-    # Analyze API response data
-    $ cat response.json | ostruct process --template '
-    {% set data = from_json(_input) %}
-    
-    Response Summary:
-    {{ summarize(data)|dict_to_table }}
-    
-    Status Distribution:
-    {{ data|pluck("status")|frequency|dict_to_table }}
-    '
+--top-p FLOAT
+    Top-p sampling parameter (default: 1.0).
 
-    # Generate pivot analysis
-    $ cat metrics.json | ostruct process --template '
-    {% set data = from_json(_input) %}
-    
-    Average Values by Category:
-    {{ pivot_table(data, "category", "value", "mean")|dict_to_table }}
-    '
+--frequency-penalty FLOAT
+    Frequency penalty parameter (default: 0.0).
 
-Transforming Data
----------------
+--presence-penalty FLOAT
+    Presence penalty parameter (default: 0.0).
 
-.. code-block:: bash
+Other Options
+~~~~~~~~~~~
 
-    # Sort and filter data
-    $ cat users.json | ostruct process --template '
-    {% set users = from_json(_input) %}
-    
-    Active Users by Age:
-    {{ users|filter_by("status", "active")|sort_by("age")|list_to_table(["name", "age"]) }}
-    '
+--timeout FLOAT
+    Timeout in seconds for API calls (default: 60.0).
 
-    # Group and aggregate data
-    $ cat transactions.json | ostruct process --template '
-    {% set txns = from_json(_input) %}
-    {% set by_type = txns|group_by("type") %}
-    
-    Transaction Summary by Type:
-    {% for type, items in by_type.items() %}
-    {{ type }}:
-    {{ items|aggregate("amount")|dict_to_table }}
-    {% endfor %}
-    '
+--verbose
+    Enable verbose logging.
 
-Generating Reports
----------------
+--api-key KEY
+    OpenAI API key. Overrides OPENAI_API_KEY environment variable.
 
-.. code-block:: bash
-
-    # Create detailed analysis report
-    $ cat data.json | ostruct process --template '
-    {% set data = from_json(_input) %}
-    
-    # Data Overview
-    {{ summarize(data)|dict_to_table }}
-    
-    # Key Metrics
-    {{ data|aggregate(["value", "count"])|dict_to_table }}
-    
-    # Distribution Analysis
-    {% set dist = data|pluck("category")|frequency %}
-    {{ dist|dict_to_table }}
-    
-    # Pivot Analysis
-    {% set pivot = pivot_table(data, "category", "value", "mean") %}
-    {{ pivot|dict_to_table }}
-    '
-
-Template Functions and Utilities
-==========================
-
-The CLI provides a comprehensive set of template functions and utilities for data processing, formatting, and analysis. These functions are designed to be used within Jinja2 templates to manipulate and analyze data efficiently.
-
-Text Processing
--------------
-
-* ``format_code(text, lang='python', format='terminal')``
-    Format and syntax highlight code (requires Pygments). If the language is not supported,
-    falls back to a generic text lexer. Does not modify comments.
-    
-* ``strip_comments(text, lang='python')``
-    Remove comments from code. If the language is not supported, returns the original text
-    with a warning. Supports common programming languages like Python, JavaScript, Java, etc.
-    
-* ``dedent(text)``
-    Remove common leading whitespace
-    
-* ``normalize(text)``
-    Normalize whitespace
-    
-* ``wrap(text, width=80)``
-    Wrap text to specified width
-    
-* ``indent(text, width=4)``
-    Indent text by specified width
-
-Data Analysis
------------
-
-* ``pivot_table(data, index, value, aggfunc='sum')``
-    Create pivot tables with aggregation
-    Example: ``{{ data|pivot_table("category", "amount", "mean") }}``
-    
-* ``summarize(data, keys=None)``
-    Generate summary statistics
-    Example: ``{{ data|summarize(["age", "status"]) }}``
-    
-* ``sort_by(items, key)``
-    Sort items by key
-    
-* ``group_by(items, key)``
-    Group items by key
-    
-* ``filter_by(items, key, value)``
-    Filter items by key-value pair
-    
-* ``extract_field(items, key)``
-    Extract values for key
-    
-* ``unique(items)``
-    Get unique values
-    
-* ``frequency(items)``
-    Count value frequencies
-    
-* ``aggregate(items, key=None)``
-    Calculate aggregate statistics
-
-Table Formatting
--------------
-
-* ``table(headers, rows)``
-    Create markdown table
-    
-* ``dict_to_table(data)``
-    Convert dict to table
-    
-* ``list_to_table(items, headers=None)``
-    Convert list to table
-    
-* ``auto_table(data)``
-    Auto-format data as table
-
-Utility Functions
+Template Features
 --------------
 
-* ``estimate_tokens(text)``
-    Estimate token count
-    
-* ``format_json(obj)``
-    Format JSON with indentation
-    
-* ``now()``
-    Current datetime
-    
-* ``validate_json(text)``
-    Validate JSON string
+Task templates use Jinja2 syntax with special features:
 
-Best Practices
-------------
+System Prompts
+~~~~~~~~~~~~
 
-When using template functions:
+Define a system prompt within the template:
 
-1. For large code blocks (>1000 lines), use format='plain' with format_code
-2. Specify keys in summarize() for better performance with large datasets
-3. Use appropriate aggregation functions for your data size
-4. Consider chunking large datasets when using pivot_table
+.. code-block:: jinja
+
+    {% system_prompt %}
+    You are a helpful assistant.
+    {% end_system_prompt %}
+
+File Content Access
+~~~~~~~~~~~~~~~~
+
+Always use the .content attribute to access file contents:
+
+.. code-block:: jinja
+
+    # Correct
+    {{ input.content }}
+    {{ file.content }}
+    
+    # Incorrect
+    {{ input }}
+    {{ file }}
+
+Template Functions
+~~~~~~~~~~~~~~~
+
+Text Processing:
+    - ``format_code(text, lang='python')``
+    - ``strip_comments(text, lang='python')``
+    - ``wrap(text, width=80)``
+    - ``indent(text, width=4)``
+
+Data Analysis:
+    - ``extract_field(items, key)``
+    - ``pivot_table(data, index, value, aggfunc='sum')``
+    - ``summarize(data, keys=None)``
+    - ``frequency(items)``
+
+Formatting:
+    - ``dict_to_table(data)``
+    - ``list_to_table(items, headers=None)``
+    - ``format_json(obj)``
 
 Examples
 -------
 
-Data Analysis Report::
+Basic Analysis
+~~~~~~~~~~~~
 
-    # Create detailed analysis report
-    $ cat data.json | ostruct process --template '
-    {% set data = from_json(_input) %}
-    
-    # Data Overview
-    {{ summarize(data)|dict_to_table }}
-    
-    # Key Metrics
-    {{ data|aggregate(["value", "count"])|dict_to_table }}
-    
-    # Distribution Analysis
-    {% set dist = data|extract_field("category")|frequency %}
-    {{ dist|dict_to_table }}
-    
-    # Pivot Analysis
-    {% set pivot = pivot_table(data, "category", "value", "mean") }}
-    {{ pivot|dict_to_table }}
-    '
+Analyze a text file with a custom schema:
 
-Progress Indicators
-----------------
+.. code-block:: bash
 
-The CLI provides progress feedback during template rendering:
+    # schema.json
+    {
+        "type": "object",
+        "properties": {
+            "summary": { "type": "string" },
+            "key_points": {
+                "type": "array",
+                "items": { "type": "string" }
+            }
+        },
+        "required": ["summary", "key_points"]
+    }
 
-- Visual progress bars when ``rich`` is installed
-- Fallback to simple logging when ``rich`` is not available
-- Configurable through command-line options:
-    - ``--no-progress``: Disable progress indicators
-    - By default, progress indicators are enabled
+    ostruct \
+        --task "Analyze this text: {{ input.content }}" \
+        --file input=@document.txt \
+        --schema-file schema.json
 
-Template System Prompts
---------------------
+Code Review
+~~~~~~~~~
 
-Templates can include a system prompt in YAML frontmatter:
+Review code using a task template file:
 
-.. code-block:: yaml
+.. code-block:: bash
 
-    ---
-    system_prompt: |
-      You are analyzing {{ language }} code.
-      Focus on {{ aspect }} aspects.
-    ---
-    Here's the code to analyze: {{ code }}
+    # review.txt
+    {% system_prompt %}
+    You are an expert code reviewer.
+    {% end_system_prompt %}
 
-System Prompt Resolution
---------------------
+    Review this code:
+    {{ code.content }}
 
-The system prompt is resolved in the following order:
+    ostruct \
+        --task @review.txt \
+        --file code=app.py \
+        --schema-file review_schema.json
 
-1. CLI argument (``--system-prompt``) if provided
-2. Template frontmatter if present and not ignored
-3. Default prompt: "You are a helpful assistant."
+Multiple Files
+~~~~~~~~~~~
 
-The ``--ignore-template-prompt`` flag skips step 2.
+Process multiple files in a directory:
+
+.. code-block:: bash
+
+    ostruct \
+        --task @analyze_code.txt \
+        --dir src=./src \
+        --recursive \
+        --ext .py \
+        --schema-file analysis_schema.json
+
+Using Variables
+~~~~~~~~~~~~
+
+Pass configuration through variables:
+
+.. code-block:: bash
+
+    ostruct \
+        --task @process.txt \
+        --file input=data.txt \
+        --var format=html \
+        --json-var config={"mode": "strict", "flags": ["validate"]} \
+        --schema-file output_schema.json
+
+Exit Codes
+---------
+
+* ``0`` (SUCCESS): Command completed successfully
+* ``1`` (VALIDATION_ERROR): Schema/response validation failed
+* ``2`` (USAGE_ERROR): Invalid arguments or configuration
+* ``3`` (API_ERROR): OpenAI API issues
+* ``4`` (IO_ERROR): File system issues
+* ``5`` (UNKNOWN_ERROR): Unexpected errors
+* ``6`` (INTERRUPTED): User interruption
+
+Troubleshooting
+-------------
+
+Common Issues
+~~~~~~~~~~~
+
+1. **Missing Variables**
+   Error: ``TaskTemplateVariableError: Template uses undefined variable 'xyz'``
+   Solution: Ensure all template variables are provided.
+
+2. **File Access**
+   Error: ``FileNotFoundError: File not found: 'missing.txt'``
+   Solution: Verify file paths and permissions.
+
+3. **JSON Parsing**
+   Error: ``InvalidJSONError: Invalid JSON value``
+   Solution: Check JSON syntax in --json-var and schema files.
+
+4. **Schema Validation**
+   Error: ``SchemaValidationError: Response does not match schema``
+   Solution: Verify schema matches expected response structure.
+
+5. **Path Security**
+   Error: ``PathSecurityError: Path is outside the base directory``
+   Solution: Keep all files within the working directory.
+
+Best Practices
+~~~~~~~~~~~~
+
+1. Use ``--dry-run`` to verify template rendering before API calls
+2. Store complex templates in files
+3. Use ``--verbose`` for troubleshooting
+4. Validate schemas during development
+5. Use meaningful variable names
 

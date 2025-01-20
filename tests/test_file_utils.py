@@ -2,165 +2,314 @@
 
 import os
 from pathlib import Path
-from typing import List, Set
-from unittest.mock import mock_open, patch
-
 import pytest
+from typing import Any, Dict, List, Union, cast
+from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.file_utils import (
     FileInfo,
     collect_files,
-    collect_files_from_directory,
     collect_files_from_pattern,
+    collect_files_from_directory,
+)
+from openai_structured.cli.errors import (
+    FileNotFoundError,
+    DirectoryNotFoundError,
+    PathSecurityError,
 )
 
 
-def test_file_info_from_path() -> None:
-    """Test creating FileInfo from path."""
-    with patch("os.path.isfile", return_value=True):
-        # Test valid file
-        info = FileInfo.from_path("test", "test.txt")
-        assert info.name == "test"
-        assert info.path == "test.txt"
-        assert info.abs_path.endswith("test.txt")
-        
-        # Test directory property
-        info = FileInfo.from_path("test", "dir/test.txt")
-        assert info.dir == "dir"
-        
-        # Test path traversal
-        with pytest.raises(ValueError, match="Access denied"):
-            FileInfo.from_path("test", "../outside.txt")
-            
-        # Test missing file
-        with patch("os.path.isfile", return_value=False):
-            with pytest.raises(OSError, match="File not found"):
-                FileInfo.from_path("test", "missing.txt")
-
-
-def test_collect_files_from_pattern() -> None:
-    """Test collecting files from glob pattern."""
-    mock_glob = ["file1.py", "file2.py", "file3.js"]
+def test_file_info_creation(fs: FakeFilesystem) -> None:
+    """Test FileInfo creation and properties."""
+    # Create test file
+    fs.create_file("test.txt", contents="test content")
     
-    with (
-        patch("glob.glob", return_value=mock_glob),
-        patch("os.path.isfile", return_value=True),
-    ):
-        # Test basic collection
-        files = collect_files_from_pattern("test", "*.py")
-        assert len(files) == 3
-        assert all(isinstance(f, FileInfo) for f in files)
-        assert [f.name for f in files] == ["test_1", "test_2", "test_3"]
-        
-        # Test with extension filter
-        files = collect_files_from_pattern(
-            "test", "*.py", allowed_extensions={".py"}
-        )
-        assert len(files) == 2
-        assert all(f.path.endswith(".py") for f in files)
-        
-        # Test invalid pattern
-        with patch("glob.glob", side_effect=Exception("Invalid pattern")):
-            with pytest.raises(ValueError, match="Invalid glob pattern"):
-                collect_files_from_pattern("test", "[invalid")
+    # Create FileInfo instance with lazy=False to load stats immediately
+    file_info = FileInfo(name="test", path="test.txt", lazy=False)
+    
+    # Check basic properties
+    assert file_info.name == "test"
+    assert file_info.path == "test.txt"
+    assert file_info.abs_path == os.path.abspath("test.txt")
+    assert file_info.extension == "txt"
+    
+    # Check initial state - in non-lazy mode, both stats and content should be loaded
+    assert file_info._content == "test content"  # Content should be loaded
+    assert isinstance(file_info._size, int)  # Should be loaded by now
+    assert isinstance(file_info._mtime, float)  # Should be loaded by now
+    assert file_info._encoding is not None  # Should be set after content load
+    assert file_info._hash is not None  # Should be set after content load
+    assert file_info._stats_loaded is True  # Stats should be loaded
+    
+    # Content should be available immediately
+    assert file_info.content == "test content"
 
 
-def test_collect_files_from_directory() -> None:
+def test_file_info_lazy_loading(fs: FakeFilesystem) -> None:
+    """Test lazy loading behavior."""
+    fs.create_file("test.txt", contents="test content")
+    
+    # Create lazy FileInfo instance
+    file_info = FileInfo(name="test", path="test.txt", lazy=True)
+    
+    # Content should not be loaded until accessed
+    assert file_info._content is None
+    
+    # Accessing content should load it
+    assert file_info.content == "test content"
+    assert file_info._content == "test content"
+
+
+def test_file_info_cache_update(fs: FakeFilesystem) -> None:
+    """Test cache update mechanism."""
+    fs.create_file("test.txt", contents="test content")
+    
+    file_info = FileInfo(name="test", path="test.txt")
+    
+    # Update from cache
+    cached_content = "cached content"
+    file_info.update_cache(
+        content=cached_content,
+        encoding="utf-8",
+        hash_value="test_hash"
+    )
+    
+    assert file_info.content == cached_content
+    assert file_info.encoding == "utf-8"
+    assert file_info.hash == "test_hash"
+
+
+def test_file_info_property_protection(fs: FakeFilesystem) -> None:
+    """Test that private fields cannot be set directly."""
+    fs.create_file("test.txt", contents="test content")
+    
+    file_info = FileInfo(name="test", path="test.txt")
+    
+    # Attempt to set private fields should raise AttributeError
+    with pytest.raises(AttributeError):
+        file_info._content = "new content"  # type: ignore
+    
+    with pytest.raises(AttributeError):
+        file_info._hash = "new hash"  # type: ignore
+
+
+def test_file_info_directory_traversal(fs: FakeFilesystem) -> None:
+    """Test FileInfo protection against directory traversal."""
+    # Set up directory structure
+    fs.create_dir("/base")
+    fs.create_file("/base/test.txt", contents="test")
+    fs.create_file("/outside/test.txt", contents="test")
+    
+    # Change to base directory
+    os.chdir("/base")
+    
+    # Try to access file outside base directory
+    with pytest.raises(PathSecurityError, match="Access denied: .* is outside base directory and not in allowed directories"):
+        FileInfo.from_path("test", "../outside/test.txt")
+    
+    with pytest.raises(PathSecurityError, match="Directory mapping .* error: Directory .* is outside the current working directory .*"):
+        collect_files(dir_args=["test=../outside"])
+
+
+def test_file_info_missing_file(fs: FakeFilesystem) -> None:
+    """Test FileInfo handling of missing files."""
+    with pytest.raises(FileNotFoundError, match="File not found: nonexistent.txt"):
+        FileInfo.from_path("test", "nonexistent.txt")
+
+
+def test_collect_files_from_pattern(fs: FakeFilesystem) -> None:
+    """Test collecting files using glob patterns."""
+    # Create test files
+    fs.create_file("test1.py", contents="test1")
+    fs.create_file("test2.py", contents="test2")
+    fs.create_file("test.txt", contents="test")
+    fs.create_file("subdir/test3.py", contents="test3")
+    
+    # Test basic pattern
+    files = collect_files_from_pattern("test", "*.py")
+    assert len(files) == 2
+    assert {f.path for f in files} == {"test1.py", "test2.py"}
+    
+    # Test with extension filter
+    files = collect_files_from_pattern("test", "*.*", allowed_extensions={".py"})
+    assert len(files) == 2
+    assert {f.path for f in files} == {"test1.py", "test2.py"}
+    
+    # Test recursive pattern
+    files = collect_files_from_pattern("test", "**/*.py", recursive=True)
+    assert len(files) == 3
+    assert {f.path for f in files} == {"test1.py", "test2.py", "subdir/test3.py"}
+
+
+def test_collect_files_from_directory(fs: FakeFilesystem) -> None:
     """Test collecting files from directory."""
-    with (
-        patch("os.path.isdir", return_value=True),
-        patch("os.path.isfile", return_value=True),
-        patch(
-            "glob.glob",
-            return_value=["dir/file1.py", "dir/file2.py", "dir/sub/file3.py"],
-        ),
-    ):
-        # Test non-recursive collection
-        files = collect_files_from_directory("test", "dir")
-        assert len(files) == 3
-        assert all(isinstance(f, FileInfo) for f in files)
-        
-        # Test with extension filter
-        files = collect_files_from_directory(
-            "test", "dir", allowed_extensions={".py"}
-        )
-        assert len(files) == 3
-        assert all(f.path.endswith(".py") for f in files)
-        
-        # Test directory traversal
-        with pytest.raises(ValueError, match="Access denied"):
-            collect_files_from_directory("test", "../outside")
-            
-        # Test missing directory
-        with patch("os.path.isdir", return_value=False):
-            with pytest.raises(OSError, match="Directory not found"):
-                collect_files_from_directory("test", "missing")
+    # Create test files
+    fs.create_file("dir/test1.py", contents="test1")
+    fs.create_file("dir/test2.py", contents="test2")
+    fs.create_file("dir/test.txt", contents="test")
+    fs.create_file("dir/subdir/test3.py", contents="test3")
+    
+    # Test non-recursive collection
+    files = collect_files_from_directory("test", "dir")
+    assert len(files) == 3
+    assert {f.path for f in files} == {"dir/test1.py", "dir/test2.py", "dir/test.txt"}
+    
+    # Test recursive collection
+    files = collect_files_from_directory("test", "dir", recursive=True)
+    assert len(files) == 4
+    assert {f.path for f in files} == {
+        "dir/test1.py",
+        "dir/test2.py",
+        "dir/test.txt",
+        "dir/subdir/test3.py"
+    }
+    
+    # Test with extension filter
+    files = collect_files_from_directory(
+        "test", "dir", recursive=True, allowed_extensions={".py"}
+    )
+    assert len(files) == 3
+    assert {f.path for f in files} == {
+        "dir/test1.py",
+        "dir/test2.py",
+        "dir/subdir/test3.py"
+    }
 
 
-def test_collect_files() -> None:
-    """Test collecting files from CLI arguments."""
-    with (
-        patch("os.path.isfile", return_value=True),
-        patch("os.path.isdir", return_value=True),
-        patch(
-            "glob.glob",
-            return_value=["test1.py", "test2.py", "dir/test3.py"],
-        ),
-    ):
-        # Test single file
-        result = collect_files(
-            file_args=["input=test.py"],
-            files_args=[],
-            dir_args=[],
-        )
-        assert len(result) == 1
-        assert isinstance(result["input"], FileInfo)
-        assert result["input"].path == "test.py"
-        
-        # Test multiple files
-        result = collect_files(
-            file_args=[],
-            files_args=["inputs=*.py"],
-            dir_args=[],
-        )
-        assert len(result) == 1
-        assert isinstance(result["inputs"], list)
-        files = result["inputs"]
-        assert isinstance(files, list)
-        assert len(files) == 3
-        assert all(isinstance(f, FileInfo) for f in files)
-        
-        # Test directory
-        result = collect_files(
-            file_args=[],
-            files_args=[],
-            dir_args=["dir=testdir"],
-        )
-        assert len(result) == 1
-        assert isinstance(result["dir"], list)
-        files = result["dir"]
-        assert isinstance(files, list)
-        assert len(files) == 3
-        assert all(isinstance(f, FileInfo) for f in files)
-        
-        # Test invalid mappings
-        with pytest.raises(ValueError, match="Invalid file mapping"):
-            collect_files(
-                file_args=["invalid"],
-                files_args=[],
-                dir_args=[],
-            )
-            
-        with pytest.raises(ValueError, match="Invalid files mapping"):
-            collect_files(
-                file_args=[],
-                files_args=["invalid"],
-                dir_args=[],
-            )
-            
-        with pytest.raises(ValueError, match="Invalid directory mapping"):
-            collect_files(
-                file_args=[],
-                files_args=[],
-                dir_args=["invalid"],
-            ) 
+def test_collect_files(fs: FakeFilesystem) -> None:
+    """Test collecting files from multiple sources."""
+    # Create test files
+    fs.create_file("single.txt", contents="single")
+    fs.create_file("test1.py", contents="test1")
+    fs.create_file("test2.py", contents="test2")
+    fs.create_file("dir/test3.py", contents="test3")
+    fs.create_file("dir/test4.py", contents="test4")
+    
+    # Test collecting single file
+    result = collect_files(file_args=["single=single.txt"])
+    assert len(result) == 1
+    assert isinstance(result["single"], FileInfo)
+    assert result["single"].path == "single.txt"
+    
+    # Test collecting multiple files
+    result = collect_files(files_args=["tests=*.py"])
+    assert len(result) == 1
+    assert isinstance(result["tests"], list)
+    file_list = cast(List[FileInfo], result["tests"])
+    assert len(file_list) == 2
+    assert {f.path for f in file_list} == {"test1.py", "test2.py"}
+    
+    # Test collecting from directory
+    result = collect_files(dir_args=["dir=dir"], recursive=True)
+    assert len(result) == 1
+    assert isinstance(result["dir"], list)
+    dir_list = cast(List[FileInfo], result["dir"])
+    assert len(dir_list) == 2
+    assert {f.path for f in dir_list} == {"dir/test3.py", "dir/test4.py"}
+    
+    # Test collecting from all sources
+    result = collect_files(
+        file_args=["single=single.txt"],
+        files_args=["tests=*.py"],
+        dir_args=["dir=dir"],
+        recursive=True,
+    )
+    assert len(result) == 3
+    assert isinstance(result["single"], FileInfo)
+    assert isinstance(result["tests"], list)
+    assert isinstance(result["dir"], list)
+
+
+def test_collect_files_errors(fs: FakeFilesystem) -> None:
+    """Test error handling in collect_files."""
+    # Set up directory structure
+    fs.create_dir("/base")
+    fs.create_dir("/outside")
+    fs.create_file("/outside/test.txt", contents="test")
+    os.chdir("/base")  # Change to base directory
+    
+    # Test invalid file mapping
+    with pytest.raises(ValueError, match="Invalid file mapping"):
+        collect_files(file_args=["invalid_mapping"])
+    
+    # Test no files found for pattern
+    with pytest.raises(ValueError, match="No files found matching pattern"):
+        collect_files(files_args=["test=*.nonexistent"])
+    
+    # Test no files found in directory
+    fs.create_dir("empty_dir")
+    with pytest.raises(ValueError, match="No files found in directory"):
+        collect_files(dir_args=["test=empty_dir"])
+    
+    # Test directory outside base
+    with pytest.raises(PathSecurityError, match="Directory mapping .* error: Directory .* is outside the current working directory .*"):
+        collect_files(dir_args=["test=../outside"])
+
+
+def test_file_info_stats_loading(fs: FakeFilesystem) -> None:
+    """Test that file stats can be loaded without content."""
+    fs.create_file("test.txt", contents="test content")
+    
+    # Create FileInfo instance
+    file_info = FileInfo(name="test", path="test.txt", lazy=True)
+    
+    # Check that stats can be loaded without content
+    assert file_info.size == len("test content")
+    assert file_info.mtime is not None
+    assert file_info._content is None  # Content still not loaded
+    
+    # Accessing content loads it
+    assert file_info.content == "test content"
+    assert file_info._content == "test content"
+
+
+def test_file_info_stats_security(fs: FakeFilesystem) -> None:
+    """Test security checks when loading stats."""
+    # Set up directory structure
+    fs.create_dir("/base")
+    fs.create_file("/base/test.txt", contents="test")
+    fs.create_file("/outside/test.txt", contents="test")
+    
+    # Change to base directory
+    os.chdir("/base")
+    
+    # Create FileInfo for file outside base directory
+    file_info = FileInfo(name="test", path="../outside/test.txt")
+    
+    # Accessing stats should raise security error
+    with pytest.raises(PathSecurityError, match="Access denied: .* is outside base directory and not in allowed directories"):
+        _ = file_info.size
+
+
+def test_file_info_missing_file_stats(fs: FakeFilesystem) -> None:
+    """Test stats loading for missing file."""
+    file_info = FileInfo(name="test", path="nonexistent.txt")
+    
+    with pytest.raises(FileNotFoundError, match="File not found"):
+        _ = file_info.size
+
+
+def test_file_info_content_errors(fs: FakeFilesystem) -> None:
+    """Test error handling in content loading."""
+    # Test non-lazy mode with missing file
+    with pytest.raises(FileNotFoundError, match="File not found"):
+        FileInfo(name="test", path="nonexistent.txt", lazy=False)
+    
+    # Test lazy mode with missing file
+    file_info = FileInfo(name="test", path="nonexistent.txt", lazy=True)
+    with pytest.raises(FileNotFoundError, match="File not found"):
+        _ = file_info.content
+    
+    # Test security error
+    fs.create_dir("/base")
+    fs.create_file("/outside/test.txt", contents="test")
+    os.chdir("/base")
+    
+    # In non-lazy mode, security error should be raised immediately
+    with pytest.raises(PathSecurityError, match="Access denied: .* is outside base directory and not in allowed directories"):
+        FileInfo(name="test", path="../outside/test.txt", lazy=False)
+    
+    # In lazy mode, security error should be raised when accessing content
+    file_info = FileInfo(name="test", path="../outside/test.txt", lazy=True)
+    with pytest.raises(PathSecurityError, match="Access denied: .* is outside base directory and not in allowed directories"):
+        _ = file_info.content 

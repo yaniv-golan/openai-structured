@@ -1,381 +1,376 @@
-"""
-Tests for the CLI implementation.
-"""
+"""Tests for the CLI module."""
 
-import errno
+import asyncio
 import json
-import os
-import sys
-import time
+import logging
 from io import StringIO
-from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Tuple
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import jinja2
 import pytest
-import pytest_asyncio
-from openai import AsyncOpenAI, BadRequestError
-from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from pydantic import BaseModel
 from pyfakefs.fake_filesystem_unittest import Patcher
 
-from openai_structured.cli import (
-    ExitCode,
-    _main,
-    cli_main,
-    create_dynamic_model,
-    estimate_tokens_for_chat,
-    get_context_window_limit,
-    get_default_token_limit,
-    main,
-    read_file,
-    render_template,
-    validate_template_placeholders,
-)
-from openai_structured.errors import StreamInterruptedError, StreamParseError
+from openai_structured.cli.cli import ExitCode, _main
+from openai_structured.errors import VariableNameError, InvalidJSONError
 
 
-class SampleOutputSchema(BaseModel):
-    """Schema used for testing CLI output."""
-    field: str
-
-
-async def mock_stream_response(content: str = '{"field": "test"}') -> AsyncGenerator[ChatCompletionChunk, None]:
-    """
-    Mock OpenAI API stream response for testing.
-    Yields one chunk containing the specified content.
-    """
-    response = ChatCompletionChunk(
-        id="test_chunk",
-        model="gpt-4o",
-        object="chat.completion.chunk",
-        created=123,
-        choices=[
-            {
-                "index": 0,
-                "delta": {"content": content},
-                "finish_reason": "stop",
-            }
-        ],
-    )
-    yield response
-
-
-@pytest_asyncio.fixture
-async def mock_openai_stream() -> AsyncMock:
-    """Create a mock OpenAI client with streaming response."""
-    mock_completions = AsyncMock()
-    mock_completions.create = AsyncMock(return_value=mock_stream_response())
-
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-    return mock_client
-
-
-def test_create_dynamic_model() -> None:
-    """Test creating a dynamic model from JSON schema."""
-    schema = {
-        "type": "object",
-        "properties": {
-            "string_field": {"type": "string"},
-            "int_field": {"type": "integer"},
-            "float_field": {"type": "number"},
-            "bool_field": {"type": "boolean"},
-            "array_field": {"type": "array"},
-            "object_field": {"type": "object"},
-        },
-    }
-
-    model = create_dynamic_model(schema)
-    assert issubclass(model, BaseModel)
-
-    # Additional validation checks could go here...
-    # (omitted for brevity)
-
-# ----------------------------------------------------------------------------------
-# Placeholder for additional tests between lines ~77 and ~803
-# ----------------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_stdin_handling(fs: Patcher, mock_openai_stream: AsyncMock) -> None:
-    """Test stdin handling in CLI."""
-    # Create test schema file
-    fs.create_file("schema.json", contents='{"type": "string"}')
-
-    with (
-        patch("sys.stdin", StringIO("test input")),
-        patch(
-            "sys.argv",
-            [
-                "ostruct",
-                "--system-prompt",
-                "test",
-                "--template",
-                "{{ stdin }}",
-                "--schema-file",
-                "schema.json",
-                "--model",
-                "gpt-4o",
-                "--api-key",
-                "test-key",
-            ],
-        ),
-        patch("sys.stdin.isatty", return_value=False),
-        patch(
-            "openai_structured.cli.cli.AsyncOpenAI",
-            return_value=mock_openai_stream,
-        ),
-        patch("tiktoken.get_encoding") as mock_get_encoding,
-    ):
-        # Mock tiktoken
-        mock_encoding = MagicMock()
-        mock_encoding.encode.return_value = [1, 2, 3]
-        mock_get_encoding.return_value = mock_encoding
-
-        result = await _main()
-        assert result == ExitCode.SUCCESS
-
-# ----------------------------------------------------------------------------------
-# Placeholder for additional tests between lines ~860 and ~949
-# ----------------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_cli_dry_run(fs: Patcher, mock_openai_stream: AsyncMock) -> None:
-    """Test CLI dry run mode."""
-    # Setup mock data and environment
-    system_prompt = "DRY RUN test"
-    template_content = f"""---
-system_prompt: {system_prompt}
----
-Hello, {{{{ file1 }}}}"""
-    info_messages: List[str] = []
-
-    def info_handler(*args: Any, **kwargs: Any) -> None:
-        """Capture info-level log messages."""
-        message = " ".join(str(arg) for arg in args)
-        info_messages.append(message)
-        print(f"INFO: {message}")  # Debug output
-
-    # Create test files in the fake filesystem
-    fs.create_file("input.txt", contents="test content")
-    fs.create_file("schema.json", contents='{"type": "object", "properties": {"field": {"type": "string"}}}')
-    fs.create_file("test.txt", contents="sample text file")
-    fs.create_file("template.txt", contents=template_content)
-
-    with (
-        patch("sys.argv", [
-            "ostruct",
-            "--template",
-            "template.txt",  # Use template file
-            "--template-is-file",  # Indicate that template is a file
-            "--schema-file",
-            "schema.json",
-            "--file",
-            "file1=input.txt",
-            "--dry-run",
-            "--validate-schema",
-            "--api-key",
-            "test-key",
-        ]),
-        patch("sys.stdin.isatty", return_value=True),
-        patch("logging.getLogger") as mock_logger,
-        patch("tiktoken.get_encoding") as mock_get_encoding,
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_openai_stream),
-    ):
-        # Mock tiktoken
-        mock_encoding = MagicMock()
-        mock_encoding.encode.return_value = [1, 2, 3]  # Mock token IDs
-        mock_get_encoding.return_value = mock_encoding
-
-        mock_logger.return_value.info = info_handler
-        mock_logger.return_value.debug = lambda *args, **kwargs: None
-        mock_logger.return_value.error = lambda *args, **kwargs: None
-
-        exit_code = await main()
-        assert exit_code == ExitCode.SUCCESS
-
-        print("\nAll captured messages:")
-        for msg in info_messages:
-            print(f"  {msg}")
-
-        # Verify dry run output
-        assert any("DRY RUN MODE" in msg for msg in info_messages), "Missing DRY RUN MODE message"
-        assert any("System Prompt:" in msg for msg in info_messages), "Missing System Prompt message"
-        assert any("User Prompt:" in msg for msg in info_messages), "Missing User Prompt message"
-        assert any("test content" in msg for msg in info_messages), "Missing test content in messages"
-
-# ----------------------------------------------------------------------------------
-# Placeholder for additional tests between lines ~1004 and ~1048
-# ----------------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_cli_template_system_prompt(fs: Patcher, mock_openai_stream: AsyncMock) -> None:
-    """Test system prompt from template content."""
-    # Setup mock data
-    schema = {
-        "type": "object",
-        "properties": {"field": {"type": "string"}},
-        "required": ["field"],
-    }
-
-    # Create test files in the fake filesystem
-    fs.create_file("template.txt", contents="---\nsystem_prompt: You are analyzing {{ language }} code.\n---\n")
-    fs.create_file("test.txt", contents="test content")
-    fs.create_file("schema.json", contents=json.dumps(schema))
-
-    debug_logs: List[str] = []
-
-    def debug_handler(*args: Any, **kwargs: Any) -> None:
-        debug_logs.append(" ".join(str(arg) for arg in args))
-
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli",
-                "--template",
-                "template.txt",
-                "--file",
-                "input=test.txt",
-                "--value",
-                "language=python",
-                "--schema-file",
-                "schema.json",
-                "--model",
-                "gpt-4o",
-                "--verbose",
-            ],
-        ),
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_openai_stream),
-        patch("tiktoken.get_encoding") as mock_get_encoding,
-        patch("sys.stdin.isatty", return_value=True),
-        patch("logging.getLogger") as mock_get_logger,
-    ):
-        mock_logger = MagicMock()
-        mock_logger.debug.side_effect = debug_handler
-        mock_get_logger.return_value = mock_logger
-
-        mock_encoding = MagicMock()
-        mock_encoding.encode.return_value = [1, 2, 3]
-        mock_get_encoding.return_value = mock_encoding
-
-        result = await main()
-        assert result == ExitCode.SUCCESS
-
-        print("\nDebug logs:")
-        for log in debug_logs:
-            print(f"  {log}")
-
-        # Verify system prompt is set from template.yaml frontmatter
-        calls = mock_openai_stream.chat.completions.create.mock_calls
-        assert len(calls) == 1
-        call_kwargs = calls[0].kwargs
-        assert call_kwargs["messages"][0]["content"] == "You are analyzing python code."
-
-
-# ----------------------------------------------------------------------------------
-# Placeholder for additional tests between lines ~1107 and ~1188
-# ----------------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_cli_multiple_files(fs: Patcher, mock_openai_stream: AsyncMock) -> None:
-    """Test CLI with multiple file inputs."""
-    schema = {
-        "type": "object",
-        "properties": {
-            "field": {"type": "string"},
-        },
-    }
-
-    # Create test files in the fake filesystem
-    fs.create_file("test1.py", contents="def test1(): pass")
-    fs.create_file("test2.py", contents="def test2(): pass")
-    fs.create_file("test3.py", contents="def test3(): pass")
-    fs.create_file("test.txt", contents="test content")
-    fs.create_file("schema.json", contents=json.dumps(schema))
+# Core CLI Tests
+class TestCLICore:
+    """Test core CLI functionality."""
     
-    # Create docs directory with some files
-    fs.create_dir("docs")
-    fs.create_file("docs/doc1.txt", contents="doc1 content")
-    fs.create_file("docs/doc2.txt", contents="doc2 content")
+    @pytest.mark.asyncio
+    async def test_basic_execution(self, fs: Patcher) -> None:
+        """Test basic CLI execution with minimal arguments."""
+        # Create test files
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="Process this: {{ input }}")
+        fs.create_file("input.txt", contents="test content")
+        
+        # Create mock structured stream
+        async def mock_structured_stream(*args, **kwargs):
+            yield {"result": "test response"}
 
-    debug_messages: List[str] = []
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--file", "input=input.txt",
+            "--api-key", "test-key",
+        ]), patch("sys.stdin.isatty", return_value=True), \
+            patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
+            patch("tiktoken.get_encoding") as mock_get_encoding:
+            # Mock tiktoken
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+            
+            result = await _main()
+            assert result == ExitCode.SUCCESS
 
-    def debug_handler(*args: Any, **kwargs: Any) -> None:
-        """Capture debug messages."""
-        debug_messages.append(" ".join(str(arg) for arg in args))
+    @pytest.mark.asyncio
+    async def test_help_text(self) -> None:
+        """Test help text display."""
+        with patch("sys.argv", ["ostruct", "--help"]), \
+             patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+            with pytest.raises(SystemExit) as exc_info:
+                await _main()
+            assert exc_info.value.code == 0
+            output = mock_stdout.getvalue().lower()
+            assert "usage:" in output
+            assert "--help" in output
 
-    with (
-        patch(
-            "sys.argv",
-            [
-                "cli",
-                "--template",
-                "template.txt",
-                "--file",
-                "single=test.txt",
-                "--files",
-                "tests=*.py",
-                "--dir",
-                "docs=docs",
-                "--recursive",
-                "--ext",
-                ".py,.txt",
-                "--value",
-                "language=python",
-                "--schema-file",
-                "schema.json",
-                "--model",
-                "gpt-4o",
-                "--verbose",
-            ],
-        ),
-        patch("openai_structured.cli.cli.AsyncOpenAI", return_value=mock_openai_stream),
-        patch("tiktoken.get_encoding") as mock_get_encoding,
-        patch("sys.stdin.isatty", return_value=True),
-        patch("logging.getLogger") as mock_get_logger,
-    ):
-        # Set up logging to capture all messages
-        mock_logger = MagicMock()
-        mock_logger.debug.side_effect = debug_handler
-        mock_get_logger.return_value = mock_logger
+    @pytest.mark.asyncio
+    async def test_version_info(self) -> None:
+        """Test version information display."""
+        with patch("sys.argv", ["ostruct", "--version"]), \
+             patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+            with pytest.raises(SystemExit) as exc_info:
+                await _main()
+            assert exc_info.value.code == 0
+            output = mock_stdout.getvalue()
+            # Check that output matches format: "ostruct X.Y.Z" or "ostruct unknown"
+            assert output.startswith("ostruct ")
+            assert len(output.strip().split()) == 2  # program name + version number
 
-        # Mock tiktoken
-        mock_encoding = MagicMock()
-        mock_encoding.encode.return_value = [1, 2, 3]
-        mock_get_encoding.return_value = mock_encoding
+    @pytest.mark.asyncio
+    async def test_missing_required_args(self) -> None:
+        """Test error handling for missing required arguments."""
+        with patch("sys.argv", ["ostruct"]), \
+             patch("sys.stderr", new_callable=StringIO) as mock_stderr:
+            with pytest.raises(SystemExit) as exc_info:
+                await _main()
+            assert exc_info.value.code == 2
+            output = mock_stderr.getvalue()
+            assert "required" in output.lower()
 
-        result = await main()
-        assert result == ExitCode.SUCCESS
 
-        print("\nDebug messages:")
-        for msg in debug_messages:
-            print(f"  {msg}")
+# Variable Handling Tests
+class TestCLIVariables:
+    """Test variable handling in CLI."""
+    
+    @pytest.mark.asyncio
+    async def test_basic_variable(self, fs: Patcher) -> None:
+        """Test basic variable assignment."""
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="Value is: {{ test_var }}")
+        
+        # Create mock structured stream
+        async def mock_structured_stream(*args, **kwargs):
+            yield {"result": "test value processed"}
 
-        # Verify API call
-        calls = mock_openai_stream.chat.completions.create.mock_calls
-        assert len(calls) == 1
-        call_kwargs = calls[0].kwargs
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--var", "test_var=test_value",
+            "--api-key", "test-key",
+        ]), patch("sys.stdin.isatty", return_value=True), \
+            patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
+            patch("tiktoken.get_encoding") as mock_get_encoding:
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+            
+            result = await _main()
+            assert result == ExitCode.SUCCESS
 
-        # Verify messages
-        messages = call_kwargs["messages"]
-        assert len(messages) == 2
-        assert messages[0]["role"] == "system"
-        assert messages[1]["role"] == "user"
+    @pytest.mark.asyncio
+    async def test_json_variable(self, fs: Patcher) -> None:
+        """Test JSON variable assignment."""
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="Config: {{ config.key }}")
+        
+        # Create mock structured stream
+        async def mock_structured_stream(*args, **kwargs):
+            yield {"result": "config value processed"}
 
-        # Find debug message containing the file mappings
-        file_mappings_msg = next(
-            (msg for msg in debug_messages if "File mappings for context" in msg),
-            "",
-        )
-        assert file_mappings_msg, "No debug message found with file mappings"
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--json-var", 'config={"key": "value"}',
+            "--api-key", "test-key",
+        ]), patch("sys.stdin.isatty", return_value=True), \
+            patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
+            patch("tiktoken.get_encoding") as mock_get_encoding:
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+            
+            result = await _main()
+            assert result == ExitCode.SUCCESS
 
-        # Verify file mappings were processed
-        assert "single" in file_mappings_msg
-        assert "tests" in file_mappings_msg
-        assert "docs" in file_mappings_msg
-        assert "language" in file_mappings_msg
+    @pytest.mark.asyncio
+    async def test_invalid_variable_name(self, fs: Patcher) -> None:
+        """Test error handling for invalid variable names."""
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="Test")
+
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--var", "123invalid=value",  # Invalid: starts with a number
+            "--api-key", "test-key",
+        ]), patch("sys.stderr", new_callable=StringIO) as mock_stderr, \
+             patch("logging.getLogger") as mock_logger, \
+             patch("tiktoken.get_encoding") as mock_get_encoding:
+            # Setup logger mock to capture error messages
+            mock_error_logger = MagicMock()
+            mock_logger.return_value = mock_error_logger
+            
+            # Setup tiktoken mock
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+            
+            result = await _main()
+            assert result == ExitCode.DATA_ERROR
+            
+            # Check that the error was logged
+            mock_error_logger.error.assert_called()
+            error_msg = mock_error_logger.error.call_args[0][0].lower()
+            assert "invalid variable name" in error_msg
+            assert "123invalid" in error_msg
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_variable(self, fs: Patcher) -> None:
+        """Test error handling for invalid JSON variables."""
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="Test")
+
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--json-var", "config={invalid_json}",
+            "--api-key", "test-key",
+        ]), patch("sys.stderr", new_callable=StringIO) as mock_stderr, \
+             patch("logging.getLogger") as mock_logger, \
+             patch("tiktoken.get_encoding") as mock_get_encoding:
+            # Setup logger mock to capture error messages
+            mock_error_logger = MagicMock()
+            mock_logger.return_value = mock_error_logger
+            
+            # Setup tiktoken mock
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+            
+            result = await _main()
+            assert result == ExitCode.DATA_ERROR
+            
+            # Check that the error was logged
+            mock_error_logger.error.assert_called()
+            error_msg = mock_error_logger.error.call_args[0][0].lower()
+            assert "invalid json" in error_msg
+            assert "config" in error_msg
+            assert "property name" in error_msg
+
+
+# I/O Tests
+class TestCLIIO:
+    """Test I/O handling in CLI."""
+    
+    @pytest.mark.asyncio
+    async def test_file_input(self, fs: Patcher) -> None:
+        """Test file input handling."""
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="Content: {{ input.content }}")
+        fs.create_file("input.txt", contents="test content")
+
+        # Create mock structured stream
+        async def mock_structured_stream(*args, **kwargs):
+            yield {"result": "file content processed"}
+
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--file", "input=input.txt",
+            "--api-key", "test-key",
+        ]), patch("sys.stdin.isatty", return_value=True), \
+            patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
+            patch("tiktoken.get_encoding") as mock_get_encoding:
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+
+            result = await _main()
+            assert result == ExitCode.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_stdin_input(self, fs: Patcher) -> None:
+        """Test stdin input handling."""
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="Input: {{ stdin }}")
+
+        # Create mock structured stream
+        async def mock_structured_stream(*args, **kwargs):
+            yield {"result": "stdin content processed"}
+
+        # Create a StringIO that behaves like a file
+        mock_stdin = StringIO("test input")
+        mock_stdin.isatty = lambda: False  # Make it look like a pipe
+        mock_stdin.fileno = lambda: 0  # Add fileno method
+
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--api-key", "test-key",
+        ]), patch("sys.stdin", mock_stdin), \
+            patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
+            patch("tiktoken.get_encoding") as mock_get_encoding:
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+
+            result = await _main()
+            assert result == ExitCode.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_directory_input(self, fs: Patcher) -> None:
+        """Test directory input handling."""
+        # Create test directory structure
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="Files: {{ files | length }}")
+        fs.create_dir("test_dir")
+        fs.create_file("test_dir/file1.txt", contents="content 1")
+        fs.create_file("test_dir/file2.txt", contents="content 2")
+
+        # Create mock structured stream
+        async def mock_structured_stream(*args, **kwargs):
+            yield {"result": "directory content processed"}
+
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--dir", "files=test_dir",
+            "--api-key", "test-key",
+        ]), patch("sys.stdin.isatty", return_value=True), \
+            patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
+            patch("tiktoken.get_encoding") as mock_get_encoding:
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+
+            result = await _main()
+            assert result == ExitCode.SUCCESS
+
+
+# Integration Tests
+class TestCLIIntegration:
+    """Test integration between different CLI features."""
+    
+    @pytest.mark.asyncio
+    async def test_template_variable_integration(self, fs: Patcher) -> None:
+        """Test integration between templates and variables."""
+        fs.create_file("schema.json", contents='{"type": "string"}')
+        fs.create_file("task.txt", contents="""---
+system_prompt: Test prompt with {{ var1 }}
+---
+Template with {{ var2 }} and {{ input.content }}""")
+        fs.create_file("input.txt", contents="test content")
+
+        # Create mock structured stream
+        async def mock_structured_stream(*args, **kwargs):
+            yield {"result": "template and variables processed"}
+
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--file", "input=input.txt",
+            "--var", "var1=value1",
+            "--var", "var2=value2",
+            "--api-key", "test-key",
+        ]), patch("sys.stdin.isatty", return_value=True), \
+            patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
+            patch("tiktoken.get_encoding") as mock_get_encoding:
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+
+            result = await _main()
+            assert result == ExitCode.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_schema_validation_integration(self, fs: Patcher) -> None:
+        """Test integration between schema validation and API response."""
+        schema_content = {
+            "type": "object",
+            "properties": {
+                "analysis": {"type": "string"},
+                "score": {"type": "number"}
+            },
+            "required": ["analysis", "score"]
+        }
+        fs.create_file("schema.json", contents=json.dumps(schema_content))
+        fs.create_file("task.txt", contents="Analyze: {{ input }}")
+        fs.create_file("input.txt", contents="test content")
+
+        # Create mock structured stream
+        async def mock_structured_stream(*args, **kwargs):
+            yield {
+                "analysis": "Test analysis",
+                "score": 0.95
+            }
+
+        with patch("sys.argv", [
+            "ostruct",
+            "--task", "@task.txt",
+            "--schema-file", "schema.json",
+            "--file", "input=input.txt",
+            "--api-key", "test-key",
+        ]), patch("sys.stdin.isatty", return_value=True), \
+            patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
+            patch("tiktoken.get_encoding") as mock_get_encoding:
+            mock_encoding = MagicMock()
+            mock_encoding.encode.return_value = [1, 2, 3]
+            mock_get_encoding.return_value = mock_encoding
+
+            result = await _main()
+            assert result == ExitCode.SUCCESS

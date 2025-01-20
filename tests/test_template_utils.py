@@ -1,173 +1,260 @@
-"""Tests for template utilities."""
-
-from typing import Set
+"""Tests for task template utilities."""
 
 import pytest
 from jinja2 import Environment
-
+from pyfakefs.fake_filesystem_unittest import Patcher
+from openai_structured.cli.file_utils import FileInfo
 from openai_structured.cli.template_utils import (
-    extract_field,
-    format_code,
-    get_template_variables,
-    pivot_table,
-    summarize,
+    render_template,
     validate_template_placeholders,
 )
+from openai_structured.cli.template_validation import validate_template_placeholders
 
+def test_render_task_template_basic():
+    """Test basic task template rendering."""
+    template = "Hello {{ name }}!"
+    context = {"name": "World"}
+    result = render_template(template, context)
+    assert result == "Hello World!"
+
+def test_render_task_template_missing_var():
+    """Test task template rendering with missing variable."""
+    template = "Hello {{ name }}!"
+    context = {}
+    with pytest.raises(ValueError) as exc:
+        render_template(template, context)
+    assert "'name' is undefined" in str(exc.value)
+
+def test_validate_task_template_basic():
+    """Test basic task template validation."""
+    template = "Hello {{ name }}!"
+    file_mappings = {"name": "test"}  # Simple value
+    validate_template_placeholders(template, file_mappings)
+
+def test_validate_task_template_missing_var():
+    """Test task template validation with missing variable."""
+    template = "Hello {{ name }}!"
+    file_mappings = {}  # Empty dict instead of set()
+    with pytest.raises(ValueError) as exc:
+        validate_template_placeholders(template, file_mappings)
+    assert "undefined variable" in str(exc.value)
+
+def test_validate_task_template_invalid_syntax():
+    """Test task template validation with invalid syntax."""
+    template = "Hello {{ name!"  # Missing closing brace
+    file_mappings = {"name": "test"}
+    with pytest.raises(ValueError) as exc:
+        validate_template_placeholders(template, file_mappings)
+    assert "Invalid task template syntax" in str(exc.value)
 
 @pytest.fixture
-def jinja_env() -> Environment:
-    """Create a basic Jinja2 environment for testing."""
-    return Environment()
+def fs():
+    """Fixture to set up fake filesystem."""
+    with Patcher() as patcher:
+        # Create test files and directories
+        patcher.fs.create_file('/path/to/file.txt', contents='Test file content')
+        patcher.fs.create_file('/absolute/path/to/file.txt', contents='Test file content')
+        yield patcher.fs
 
+def test_validate_fileinfo_attributes(fs):
+    """Test validation of FileInfo attribute access."""
+    template = "Content: {{ file.content }}, Path: {{ file.abs_path }}"
+    file_info = FileInfo(
+        name="file",
+        path="/path/to/file.txt"
+    )
+    file_mappings = {"file": file_info}
+    validate_template_placeholders(template, file_mappings)
 
-class TestExtractField:
-    """Tests for extract_field function."""
+def test_validate_fileinfo_invalid_attribute(fs):
+    """Test validation with invalid FileInfo attribute."""
+    template = "{{ file.invalid_attr }}"
+    file_info = FileInfo(
+        name="file",
+        path="/path/to/file.txt"
+    )
+    file_mappings = {"file": file_info}
+    with pytest.raises(ValueError) as exc:
+        validate_template_placeholders(template, file_mappings)
 
-    def test_extract_from_dicts(self) -> None:
-        """Test extracting field from dictionaries."""
-        data = [
-            {"name": "Alice", "age": 25},
-            {"name": "Bob", "age": 30},
+def test_validate_nested_json_access():
+    """Test validation of nested JSON dictionary access."""
+    template = "{{ config['debug'] }}, {{ config['settings']['mode'] }}"
+    file_mappings = {"config": {"debug": True, "settings": {"mode": "test"}}}
+    validate_template_placeholders(template, file_mappings)
+
+def test_validate_nested_json_invalid_key():
+    """Test validation with invalid nested JSON key."""
+    template = "{{ config['invalid_key'] }}"
+    file_mappings = {"config": {"debug": True}}
+    with pytest.raises(ValueError) as exc:
+        validate_template_placeholders(template, file_mappings)
+
+def test_validate_complex_template(fs):
+    """Test validation of complex template with multiple features."""
+    # Set up test files
+    fs.create_file('/test/file1.txt', contents='File 1 content')
+    fs.create_file('/test/file2.txt', contents='File 2 content')
+    
+    template = """
+    {% for file in source_files %}
+        File: {{ file.abs_path }}
+        Content: {{ file.content }}
+        {% if file.name in config.exclude %}
+            Excluded: {{ config.exclude[file.name] }}
+        {% endif %}
+    {% endfor %}
+
+    Settings:
+    {% for key, value in config.settings.items() %}
+        {{ key }}: {{ value }}
+    {% endfor %}
+    """
+    file_mappings = {
+        "source_files": [
+            FileInfo("file1.txt", "/test/file1.txt"),
+            FileInfo("file2.txt", "/test/file2.txt")
+        ],
+        "config": {
+            "exclude": {"file1.txt": "reason1"},
+            "settings": {"mode": "test"}
+        }
+    }
+    validate_template_placeholders(template, file_mappings)
+
+def test_validate_template_with_filters(fs):
+    """Test validation of template using built-in filters and functions."""
+    fs.create_file('/test/data.txt', contents='Test data content')
+
+    template = """
+    {% set content = file.content|trim %}
+    {{ content|wordcount }}
+    {{ content|extract_field("status")|frequency|dict_to_table }}
+    """
+    file_mappings = {
+        "file": FileInfo("file", "/test/data.txt")
+    }
+    validate_template_placeholders(template, file_mappings)
+
+def test_validate_template_undefined_in_loop():
+    """Test validation catches undefined variables in loops."""
+    template = """
+    {% for item in items %}
+        {{ item.undefined_var }}
+    {% endfor %}
+    """
+    file_mappings = {
+        "items": [
+            {"name": "item1"},
+            {"name": "item2"}
         ]
-        assert extract_field(data, "name") == ["Alice", "Bob"]
+    }
+    with pytest.raises(ValueError) as exc:
+        validate_template_placeholders(template, file_mappings)
 
-    def test_extract_from_objects(self) -> None:
-        """Test extracting field from objects."""
+def test_validate_template_conditional_vars():
+    """Test validation with variables in conditional blocks."""
+    template = """
+    {% if condition %}
+        {{ defined_var }}
+    {% else %}
+        {{ undefined_var }}
+    {% endif %}
+    """
+    file_mappings = {
+        "condition": True,
+        "defined_var": "test"
+    }
+    with pytest.raises(ValueError) as exc:
+        validate_template_placeholders(template, file_mappings)
 
-        class Person:
-            def __init__(self, name: str):
-                self.name = name
+def test_validate_template_builtin_functions():
+    """Test validation allows built-in Jinja2 functions and filters."""
+    template = """
+    {% set items = range(5) %}
+    {% for i in items %}
+        {{ loop.index }}: {{ i }}
+    {% endfor %}
+    {{ "text"|upper }}
+    {{ lipsum(2) }}
+    """
+    file_mappings = {}  # No variables needed
+    validate_template_placeholders(template, file_mappings)
 
-        data = [Person("Alice"), Person("Bob")]
-        assert extract_field(data, "name") == ["Alice", "Bob"]
+def test_validate_template_custom_functions(fs):
+    """Test validation allows custom template functions."""
+    fs.create_file('/test/file.txt', contents='Test file content')
+    fs.create_file('/test/data.json', contents='{"status": "active"}')
 
-    def test_extract_missing_field(self) -> None:
-        """Test extracting non-existent field."""
-        data = [{"name": "Alice"}, {"name": "Bob"}]
-        assert extract_field(data, "age") == [None, None]
+    template = """
+    {{ file.content|extract_field("status") }}
+    {{ data|pivot_table("category", "value", "mean") }}
+    {{ text|format_code("python") }}
+    """
+    file_mappings = {
+        "file": FileInfo("file", "/test/file.txt"),
+        "data": {"category": "test", "value": 1},
+        "text": "print('hello')"
+    }
+    validate_template_placeholders(template, file_mappings)
 
+def test_render_template_with_file_content(fs):
+    """Test rendering template with actual file content."""
+    fs.create_file('/test/input.txt', contents='Hello from file!')
 
-class TestFormatCode:
-    """Tests for the format_code function."""
+    template = "Content: {{ file.content }}"
+    file_info = FileInfo(
+        name="file",
+        path="/test/input.txt"
+    )
+    file_info.load_content()
+    context = {"file": file_info}
+    result = render_template(template, context)
+    assert result == "Content: Hello from file!"
 
-    def test_basic_formatting(self) -> None:
-        """Test basic code formatting without syntax highlighting."""
-        code = """
-        def hello():
-            print("Hello")
-        """
-        result = format_code(code, format="plain")
-        assert "def hello():" in result
-        assert 'print("Hello")' in result
+def test_validate_json_variable_access():
+    """Test validation of JSON variable access using both dot notation and dictionary syntax."""
+    template = """
+    Dot notation: {{ config.debug }}, {{ config.settings.mode }}
+    Dict access: {{ config['debug'] }}, {{ config['settings']['mode'] }}
+    Mixed: {{ config.settings['mode'] }}, {{ config['settings'].mode }}
+    """
+    file_mappings = {
+        "config": {
+            "debug": True,
+            "settings": {"mode": "test"}
+        }
+    }
+    validate_template_placeholders(template, file_mappings)
 
-    def test_syntax_highlighting_terminal(self) -> None:
-        """Test syntax highlighting in terminal format."""
-        code = 'print("Hello")'
-        result = format_code(code, lang="python", format="terminal")
-        # Terminal format should include ANSI color codes if pygments is available
-        assert result != code
+def test_render_json_variable_access():
+    """Test rendering with JSON variables using both access methods."""
+    config = {
+        "debug": True,
+        "settings": {
+            "mode": "test"
+        }
+    }
+    
+    template = """
+    Dot notation: {{ config.debug }}, {{ config.settings.mode }}
+    Dict access: {{ config['debug'] }}, {{ config['settings']['mode'] }}
+    Mixed: {{ config.settings['mode'] }}, {{ config['settings'].mode }}
+    """
+    
+    result = render_template(template, {"config": config})
+    assert "Dot notation: True, test" in result
+    assert "Dict access: True, test" in result
+    assert "Mixed: test, test" in result
 
-    def test_syntax_highlighting_html(self) -> None:
-        """Test syntax highlighting in HTML format."""
-        code = 'print("Hello")'
-        result = format_code(code, lang="python", format="html")
-        # HTML format should include HTML tags if pygments is available
-        assert "<div" in result or code in result
-
-    def test_invalid_language(self) -> None:
-        """Test handling of invalid language specification."""
-        code = 'print("Hello")'
-        result = format_code(code, lang="nonexistent", format="terminal")
-        assert "Hello" in result
-
-    def test_empty_input(self) -> None:
-        """Test handling of empty input."""
-        assert format_code("") == ""
-
-    def test_invalid_format(self) -> None:
-        """Test handling of invalid format specification."""
-        with pytest.raises(ValueError, match="Invalid format"):
-            format_code("test", format="invalid")
-
-
-class TestPivotTable:
-    """Tests for pivot_table function."""
-
-    def test_basic_pivot(self) -> None:
-        """Test basic pivot table creation."""
-        data = [
-            {"category": "A", "value": 1},
-            {"category": "B", "value": 2},
-            {"category": "A", "value": 3},
-        ]
-        result = pivot_table(data, "category", "value", "sum")
-        assert result["aggregates"]["A"]["value"] == 4
-        assert result["aggregates"]["B"]["value"] == 2
-
-    def test_empty_data(self) -> None:
-        """Test pivot table with empty data."""
-        result = pivot_table([], "category", "value")
-        assert result["aggregates"] == {}
-        assert result["metadata"]["total_records"] == 0
-
-    def test_invalid_aggfunc(self) -> None:
-        """Test pivot table with invalid aggregation function."""
-        data = [{"category": "A", "value": 1}]
-        with pytest.raises(ValueError, match="Invalid aggfunc"):
-            pivot_table(data, "category", "value", "invalid")
-
-
-class TestSummarize:
-    """Tests for summarize function."""
-
-    def test_basic_summary(self) -> None:
-        """Test basic data summarization."""
-        data = [
-            {"name": "Alice", "age": 25},
-            {"name": "Bob", "age": 30},
-        ]
-        result = summarize(data)
-        assert result["total_records"] == 2
-        assert "name" in result["fields"]
-        assert "age" in result["fields"]
-
-    def test_empty_data(self) -> None:
-        """Test summarization with empty data."""
-        result = summarize([])
-        assert result["total_records"] == 0
-        assert result["fields"] == {}
-
-    def test_invalid_data(self) -> None:
-        """Test summarization with invalid data type."""
-        with pytest.raises(TypeError):
-            summarize([1, 2, 3])
-
-
-class TestTemplateValidation:
-    """Tests for template validation functions."""
-
-    available_files: Set[str] = {"input.txt", "config.json"}
-
-    def test_get_template_variables(self) -> None:
-        """Test extracting variables from template."""
-        template = "{{ var1 }} {% set var2 = 123 %} {{ var3|filter }}"
-        variables = get_template_variables(template)
-        assert variables == {"var1", "var3"}
-
-    def test_validate_template_basic(self) -> None:
-        """Test basic template validation."""
-        template = "{{ input }} {{ config }}"
-        validate_template_placeholders(template, {"input", "config"})
-
-    def test_validate_template_missing_files(self) -> None:
-        """Test validation with missing files."""
-        template = "{{ missing }}"
-        with pytest.raises(ValueError, match="missing files"):
-            validate_template_placeholders(template, set())
-
-    def test_validate_template_invalid_syntax(self) -> None:
-        """Test validation with invalid syntax."""
-        template = "{% if x %}"  # Missing endif
-        with pytest.raises(ValueError, match="Invalid template syntax"):
-            validate_template_placeholders(template, set())
+def test_invalid_json_variable_access():
+    """Test validation catches invalid JSON variable access."""
+    template = "{{ config.invalid }}"
+    file_mappings = {
+        "config": {
+            "debug": True,
+            "settings": {"mode": "test"}
+        }
+    }
+    with pytest.raises(ValueError) as exc:
+        validate_template_placeholders(template, file_mappings)

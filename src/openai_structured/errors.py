@@ -10,10 +10,102 @@ class OpenAIClientError(Exception):
     pass
 
 
-class ModelNotSupportedError(OpenAIClientError):
-    """Raised when the provided model is not supported."""
+class CLIError(Exception):
+    """Base class for CLI-related exceptions."""
 
     pass
+
+
+class VariableError(CLIError):
+    """Base class for variable-related errors."""
+
+    pass
+
+
+class VariableNameError(VariableError):
+    """Raised when a variable name is invalid."""
+
+    pass
+
+
+class VariableValueError(VariableError):
+    """Raised when a variable value is invalid."""
+
+    pass
+
+
+class InvalidJSONError(VariableError):
+    """Raised when JSON variable value is invalid."""
+
+    pass
+
+
+class PathError(CLIError):
+    """Base class for path-related errors."""
+
+    pass
+
+
+class FileNotFoundError(PathError):
+    """Raised when a file is not found."""
+
+    pass
+
+
+class DirectoryNotFoundError(PathError):
+    """Raised when a directory is not found."""
+
+    pass
+
+
+class PathSecurityError(PathError):
+    """Raised when a path is outside the allowed directory."""
+
+    pass
+
+
+class TaskTemplateError(CLIError):
+    """Base class for task template errors."""
+
+    pass
+
+
+class TaskTemplateVariableError(TaskTemplateError):
+    """Raised when a template uses undefined variables."""
+
+    pass
+
+
+class TaskTemplateSyntaxError(TaskTemplateError):
+    """Raised when a template has invalid syntax."""
+
+    pass
+
+
+class SchemaError(CLIError):
+    """Base class for schema-related errors."""
+
+    pass
+
+
+class SchemaValidationError(SchemaError):
+    """Raised when schema validation fails."""
+
+    pass
+
+
+class SchemaFileError(SchemaError):
+    """Raised when there are issues with the schema file."""
+
+    pass
+
+
+class ModelNotSupportedError(OpenAIClientError):
+    """Raised when a model is not supported."""
+
+    def __init__(self, message: str, model: Optional[str] = None):
+        super().__init__(message)
+        self.model = model
 
 
 class ModelVersionError(ModelNotSupportedError):
@@ -61,7 +153,9 @@ class JSONParseError(InvalidResponseFormatError):
 class StreamInterruptedError(OpenAIClientError):
     """Raised when a stream is interrupted unexpectedly."""
 
-    pass
+    def __init__(self, message: str, chunk_index: Optional[int] = None):
+        super().__init__(message)
+        self.chunk_index = chunk_index
 
 
 class StreamBufferError(StreamInterruptedError):

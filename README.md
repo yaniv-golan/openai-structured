@@ -65,7 +65,7 @@ The CLI provides a powerful way to make structured API calls from the command li
 ```bash
 ostruct \
   --system-prompt "You are a helpful assistant" \
-  --template "Analyze this text: {{ input }}" \
+  --task @task.txt \
   --file input=data.txt \
   --schema-file schema.json \
   --model gpt-4o \
@@ -85,17 +85,19 @@ ostruct \
 Required:
 
 ```bash
---system-prompt TEXT    # System prompt for the model
---template TEXT        # Template with {{ file }} placeholders using Jinja2
---schema-file PATH     # JSON schema for response structure
+--task TEXT           # Task template string or path to template file (with @ prefix)
+                     # Example: --task "Analyze this: {{ input }}"
+                     # Example with file: --task @task.txt
+--schema-file PATH    # JSON schema for response structure
 ```
 
 Optional:
 
 ```bash
---dry-run             # Simulate API call without making the actual request
---file NAME=PATH      # File mapping (name=path), use multiple times
-                      # Example: --file input=data.txt
+--system-prompt TEXT # System prompt for the model (optional)
+--dry-run           # Simulate API call without making the actual request
+--file NAME=PATH    # File mapping (name=path), use multiple times
+                    # Example: --file input=data.txt
 ```
 
 Model Configuration:
@@ -121,6 +123,17 @@ Authentication:
 ```bash
 --api-key TEXT       # OpenAI API key (overrides env var)
 ```
+
+## Security
+
+The CLI implements several security measures for file access:
+
+* Files must be within the current working directory by default
+* Temporary files are allowed for processing
+* Additional directories can be explicitly allowed using `--allowed-dir`
+* Directory lists can be loaded from files using `@` notation
+
+For more details, see the [CLI documentation](docs/source/cli.rst).
 
 ## Supported Models
 

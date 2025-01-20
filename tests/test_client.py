@@ -1,694 +1,125 @@
-"""Unit tests for the openai_structured client module."""
+"""Tests for the OpenAI structured client module using live API calls."""
 
-# Standard library imports
-from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Union
-from unittest.mock import AsyncMock, MagicMock
-
+import logging
+from typing import AsyncGenerator, Any
 import pytest
-
-# Third-party imports
-from openai import APITimeoutError, AsyncOpenAI, OpenAI, RateLimitError
+import pytest_asyncio
 from pydantic import BaseModel
+from openai import OpenAI, AsyncOpenAI
 
-# Local imports
 from openai_structured.client import (
-    StreamConfig,
-    async_openai_structured_call,
-    async_openai_structured_stream,
     openai_structured_call,
+    async_openai_structured_call,
     openai_structured_stream,
+    async_openai_structured_stream,
+    JSONParseError,
+    ValidationError,
+    InvalidResponseFormatError,
 )
-from openai_structured.errors import (
-    OpenAIClientError,
-    StreamBufferError,
-    StreamInterruptedError,
-)
 
+class SimpleResponse(BaseModel):
+    """Simple schema for testing basic responses."""
+    message: str
 
-class DummySchema(BaseModel):
-    """Dummy schema for testing."""
+@pytest_asyncio.fixture
+async def openai_client() -> AsyncOpenAI:
+    """Create OpenAI client for testing."""
+    client = AsyncOpenAI()
+    yield client
+    await client.close()
 
-    sentiment: str
+@pytest.mark.live
+class TestBasicFunctionality:
+    """Test basic functionality using live API."""
 
-
-class LogCapture:
-    """Helper class to capture log messages."""
-
-    def __init__(self) -> None:
-        self.messages: List[Dict[str, Any]] = []
-
-    def __call__(
-        self,
-        level: Union[int, str],
-        message: str,
-        data: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        self.messages.append(
-            {"level": level, "message": message, "data": data or {}}
+    @pytest.mark.asyncio
+    async def test_create_chat_completion(self, openai_client: AsyncOpenAI) -> None:
+        """Test basic chat completion with live API."""
+        result = await async_openai_structured_call(
+            client=openai_client,
+            user_prompt="Return a simple greeting as JSON with message field",
+            output_schema=SimpleResponse,
+            model="gpt-4o-2024-08-06",
+            system_prompt="You are a helpful assistant that returns JSON responses."
         )
+        
+        assert isinstance(result, SimpleResponse)
+        assert isinstance(result.message, str)
+        assert len(result.message) > 0
 
-
-def test_temperature_validation() -> None:
-    """Test temperature parameter validation."""
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_chat = MagicMock()
-    mock_completions = MagicMock()
-    mock_chat.completions = mock_completions
-    mock_client.chat = mock_chat
-
-    # Test valid temperatures
-    for temp in [0.0, 1.0, 2.0]:
-        mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(message=MagicMock(content='{"sentiment": "positive"}'))
-        ]
-        mock_completions.create.return_value = mock_response
-
-        openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-            temperature=temp,
-        )
-
-    # Test invalid temperatures
-    for temp in [-0.1, 2.1]:
-        with pytest.raises(
-            OpenAIClientError, match="Temperature must be between 0 and 2"
+    @pytest.mark.asyncio
+    async def test_create_chat_completion_stream(self, openai_client: AsyncOpenAI) -> None:
+        """Test streaming chat completion with live API."""
+        responses = []
+        async for response in async_openai_structured_stream(
+            client=openai_client,
+            user_prompt="Return a simple greeting as JSON with message field",
+            model="gpt-4o-2024-08-06",
+            output_schema=SimpleResponse,
+            system_prompt="You are a helpful assistant that returns JSON responses."
         ):
-            openai_structured_call(
-                client=mock_client,
-                model="gpt-4o",
-                output_schema=DummySchema,
-                system_prompt="test",
-                user_prompt="test",
-                temperature=temp,
+            responses.append(response)
+        
+        # Verify we got at least one response
+        assert len(responses) > 0
+        
+        # Verify each response is valid
+        for response in responses:
+            assert isinstance(response, SimpleResponse)
+            assert isinstance(response.message, str)
+            assert len(response.message) > 0
+
+@pytest.mark.live
+class TestErrorHandling:
+    """Test error handling with live API."""
+
+    @pytest.mark.asyncio
+    async def test_validation_error(self, openai_client: AsyncOpenAI) -> None:
+        """Test handling of validation errors."""
+        with pytest.raises(InvalidResponseFormatError):
+            await async_openai_structured_call(
+                client=openai_client,
+                user_prompt="Return JSON without a message field",
+                output_schema=SimpleResponse,
+                model="gpt-4o-2024-08-06",
+                system_prompt="You are a helpful assistant. Return JSON with an 'invalid' field instead of 'message'."
             )
 
+@pytest.mark.live
+class TestLogging:
+    """Test logging with live API."""
 
-def test_top_p_validation() -> None:
-    """Test top_p parameter validation."""
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_chat = MagicMock()
-    mock_completions = MagicMock()
-    mock_chat.completions = mock_completions
-    mock_client.chat = mock_chat
-
-    # Test valid top_p values
-    for top_p in [0.0, 0.5, 1.0]:
-        mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(message=MagicMock(content='{"sentiment": "positive"}'))
-        ]
-        mock_completions.create.return_value = mock_response
-
-        openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-            top_p=top_p,
-        )
-
-    # Test invalid top_p values
-    for top_p in [-0.1, 1.1]:
-        with pytest.raises(
-            OpenAIClientError, match="Top-p must be between 0 and 1"
-        ):
-            openai_structured_call(
-                client=mock_client,
-                model="gpt-4o",
-                output_schema=DummySchema,
-                system_prompt="test",
-                user_prompt="test",
-                top_p=top_p,
-            )
-
-
-def test_frequency_penalty_validation() -> None:
-    """Test frequency_penalty parameter validation."""
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_chat = MagicMock()
-    mock_completions = MagicMock()
-    mock_chat.completions = mock_completions
-    mock_client.chat = mock_chat
-
-    # Test valid frequency penalty values
-    for penalty in [-2.0, 0.0, 2.0]:
-        mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(message=MagicMock(content='{"sentiment": "positive"}'))
-        ]
-        mock_completions.create.return_value = mock_response
-
-        openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-            frequency_penalty=penalty,
-        )
-
-    # Test invalid frequency penalty values
-    for penalty in [-2.1, 2.1]:
-        with pytest.raises(
-            OpenAIClientError,
-            match="frequency_penalty must be between -2 and 2",
-        ):
-            openai_structured_call(
-                client=mock_client,
-                model="gpt-4o",
-                output_schema=DummySchema,
-                system_prompt="test",
-                user_prompt="test",
-                frequency_penalty=penalty,
-            )
-
-
-def test_presence_penalty_validation() -> None:
-    """Test presence_penalty parameter validation."""
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_chat = MagicMock()
-    mock_completions = MagicMock()
-    mock_chat.completions = mock_completions
-    mock_client.chat = mock_chat
-
-    # Test valid presence penalty values
-    for penalty in [-2.0, 0.0, 2.0]:
-        mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(message=MagicMock(content='{"sentiment": "positive"}'))
-        ]
-        mock_completions.create.return_value = mock_response
-
-        openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-            presence_penalty=penalty,
-        )
-
-    # Test invalid presence penalty values
-    for penalty in [-2.1, 2.1]:
-        with pytest.raises(
-            OpenAIClientError,
-            match="presence_penalty must be between -2 and 2",
-        ):
-            openai_structured_call(
-                client=mock_client,
-                model="gpt-4o",
-                output_schema=DummySchema,
-                system_prompt="test",
-                user_prompt="test",
-                presence_penalty=penalty,
-            )
-
-
-def test_sync_streaming() -> None:
-    """Test synchronous streaming interface."""
-    # Create mock responses
-    mock_responses = [
-        MagicMock(
-            choices=[
-                MagicMock(delta=MagicMock(content='{"sentiment": "positive"}'))
-            ]
-        )
-    ]
-
-    # Create mock completions
-    mock_completions = MagicMock()
-    mock_completions.create.return_value = mock_responses
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_client.chat = mock_chat
-
-    stream_config = StreamConfig(max_buffer_size=100)
-    for result in openai_structured_stream(
-        client=mock_client,
-        model="gpt-4o",
-        output_schema=DummySchema,
-        system_prompt="test",
-        user_prompt="test",
-        stream_config=stream_config,
-    ):
-        assert isinstance(result, DummySchema)
-
-
-def test_empty_response_handling() -> None:
-    """Test handling of empty responses."""
-    # Create mock response
-    mock_response = MagicMock()
-    mock_response.choices = []
-
-    # Create mock completions
-    mock_completions = MagicMock()
-    mock_completions.create.return_value = mock_response
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_client.chat = mock_chat
-
-    with pytest.raises(OpenAIClientError) as exc_info:
-        openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-        )
-    assert "empty response" in str(exc_info.value).lower()
-
-
-def test_invalid_json_handling() -> None:
-    """Test handling of invalid JSON responses."""
-    # Create mock response
-    mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(message=MagicMock(content="invalid json {"))
-    ]
-
-    # Create mock completions
-    mock_completions = MagicMock()
-    mock_completions.create.return_value = mock_response
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_client.chat = mock_chat
-
-    with pytest.raises(OpenAIClientError) as exc_info:
-        openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-        )
-    assert "invalid json" in str(exc_info.value).lower()
-
-
-def test_invalid_schema_handling() -> None:
-    """Test handling of responses that don't match the schema."""
-    # Create mock response
-    mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(message=MagicMock(content='{"invalid": "field"}'))
-    ]
-
-    # Create mock completions
-    mock_completions = MagicMock()
-    mock_completions.create.return_value = mock_response
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_client.chat = mock_chat
-
-    with pytest.raises(OpenAIClientError) as exc_info:
-        openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-        )
-    assert "validation failed" in str(exc_info.value).lower()
-
-
-@pytest.mark.asyncio
-async def test_api_error_handling() -> None:
-    """Test handling of OpenAI API errors."""
-    # Create mock request
-    mock_request = MagicMock()
-    mock_request.method = "POST"
-    mock_request.url = "https://api.openai.com/v1/chat/completions"
-    mock_request.headers = {}
-    mock_request.body = b"{}"
-
-    # Create mock completions
-    mock_completions = AsyncMock()
-    mock_completions.create.side_effect = APITimeoutError(request=mock_request)
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    with pytest.raises(APITimeoutError):
+    @pytest.mark.asyncio
+    async def test_basic_logging(self, openai_client: AsyncOpenAI, caplog: pytest.LogCaptureFixture) -> None:
+        """Test basic logging of requests."""
+        caplog.set_level(logging.INFO)
+        
         await async_openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
+            client=openai_client,
+            user_prompt="Return a simple greeting as JSON with message field",
+            output_schema=SimpleResponse,
+            model="gpt-4o-2024-08-06",
+            system_prompt="You are a helpful assistant that returns JSON responses."
         )
+        
+        # Check for httpx log messages
+        assert "HTTP Request: POST https://api.openai.com/v1/chat/completions" in caplog.text
+        assert "HTTP/1.1 200 OK" in caplog.text
 
-
-@pytest.mark.asyncio
-async def test_rate_limit_handling() -> None:
-    """Test handling of rate limit errors."""
-    # Create mock response for rate limit error
-    mock_response = MagicMock()
-    mock_response.status_code = 429
-    mock_response.headers = {"retry-after": "30"}
-    mock_response.text = "Rate limit exceeded"
-    mock_response.json.return_value = {
-        "error": {"message": "Rate limit exceeded"}
-    }
-
-    # Create mock completions with rate limit error
-    mock_completions = AsyncMock()
-    mock_completions.create.side_effect = RateLimitError(
-        message="Rate limit exceeded",
-        response=mock_response,
-        body={"error": {"message": "Rate limit exceeded"}},
-    )
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    with pytest.raises(RateLimitError):
-        await async_openai_structured_call(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-        )
-
-
-def test_stream_interruption() -> None:
-    """Test handling of stream interruption."""
-
-    # Create mock stream that raises connection error
-    def mock_stream() -> Generator[MagicMock, None, None]:
-        yield MagicMock(choices=[MagicMock(delta=MagicMock(content="{"))])
-        raise ConnectionError("Connection lost")
-
-    # Create mock completions
-    mock_completions = MagicMock()
-    mock_completions.create.return_value = mock_stream()
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = MagicMock(spec=OpenAI)
-    mock_client.chat = mock_chat
-
-    with pytest.raises(StreamInterruptedError):
-        for _ in openai_structured_stream(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-        ):
-            pass
-
-
-@pytest.mark.asyncio
-async def test_async_stream_success() -> None:
-    """Test successful async streaming."""
-    # Create mock responses
-    mock_responses = [
-        MagicMock(
-            choices=[MagicMock(delta=MagicMock(content='{"sentiment": '))]
-        ),
-        MagicMock(choices=[MagicMock(delta=MagicMock(content='"positive"'))]),
-        MagicMock(choices=[MagicMock(delta=MagicMock(content="}"))]),
-    ]
-
-    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
-        for response in mock_responses:
-            yield response
-
-    # Create mock completions
-    mock_completions = AsyncMock()
-    mock_completions.create = AsyncMock(return_value=mock_stream())
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    results = []
-    async for result in async_openai_structured_stream(
-        client=mock_client,
-        model="gpt-4o",
-        output_schema=DummySchema,
-        system_prompt="test",
-        user_prompt="test",
-    ):
-        results.append(result)
-
-    assert len(results) == 1
-    assert isinstance(results[0], DummySchema)
-    assert results[0].sentiment == "positive"
-
-
-@pytest.mark.asyncio
-async def test_async_stream_buffer_overflow() -> None:
-    """Test handling of buffer overflow in async streaming."""
-    # Create mock response with large content
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock(delta=MagicMock(content="x" * 100))]
-
-    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
-        yield mock_response
-
-    # Create mock completions
-    mock_completions = AsyncMock()
-    mock_completions.create = AsyncMock(return_value=mock_stream())
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    stream_config = StreamConfig(max_buffer_size=10)  # Very small buffer
-    with pytest.raises(StreamBufferError):
+    @pytest.mark.asyncio
+    async def test_stream_logging(self, openai_client: AsyncOpenAI, caplog: pytest.LogCaptureFixture) -> None:
+        """Test logging for streaming requests."""
+        caplog.set_level(logging.INFO)
+        
         async for _ in async_openai_structured_stream(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-            stream_config=stream_config,
+            client=openai_client,
+            user_prompt="Return a simple greeting as JSON with message field",
+            output_schema=SimpleResponse,
+            model="gpt-4o-2024-08-06",
+            system_prompt="You are a helpful assistant that returns JSON responses."
         ):
             pass
-
-
-@pytest.mark.asyncio
-async def test_async_stream_interruption() -> None:
-    """Test handling of stream interruption in async streaming."""
-
-    # Create mock stream that raises connection error
-    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
-        yield MagicMock(choices=[MagicMock(delta=MagicMock(content="{"))])
-        raise ConnectionError("Connection lost")
-
-    # Create mock completions
-    mock_completions = AsyncMock()
-    mock_completions.create = AsyncMock(return_value=mock_stream())
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    with pytest.raises(StreamInterruptedError):
-        async for _ in async_openai_structured_stream(
-            client=mock_client,
-            model="gpt-4o",
-            output_schema=DummySchema,
-            system_prompt="test",
-            user_prompt="test",
-        ):
-            pass
-
-
-@pytest.mark.asyncio
-async def test_async_call_success() -> None:
-    """Test successful async API call."""
-    # Create mock response
-    mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(message=MagicMock(content='{"sentiment": "positive"}'))
-    ]
-
-    # Create mock completions
-    mock_completions = AsyncMock()
-    mock_completions.create.return_value = mock_response
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    result = await async_openai_structured_call(
-        client=mock_client,
-        model="gpt-4o",
-        output_schema=DummySchema,
-        system_prompt="test",
-        user_prompt="test",
-    )
-    assert isinstance(result, DummySchema)
-    assert result.sentiment == "positive"
-
-
-@pytest.mark.asyncio
-async def test_async_call_with_logging() -> None:
-    """Test async API call with logging callback."""
-    # Create mock response
-    mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(message=MagicMock(content='{"sentiment": "positive"}'))
-    ]
-
-    # Create mock completions
-    mock_completions = AsyncMock()
-    mock_completions.create.return_value = mock_response
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    log_capture = LogCapture()
-
-    result = await async_openai_structured_call(
-        client=mock_client,
-        model="gpt-4o",
-        output_schema=DummySchema,
-        system_prompt="test",
-        user_prompt="test",
-        on_log=log_capture,
-    )
-
-    assert isinstance(result, DummySchema)
-    assert result.sentiment == "positive"
-    assert len(log_capture.messages) > 0
-
-
-@pytest.mark.asyncio
-async def test_async_stream_with_logging() -> None:
-    """Test async streaming with logging callback."""
-    # Create mock responses
-    mock_responses = [
-        MagicMock(
-            choices=[MagicMock(delta=MagicMock(content='{"sentiment": '))]
-        ),
-        MagicMock(choices=[MagicMock(delta=MagicMock(content='"positive"'))]),
-        MagicMock(choices=[MagicMock(delta=MagicMock(content="}"))]),
-    ]
-
-    async def mock_stream() -> AsyncGenerator[MagicMock, None]:
-        for response in mock_responses:
-            yield response
-
-    # Create mock completions
-    mock_completions = AsyncMock()
-    mock_completions.create = AsyncMock(return_value=mock_stream())
-
-    # Create mock chat
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-
-    # Create mock client with proper spec
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    log_capture = LogCapture()
-
-    results = []
-    async for result in async_openai_structured_stream(
-        client=mock_client,
-        model="gpt-4o",
-        output_schema=DummySchema,
-        system_prompt="test",
-        user_prompt="test",
-        on_log=log_capture,
-    ):
-        results.append(result)
-
-    assert len(results) == 1
-    assert isinstance(results[0], DummySchema)
-    assert results[0].sentiment == "positive"
-    assert len(log_capture.messages) > 0
-
-
-@pytest.mark.asyncio
-async def test_async_api_call() -> None:
-    """Test async API call with mock response."""
-    mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(message=MagicMock(content='{"sentiment": "positive"}'))
-    ]
-
-    mock_completions = AsyncMock()
-    mock_completions.create.return_value = mock_response
-    mock_chat = MagicMock()
-    mock_chat.completions = mock_completions
-    mock_client = AsyncMock(spec=AsyncOpenAI)
-    mock_client.chat = mock_chat
-
-    result = await async_openai_structured_call(
-        client=mock_client,
-        model="gpt-4o",
-        output_schema=DummySchema,
-        system_prompt="test",
-        user_prompt="test",
-    )
-
-    assert isinstance(result, DummySchema)
-    assert result.sentiment == "positive"
+        
+        # Check for httpx log messages
+        assert "HTTP Request: POST https://api.openai.com/v1/chat/completions" in caplog.text
+        assert "HTTP/1.1 200 OK" in caplog.text

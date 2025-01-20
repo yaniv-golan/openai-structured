@@ -854,3 +854,4 @@ Here are some practical examples combining multiple features:
                                   aggfunc='mean') %}
     Average Amount by Category:
     {{ pivot_data|dict_to_table }} 
+
