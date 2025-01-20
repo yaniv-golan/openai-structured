@@ -4,12 +4,12 @@ import asyncio
 import json
 import logging
 from io import StringIO
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, AsyncGenerator, AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import BaseModel
-from pyfakefs.fake_filesystem_unittest import Patcher
+from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.cli import ExitCode, _main
 from openai_structured.errors import VariableNameError, InvalidJSONError
@@ -20,7 +20,7 @@ class TestCLICore:
     """Test core CLI functionality."""
     
     @pytest.mark.asyncio
-    async def test_basic_execution(self, fs: Patcher) -> None:
+    async def test_basic_execution(self, fs: FakeFilesystem) -> None:
         """Test basic CLI execution with minimal arguments."""
         # Create test files
         fs.create_file("schema.json", contents='{"type": "string"}')
@@ -28,7 +28,7 @@ class TestCLICore:
         fs.create_file("input.txt", contents="test content")
         
         # Create mock structured stream
-        async def mock_structured_stream(*args, **kwargs):
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
             yield {"result": "test response"}
 
         with patch("sys.argv", [
@@ -90,13 +90,13 @@ class TestCLIVariables:
     """Test variable handling in CLI."""
     
     @pytest.mark.asyncio
-    async def test_basic_variable(self, fs: Patcher) -> None:
+    async def test_basic_variable(self, fs: FakeFilesystem) -> None:
         """Test basic variable assignment."""
         fs.create_file("schema.json", contents='{"type": "string"}')
         fs.create_file("task.txt", contents="Value is: {{ test_var }}")
         
         # Create mock structured stream
-        async def mock_structured_stream(*args, **kwargs):
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
             yield {"result": "test value processed"}
 
         with patch("sys.argv", [
@@ -116,13 +116,13 @@ class TestCLIVariables:
             assert result == ExitCode.SUCCESS
 
     @pytest.mark.asyncio
-    async def test_json_variable(self, fs: Patcher) -> None:
+    async def test_json_variable(self, fs: FakeFilesystem) -> None:
         """Test JSON variable assignment."""
         fs.create_file("schema.json", contents='{"type": "string"}')
         fs.create_file("task.txt", contents="Config: {{ config.key }}")
         
         # Create mock structured stream
-        async def mock_structured_stream(*args, **kwargs):
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
             yield {"result": "config value processed"}
 
         with patch("sys.argv", [
@@ -142,7 +142,7 @@ class TestCLIVariables:
             assert result == ExitCode.SUCCESS
 
     @pytest.mark.asyncio
-    async def test_invalid_variable_name(self, fs: Patcher) -> None:
+    async def test_invalid_variable_name(self, fs: FakeFilesystem) -> None:
         """Test error handling for invalid variable names."""
         fs.create_file("schema.json", contents='{"type": "string"}')
         fs.create_file("task.txt", contents="Test")
@@ -175,7 +175,7 @@ class TestCLIVariables:
             assert "123invalid" in error_msg
 
     @pytest.mark.asyncio
-    async def test_invalid_json_variable(self, fs: Patcher) -> None:
+    async def test_invalid_json_variable(self, fs: FakeFilesystem) -> None:
         """Test error handling for invalid JSON variables."""
         fs.create_file("schema.json", contents='{"type": "string"}')
         fs.create_file("task.txt", contents="Test")
@@ -214,14 +214,14 @@ class TestCLIIO:
     """Test I/O handling in CLI."""
     
     @pytest.mark.asyncio
-    async def test_file_input(self, fs: Patcher) -> None:
+    async def test_file_input(self, fs: FakeFilesystem) -> None:
         """Test file input handling."""
         fs.create_file("schema.json", contents='{"type": "string"}')
         fs.create_file("task.txt", contents="Content: {{ input.content }}")
         fs.create_file("input.txt", contents="test content")
 
         # Create mock structured stream
-        async def mock_structured_stream(*args, **kwargs):
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
             yield {"result": "file content processed"}
 
         with patch("sys.argv", [
@@ -241,26 +241,22 @@ class TestCLIIO:
             assert result == ExitCode.SUCCESS
 
     @pytest.mark.asyncio
-    async def test_stdin_input(self, fs: Patcher) -> None:
+    async def test_stdin_input(self, fs: FakeFilesystem) -> None:
         """Test stdin input handling."""
         fs.create_file("schema.json", contents='{"type": "string"}')
         fs.create_file("task.txt", contents="Input: {{ stdin }}")
 
         # Create mock structured stream
-        async def mock_structured_stream(*args, **kwargs):
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
             yield {"result": "stdin content processed"}
-
-        # Create a StringIO that behaves like a file
-        mock_stdin = StringIO("test input")
-        mock_stdin.isatty = lambda: False  # Make it look like a pipe
-        mock_stdin.fileno = lambda: 0  # Add fileno method
 
         with patch("sys.argv", [
             "ostruct",
             "--task", "@task.txt",
             "--schema-file", "schema.json",
             "--api-key", "test-key",
-        ]), patch("sys.stdin", mock_stdin), \
+        ]), patch("sys.stdin.isatty", return_value=False), \
+            patch("sys.stdin.read", return_value="test input"), \
             patch("openai_structured.cli.cli.async_openai_structured_stream", mock_structured_stream), \
             patch("tiktoken.get_encoding") as mock_get_encoding:
             mock_encoding = MagicMock()
@@ -271,7 +267,7 @@ class TestCLIIO:
             assert result == ExitCode.SUCCESS
 
     @pytest.mark.asyncio
-    async def test_directory_input(self, fs: Patcher) -> None:
+    async def test_directory_input(self, fs: FakeFilesystem) -> None:
         """Test directory input handling."""
         # Create test directory structure
         fs.create_file("schema.json", contents='{"type": "string"}')
@@ -281,7 +277,7 @@ class TestCLIIO:
         fs.create_file("test_dir/file2.txt", contents="content 2")
 
         # Create mock structured stream
-        async def mock_structured_stream(*args, **kwargs):
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
             yield {"result": "directory content processed"}
 
         with patch("sys.argv", [
@@ -306,7 +302,7 @@ class TestCLIIntegration:
     """Test integration between different CLI features."""
     
     @pytest.mark.asyncio
-    async def test_template_variable_integration(self, fs: Patcher) -> None:
+    async def test_template_variable_integration(self, fs: FakeFilesystem) -> None:
         """Test integration between templates and variables."""
         fs.create_file("schema.json", contents='{"type": "string"}')
         fs.create_file("task.txt", contents="""---
@@ -316,7 +312,7 @@ Template with {{ var2 }} and {{ input.content }}""")
         fs.create_file("input.txt", contents="test content")
 
         # Create mock structured stream
-        async def mock_structured_stream(*args, **kwargs):
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
             yield {"result": "template and variables processed"}
 
         with patch("sys.argv", [
@@ -338,7 +334,7 @@ Template with {{ var2 }} and {{ input.content }}""")
             assert result == ExitCode.SUCCESS
 
     @pytest.mark.asyncio
-    async def test_schema_validation_integration(self, fs: Patcher) -> None:
+    async def test_schema_validation_integration(self, fs: FakeFilesystem) -> None:
         """Test integration between schema validation and API response."""
         schema_content = {
             "type": "object",
@@ -353,7 +349,7 @@ Template with {{ var2 }} and {{ input.content }}""")
         fs.create_file("input.txt", contents="test content")
 
         # Create mock structured stream
-        async def mock_structured_stream(*args, **kwargs):
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
             yield {
                 "analysis": "Test analysis",
                 "score": 0.95

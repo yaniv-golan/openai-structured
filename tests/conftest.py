@@ -2,14 +2,14 @@
 
 # Standard library imports
 import asyncio
+from typing import Dict, Generator
 
 # Third-party imports
 import pytest
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
-from pyfakefs.fake_filesystem_unittest import Patcher
-from typing import Dict
+from pyfakefs.fake_filesystem import FakeFilesystem
 from unittest.mock import MagicMock
 
 pytest_plugins = ["pytest_asyncio"]
@@ -42,7 +42,7 @@ def env_setup(
 
 
 @pytest.fixture
-def fs(fs: Patcher) -> Patcher:
+def fs(fs: FakeFilesystem) -> Generator[FakeFilesystem, None, None]:
     """Create a fake filesystem for testing.
     
     This fixture is automatically used by tests that have an fs parameter.
@@ -53,11 +53,11 @@ def fs(fs: Patcher) -> Patcher:
         fs: The pyfakefs fixture
         
     Returns:
-        The pyfakefs Patcher object
+        The pyfakefs FakeFilesystem object
     """
     # pyfakefs already sets up common system paths
     # We can add any additional setup here if needed in the future
-    return fs
+    yield fs
 
 
 class MockResponse(BaseModel):
@@ -74,7 +74,7 @@ def mock_openai_client() -> OpenAI:
 
 
 @pytest.fixture
-def test_files(fs: Patcher) -> Dict[str, str]:
+def test_files(fs: FakeFilesystem) -> Dict[str, str]:
     """Create test files for testing.
     
     This fixture creates a set of test files in a temporary directory

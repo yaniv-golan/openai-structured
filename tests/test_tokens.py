@@ -1,7 +1,7 @@
 """Tests for token estimation and limits."""
 
 import pytest
-from typing import Dict, List, Any
+from typing import Dict, List, TypedDict, Literal, cast
 
 from openai_structured.cli.cli import (
     estimate_tokens_for_chat,
@@ -10,15 +10,20 @@ from openai_structured.cli.cli import (
     validate_token_limits,
 )
 
+class ChatMessage(TypedDict, total=False):
+    role: Literal["system", "user", "assistant"]
+    content: str
+    name: str
+
 class TestTokenEstimation:
     """Test token estimation functionality."""
     
     def test_estimate_tokens_basic(self) -> None:
         """Test basic token estimation for chat messages."""
-        messages: List[Dict[str, str]] = [
+        messages: List[Dict[str, str]] = cast(List[Dict[str, str]], [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Hello!"},
-        ]
+        ])
         
         # Use real tiktoken for accurate token counting
         tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
@@ -28,9 +33,9 @@ class TestTokenEstimation:
         
     def test_estimate_tokens_with_name(self) -> None:
         """Test token estimation with name field."""
-        messages: List[Dict[str, str]] = [
+        messages: List[Dict[str, str]] = cast(List[Dict[str, str]], [
             {"role": "assistant", "name": "bot", "content": "Hello"}
-        ]
+        ])
         
         tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
         assert 5 <= tokens <= 15  # Reasonable range for this message
@@ -38,7 +43,9 @@ class TestTokenEstimation:
     def test_estimate_tokens_long_message(self) -> None:
         """Test token estimation with longer content."""
         long_content = "This is a longer message that should be more than twenty tokens. It includes various words and phrases to ensure we exceed the token threshold. We need to make sure this message is long enough to properly test our token estimation functionality. Let's add some technical terms like machine learning, artificial intelligence, and natural language processing to make it more realistic." * 2
-        messages: List[Dict[str, str]] = [{"role": "user", "content": long_content}]
+        messages: List[Dict[str, str]] = cast(List[Dict[str, str]], [
+            {"role": "user", "content": long_content}
+        ])
         
         tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
         assert tokens > 100  # Long message should be well over 100 tokens
@@ -78,19 +85,25 @@ class TestTokenEdgeCases:
     
     def test_empty_messages(self) -> None:
         """Test token estimation with empty messages."""
-        messages: List[Dict[str, str]] = [{"role": "user", "content": ""}]
+        messages: List[Dict[str, str]] = cast(List[Dict[str, str]], [
+            {"role": "user", "content": ""}
+        ])
         tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
         assert tokens > 0  # Should still count message overhead
     
     def test_special_characters(self) -> None:
         """Test token estimation with special characters."""
-        messages: List[Dict[str, str]] = [{"role": "user", "content": "Hello 👋 World! 🌍"}]
+        messages: List[Dict[str, str]] = cast(List[Dict[str, str]], [
+            {"role": "user", "content": "Hello 👋 World! 🌍"}
+        ])
         tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
         assert tokens > 5  # Emojis typically take multiple tokens
     
     def test_code_blocks(self) -> None:
         """Test token estimation with code blocks."""
         code_message = '''{"role": "user", "content": "```python\ndef hello():\n    print('world')\n```"}'''
-        messages: List[Dict[str, str]] = [{"role": "user", "content": code_message}]
+        messages: List[Dict[str, str]] = cast(List[Dict[str, str]], [
+            {"role": "user", "content": code_message}
+        ])
         tokens = estimate_tokens_for_chat(messages, "gpt-4o-2024-08-06")
         assert tokens > len(code_message.split())  # Code typically uses more tokens than words 

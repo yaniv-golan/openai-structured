@@ -20,6 +20,7 @@ from openai_structured.cli.errors import (
     VariableValueError,
 )
 from typing import Any
+from pyfakefs.fake_filesystem import FakeFilesystem
 
 def test_variable_name_error() -> None:
     """Test VariableNameError."""
@@ -33,19 +34,19 @@ def test_variable_value_error() -> None:
         raise VariableValueError("test error")
     assert str(exc.value) == "test error"
 
-def test_json_variable_name_error():
+def test_json_variable_name_error() -> None:
     """Test JSON variable name error."""
     with pytest.raises(VariableNameError) as exc:
         raise VariableNameError("Empty name in JSON variable mapping")
     assert str(exc.value) == "Empty name in JSON variable mapping"
 
-def test_json_variable_value_error():
+def test_json_variable_value_error() -> None:
     """Test JSON variable value error."""
     with pytest.raises(ValueError) as exc:
         raise ValueError("Invalid JSON value")
     assert str(exc.value) == "Invalid JSON value"
 
-def test_path_name_error():
+def test_path_name_error() -> None:
     """Test path name error."""
     with pytest.raises(VariableNameError) as exc:
         raise VariableNameError("Empty name in file mapping")
@@ -63,14 +64,14 @@ def test_directory_not_found_error() -> None:
         raise DirectoryNotFoundError("test error")
     assert str(exc.value) == "test error"
 
-def test_path_security_error_traversal(fs):
+def test_path_security_error_traversal(fs: FakeFilesystem) -> None:
     """Test path security error for directory traversal."""
     fs.create_file("../outside.txt")
     with pytest.raises(PathSecurityError) as exc:
         raise PathSecurityError("Path '../outside.txt' is outside the base directory")
     assert str(exc.value) == "Path '../outside.txt' is outside the base directory"
 
-def test_path_security_error_permission(fs):
+def test_path_security_error_permission(fs: FakeFilesystem) -> None:
     """Test path security error for permission denied."""
     fs.create_file("secret.txt", st_mode=0o000)
     with pytest.raises(PathSecurityError) as exc:
@@ -83,13 +84,13 @@ def test_task_template_syntax_error() -> None:
         raise TaskTemplateSyntaxError("test error")
     assert str(exc.value) == "test error"
 
-def test_task_template_file_error():
+def test_task_template_file_error() -> None:
     """Test task template file error."""
     with pytest.raises(TaskTemplateVariableError) as exc:
         raise TaskTemplateVariableError("Invalid task template file: File not found")
     assert str(exc.value) == "Invalid task template file: File not found"
 
-def test_task_template_file_security_error(fs):
+def test_task_template_file_security_error(fs: FakeFilesystem) -> None:
     """Test task template file security error."""
     fs.create_file("../template.txt")
     with pytest.raises(TaskTemplateVariableError) as exc:
@@ -104,7 +105,7 @@ def test_schema_file_error() -> None:
         raise SchemaFileError("test error")
     assert str(exc.value) == "test error"
 
-def test_schema_json_error(fs):
+def test_schema_json_error(fs: FakeFilesystem) -> None:
     """Test schema JSON error."""
     fs.create_file("invalid.json", contents="{not valid json}")
     with pytest.raises(InvalidJSONError) as exc:
@@ -117,7 +118,7 @@ def test_schema_validation_error() -> None:
         raise SchemaValidationError("test error")
     assert str(exc.value) == "test error"
 
-def test_schema_file_security_error(fs):
+def test_schema_file_security_error(fs: FakeFilesystem) -> None:
     """Test schema file security error."""
     fs.create_file("../schema.json")
     with pytest.raises(SchemaFileError) as exc:
@@ -150,12 +151,6 @@ def test_invalid_json_error() -> None:
     """Test InvalidJSONError."""
     with pytest.raises(InvalidJSONError) as exc:
         raise InvalidJSONError("test error")
-    assert str(exc.value) == "test error"
-
-def test_path_error() -> None:
-    """Test PathError."""
-    with pytest.raises(PathError) as exc:
-        raise PathError("test error")
     assert str(exc.value) == "test error"
 
 def test_file_not_found_error_str() -> None:

@@ -2,7 +2,7 @@
 
 import os
 import tempfile
-from typing import Dict, Any, cast
+from typing import Dict, Any, cast, Union, List
 
 import pytest
 from pytest import ExceptionInfo
@@ -140,7 +140,7 @@ def test_extract_template_metadata() -> None:
         
     try:
         template_str = "template.j2"
-        context: Dict[str, Any] = {
+        context: Dict[str, Union[FileInfo, Dict[str, str], List[str], str]] = {
             "file": read_file(file_path),
             "config": {"key": "value"},
             "items": ["item1", "item2"],
