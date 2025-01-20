@@ -73,10 +73,10 @@ def test_render_template_with_file_info() -> None:
     finally:
         os.unlink(file_path)
 
-def test_render_template_with_lazy_loading() -> None:
-    """Test template rendering with lazy loading of file content."""
+def test_render_template_with_immediate_loading() -> None:
+    """Test template rendering with immediate loading of file content."""
     logger = logging.getLogger(__name__)
-    
+
     with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
         f.write("test content")
         f.flush()
@@ -86,23 +86,15 @@ def test_render_template_with_lazy_loading() -> None:
 
     try:
         file_info = FileInfo(name=file_name, path=file_path)
-        logger.debug("Created FileInfo instance (lazy=%s)", file_info.lazy)
-        
-        # Content should not be loaded initially
-        assert file_info._content is None
-        logger.debug("Verified content is not loaded initially")
+        logger.debug("Created FileInfo instance")
 
-        # Content should load automatically when rendered
-        template: str = "Content: {{ file.content }}"
-        env = Environment()
-        logger.debug("Created Jinja environment with template %r", template)
-        
-        result = env.from_string(template).render(file=file_info)
-        logger.debug("Rendered template result: %r", result)
+        # Content should be loaded immediately
+        assert file_info._content == "test content"
+        assert file_info.content == "test content"
 
-        # Content should now be loaded
-        assert "test content" in result
-        logger.debug("Verified content is in rendered result")
+        # Render template with file info
+        result = render_template("{{ file.content }}", {"file": file_info})
+        assert result == "test content"
     finally:
         os.unlink(file_path)
 
@@ -119,16 +111,16 @@ def test_render_template_error_handling() -> None:
     with pytest.raises(ValueError) as exc:
         render_template("{{ undefined }}", {})
     assert "undefined" in str(exc.value)
-    
+
     # Test syntax error
     with pytest.raises(ValueError) as exc:
         render_template("{% if %}", {})
     assert "syntax error" in str(exc.value)
-    
+
     # Test runtime error
     with pytest.raises(ValueError) as exc:
         render_template("{{ x + y }}", {"x": "string", "y": 1})
-    assert "error" in str(exc.value)
+    assert "can only concatenate str" in str(exc.value)
 
 def test_dot_dict() -> None:
     """Test DotDict functionality."""

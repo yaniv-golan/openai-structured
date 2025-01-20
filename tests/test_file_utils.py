@@ -24,8 +24,8 @@ def test_file_info_creation(fs: FakeFilesystem) -> None:
     # Create test file
     fs.create_file("test.txt", contents="test content")
     
-    # Create FileInfo instance with lazy=False to load stats immediately
-    file_info = FileInfo(name="test", path="test.txt", lazy=False)
+    # Create FileInfo instance
+    file_info = FileInfo(name="test", path="test.txt")
     
     # Check basic properties
     assert file_info.name == "test"
@@ -33,31 +33,16 @@ def test_file_info_creation(fs: FakeFilesystem) -> None:
     assert file_info.abs_path == os.path.abspath("test.txt")
     assert file_info.extension == "txt"
     
-    # Check initial state - in non-lazy mode, both stats and content should be loaded
-    assert file_info._content == "test content"  # Content should be loaded
-    assert isinstance(file_info._size, int)  # Should be loaded by now
-    assert isinstance(file_info._mtime, float)  # Should be loaded by now
-    assert file_info._encoding is not None  # Should be set after content load
-    assert file_info._hash is not None  # Should be set after content load
-    assert file_info._stats_loaded is True  # Stats should be loaded
+    # Check initial state - content should be loaded
+    assert file_info._content == "test content"
+    assert isinstance(file_info._size, int)
+    assert isinstance(file_info._mtime, float)
+    assert file_info._encoding is not None
+    assert file_info._hash is not None
+    assert file_info._stats_loaded is True
     
     # Content should be available immediately
     assert file_info.content == "test content"
-
-
-def test_file_info_lazy_loading(fs: FakeFilesystem) -> None:
-    """Test lazy loading behavior."""
-    fs.create_file("test.txt", contents="test content")
-    
-    # Create lazy FileInfo instance
-    file_info = FileInfo(name="test", path="test.txt", lazy=True)
-    
-    # Content should not be loaded until accessed
-    assert file_info._content is None
-    
-    # Accessing content should load it
-    assert file_info.content == "test content"
-    assert file_info._content == "test content"
 
 
 def test_file_info_cache_update(fs: FakeFilesystem) -> None:
@@ -247,20 +232,19 @@ def test_collect_files_errors(fs: FakeFilesystem) -> None:
 
 
 def test_file_info_stats_loading(fs: FakeFilesystem) -> None:
-    """Test that file stats can be loaded without content."""
+    """Test that file stats are loaded with content."""
     fs.create_file("test.txt", contents="test content")
     
     # Create FileInfo instance
-    file_info = FileInfo(name="test", path="test.txt", lazy=True)
+    file_info = FileInfo(name="test", path="test.txt")
     
-    # Check that stats can be loaded without content
+    # Check that stats are loaded
     assert file_info.size == len("test content")
     assert file_info.mtime is not None
-    assert file_info._content is None  # Content still not loaded
-    
-    # Accessing content loads it
-    assert file_info.content == "test content"
     assert file_info._content == "test content"
+    
+    # Content should be available
+    assert file_info.content == "test content"
 
 
 def test_file_info_stats_security(fs: FakeFilesystem) -> None:
@@ -274,42 +258,27 @@ def test_file_info_stats_security(fs: FakeFilesystem) -> None:
     os.chdir("/base")
     
     # Create FileInfo for file outside base directory
-    file_info = FileInfo(name="test", path="../outside/test.txt")
-    
-    # Accessing stats should raise security error
     with pytest.raises(PathSecurityError, match="Access denied: .* is outside base directory and not in allowed directories"):
-        _ = file_info.size
+        FileInfo(name="test", path="../outside/test.txt")
 
 
 def test_file_info_missing_file_stats(fs: FakeFilesystem) -> None:
     """Test stats loading for missing file."""
-    file_info = FileInfo(name="test", path="nonexistent.txt")
-    
     with pytest.raises(FileNotFoundError, match="File not found"):
-        _ = file_info.size
+        FileInfo(name="test", path="nonexistent.txt")
 
 
 def test_file_info_content_errors(fs: FakeFilesystem) -> None:
     """Test error handling in content loading."""
-    # Test non-lazy mode with missing file
+    # Test with missing file
     with pytest.raises(FileNotFoundError, match="File not found"):
-        FileInfo(name="test", path="nonexistent.txt", lazy=False)
-    
-    # Test lazy mode with missing file
-    file_info = FileInfo(name="test", path="nonexistent.txt", lazy=True)
-    with pytest.raises(FileNotFoundError, match="File not found"):
-        _ = file_info.content
+        FileInfo(name="test", path="nonexistent.txt")
     
     # Test security error
     fs.create_dir("/base")
     fs.create_file("/outside/test.txt", contents="test")
     os.chdir("/base")
     
-    # In non-lazy mode, security error should be raised immediately
+    # Security error should be raised immediately
     with pytest.raises(PathSecurityError, match="Access denied: .* is outside base directory and not in allowed directories"):
-        FileInfo(name="test", path="../outside/test.txt", lazy=False)
-    
-    # In lazy mode, security error should be raised when accessing content
-    file_info = FileInfo(name="test", path="../outside/test.txt", lazy=True)
-    with pytest.raises(PathSecurityError, match="Access denied: .* is outside base directory and not in allowed directories"):
-        _ = file_info.content 
+        FileInfo(name="test", path="../outside/test.txt")

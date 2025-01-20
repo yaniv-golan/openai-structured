@@ -69,6 +69,9 @@ def test_validate_with_filters() -> None:
 
 def test_validate_fileinfo_attributes(fs: FakeFilesystem) -> None:
     """Test validation of FileInfo attribute access."""
+    # Create test file in fake filesystem
+    fs.create_file("/path/to/file.txt", contents="test content")
+    
     template = "Content: {{ file.content }}, Path: {{ file.abs_path }}"
     file_info = FileInfo(
         name="file",
@@ -77,18 +80,28 @@ def test_validate_fileinfo_attributes(fs: FakeFilesystem) -> None:
     file_mappings: Dict[str, Any] = {"file": file_info}
     validate_template_placeholders(template, file_mappings)
 
-@pytest.mark.parametrize("template,file_mappings", [
-    ("{{ file.invalid_attr }}", {"file": FileInfo("file", "/test/file.txt")}),  # Invalid FileInfo attribute
-    ("{{ config['invalid'] }}", {"config": {}}),  # Invalid dict key
-    ("{{ config.settings.invalid }}", {"config": {"settings": {}}}),  # Invalid nested dict key
+@pytest.mark.parametrize("template,context_setup", [
+    ("{{ file.invalid_attr }}", lambda fs: {"file": create_test_file(fs, "test.txt")}),  # Invalid FileInfo attribute
+    ("{{ config['invalid'] }}", lambda _: {"config": {}}),  # Invalid dict key
+    ("{{ config.settings.invalid }}", lambda _: {"config": {"settings": {}}}),  # Invalid nested dict key
 ])
-def test_validate_invalid_access(template: str, file_mappings: Dict[str, Any]) -> None:
+def test_validate_invalid_access(template: str, context_setup: Any, fs: FakeFilesystem) -> None:
     """Test validation with invalid attribute/key access."""
+    file_mappings = context_setup(fs)
     with pytest.raises(ValueError) as exc:
         validate_template_placeholders(template, file_mappings)
 
+def create_test_file(fs: FakeFilesystem, filename: str) -> FileInfo:
+    """Helper to create a test file in the fake filesystem."""
+    fs.create_file(filename, contents="test content")
+    return FileInfo("file", filename)
+
 def test_validate_complex_template(fs: FakeFilesystem) -> None:
     """Test validation of complex template with multiple features."""
+    # Set up fake filesystem
+    fs.create_file("/test/file1.txt", contents="content1")
+    fs.create_file("/test/file2.txt", contents="content2")
+
     template = """
     {% for file in source_files %}
         File: {{ file.abs_path }}

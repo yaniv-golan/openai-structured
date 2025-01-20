@@ -10,6 +10,7 @@ Classes:
     - ListProxy: Proxy for list/iterable objects that validates indices and content
     - StdinProxy: Proxy for lazy stdin access
     - LazyValidationProxy: Proxy that delays attribute access until string conversion
+    - DotDict: Dictionary wrapper that supports both dot notation and dictionary access
 
 Examples:
     Create validation context with actual data:
@@ -158,39 +159,6 @@ class ValidationProxy:
         """Get the set of accessed attributes."""
         return self._accessed_attributes.copy()
 
-class LazyValidationProxy:
-    """Proxy that delays attribute access until string conversion.
-    
-    This proxy remembers which attribute to access but doesn't actually
-    access it until the value needs to be converted to a string. This
-    preserves lazy loading behavior while still allowing validation.
-    """
-    
-    def __init__(self, var_name: str, file_info: 'FileInfo', attr_name: str):
-        """Initialize the lazy proxy.
-        
-        Args:
-            var_name: Name of the variable for error messages
-            file_info: FileInfo instance to access
-            attr_name: Name of the attribute to access
-        """
-        self._var_name = var_name
-        self._file_info = file_info
-        self._attr_name = attr_name
-        
-    def __str__(self) -> str:
-        """Convert to string by accessing the actual value."""
-        value = getattr(self._file_info, self._attr_name)
-        return str(value)
-        
-    def __html__(self) -> str:
-        """Support HTML escaping."""
-        return str(self)
-        
-    def __html_format__(self, spec: str) -> str:
-        """Support HTML formatting."""
-        return str(self)
-
 class FileInfoProxy:
     """Proxy for FileInfo that provides validation during template rendering.
     
@@ -222,14 +190,14 @@ class FileInfoProxy:
             '__html__', '__html_format__'
         }
         
-    def __getattr__(self, name: str) -> Union[str, 'LazyValidationProxy']:
+    def __getattr__(self, name: str) -> str:
         """Get attribute value with validation.
         
         Args:
             name: Attribute name to get
             
         Returns:
-            Empty string for content, LazyValidationProxy for other attributes
+            Empty string for content, actual value for other attributes
             
         Raises:
             ValueError: If attribute name is not valid
@@ -243,12 +211,8 @@ class FileInfoProxy:
         if name in ('content', '__html__', '__html_format__'):
             return ""
             
-        # Return lazy proxy for all other attributes
-        return LazyValidationProxy(
-            var_name=f"{self._var_name}.{name}",
-            file_info=self._value,
-            attr_name=name
-        )
+        # Return actual value for all other attributes
+        return str(getattr(self._value, name))
 
     def __str__(self) -> str:
         """Convert to string.
@@ -265,25 +229,6 @@ class FileInfoProxy:
             Empty string to support filtering
         """
         return ""
-        
-    def __html_format__(self, spec: str) -> str:
-        """Format as HTML-safe string.
-        
-        Args:
-            spec: Format specification string
-            
-        Returns:
-            Empty string to support filtering
-        """
-        return ""
-        
-    def get_accessed_attributes(self) -> Set[str]:
-        """Get set of attributes that have been accessed.
-        
-        Returns:
-            Set of attribute names that have been accessed
-        """
-        return self._accessed_attrs.copy()
 
 class DictProxy:
     """Proxy for dictionary access during validation.
@@ -451,6 +396,39 @@ class StdinProxy:
     def __html_format__(self, spec: str) -> str:
         """Support HTML formatting."""
         return str(self)
+
+class DotDict:
+    """Dictionary wrapper that supports both dot notation and dictionary access."""
+    
+    def __init__(self, data: Dict[str, Any]):
+        self._data = data
+        
+    def __getattr__(self, name: str) -> Any:
+        try:
+            value = self._data[name]
+            return DotDict(value) if isinstance(value, dict) else value
+        except KeyError:
+            raise AttributeError(f"'DotDict' object has no attribute '{name}'")
+            
+    def __getitem__(self, key: str) -> Any:
+        value = self._data[key]
+        return DotDict(value) if isinstance(value, dict) else value
+        
+    def __contains__(self, key: str) -> bool:
+        return key in self._data
+        
+    def get(self, key: str, default: Any = None) -> Any:
+        value = self._data.get(key, default)
+        return DotDict(value) if isinstance(value, dict) else value
+        
+    def items(self) -> List[Tuple[str, Any]]:
+        return [(k, DotDict(v) if isinstance(v, dict) else v) for k, v in self._data.items()]
+        
+    def keys(self) -> List[str]:
+        return list(self._data.keys())
+        
+    def values(self) -> List[Any]:
+        return [DotDict(v) if isinstance(v, dict) else v for v in self._data.values()]
 
 def create_validation_context(template_context: Dict[str, Any]) -> Dict[str, Any]:
     """Create validation context with proxy objects.

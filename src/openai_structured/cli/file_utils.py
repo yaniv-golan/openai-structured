@@ -33,17 +33,16 @@ class FileInfo:
     """Information about a file.
     
     This class provides a safe interface for accessing file information and content,
-    with support for lazy loading and caching. It includes security checks to prevent
+    with support for caching. It includes security checks to prevent
     directory traversal attacks and ensures files are accessed only within allowed directories.
     """
     
-    def __init__(self, name: str, path: str, lazy: bool = True) -> None:
+    def __init__(self, name: str, path: str) -> None:
         """Initialize FileInfo instance.
         
         Args:
             name: Variable name for this file
             path: Path to file
-            lazy: Whether to load content lazily (default: True)
         """
         # Initialize logger first
         self.logger = logging.getLogger(__name__)
@@ -51,9 +50,8 @@ class FileInfo:
         # Initialize basic attributes
         self._name = name
         self._path = path
-        self._lazy = lazy
         
-        # Stats and content attributes - will be loaded when needed
+        # Stats and content attributes - loaded immediately
         self._content: Optional[str] = None
         self._size: Optional[int] = None
         self._mtime: Optional[float] = None
@@ -66,10 +64,9 @@ class FileInfo:
         # Mark as initialized
         self._initialized = True
         
-        # In non-lazy mode, load stats and content immediately
-        if not lazy:
-            self._load_stats()
-            self.load_content()
+        # Load stats and content immediately
+        self._load_stats()
+        self.load_content()
 
     @property
     def name(self) -> str:
@@ -88,11 +85,7 @@ class FileInfo:
         
     @property
     def content(self) -> str:
-        """Get file content, loading it if necessary.
-        
-        The content loading behavior depends on the lazy mode:
-        - In lazy mode: Content is loaded when this property is first accessed
-        - In non-lazy mode: Content should already be loaded during initialization
+        """Get file content.
         
         Returns:
             File content as string
@@ -102,12 +95,7 @@ class FileInfo:
             OSError: If file cannot be read
             PathSecurityError: If file access is denied
         """
-        self.logger.debug("Accessing content for %s (lazy=%s)", self._path, self._lazy)
         if self._content is None:
-            if not self._lazy:
-                # In non-lazy mode, content should have been loaded during initialization
-                self.logger.error("Content not loaded for non-lazy FileInfo: %s", self._path)
-                raise RuntimeError(f"Content not loaded for non-lazy FileInfo: {self._path}")
             try:
                 self.load_content()
             except (OSError, IOError, FileNotFoundError, PathSecurityError) as e:
@@ -203,8 +191,8 @@ class FileInfo:
 
     @property
     def lazy(self) -> bool:
-        """Whether this FileInfo uses lazy loading."""
-        return self._lazy
+        """Get whether this instance uses lazy loading."""
+        return False  # Always return False since lazy loading is removed
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Prevent modification of private attributes after initialization."""
@@ -231,13 +219,12 @@ class FileInfo:
         super().__setattr__(name, value)
 
     @classmethod
-    def from_path(cls, name: str, path: str, lazy: bool = True, allowed_dirs: Optional[List[str]] = None) -> "FileInfo":
+    def from_path(cls, name: str, path: str, allowed_dirs: Optional[List[str]] = None) -> "FileInfo":
         """Create FileInfo instance from file path.
         
         Args:
             name: Variable name for this file
             path: Path to file
-            lazy: Whether to load content lazily (default: True)
             allowed_dirs: Optional list of allowed directories
             
         Returns:
@@ -255,15 +242,10 @@ class FileInfo:
             logging.getLogger(__name__).error(msg)
             raise FileNotFoundError(msg)  # Using our custom FileNotFoundError
 
-        info = cls(name=name, path=path, lazy=lazy)
+        info = cls(name=name, path=path)
         
         # Always check security first
         info._check_security(allowed_dirs)
-        
-        # In non-lazy mode, load stats and content immediately
-        if not lazy:
-            info._load_stats()
-            info.load_content()
             
         return info
 
@@ -600,7 +582,7 @@ def collect_files(
                     raise ValueError(f"Empty variable name in mapping: {mapping}")
                 if not path:
                     raise ValueError(f"Empty file path in mapping: {mapping}")
-                result[name] = FileInfo.from_path(name=name, path=path, lazy=not load_content, allowed_dirs=expanded_allowed_dirs)
+                result[name] = FileInfo.from_path(name=name, path=path, allowed_dirs=expanded_allowed_dirs)
             except ValueError as e:
                 raise ValueError(f"Invalid file mapping: {str(e)}")
     

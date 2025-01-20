@@ -81,13 +81,12 @@ def read_file(
     file_path: str,
     encoding: Optional[str] = None,
     progress_enabled: bool = True,
-    lazy_load: bool = False,  # Default to eager loading
     chunk_size: int = 1024 * 1024  # 1MB chunks
 ) -> FileInfo:
     """Read a file and return its contents."""
     logger = logging.getLogger(__name__)
     logger.debug("\n=== read_file called ===")
-    logger.debug("Args: file_path=%s, encoding=%s, lazy_load=%s", file_path, encoding, lazy_load)
+    logger.debug("Args: file_path=%s, encoding=%s", file_path, encoding)
 
     with ProgressContext(
         "Reading file", show_progress=progress_enabled
@@ -102,14 +101,6 @@ def read_file(
             if not os.path.isfile(abs_path):
                 raise ValueError(f"File not found: {file_path}")
 
-            # Create FileInfo object
-            file_info = FileInfo(
-                name=os.path.basename(file_path),
-                path=file_path,
-                lazy=lazy_load
-            )
-            logger.debug("Created FileInfo object: %s", file_info)
-
             # Check if file is in cache and up to date
             mtime = os.path.getmtime(abs_path)
             with _cache_lock:
@@ -118,47 +109,49 @@ def read_file(
                     logger.debug("Cache hit for %s", abs_path)
                     if progress:
                         progress.update(1)  # Update progress for cache hit
-                    # Load content from cache if available and not lazy loading
-                    cached_content = _file_cache.get(abs_path)
-                    if cached_content is not None and not lazy_load:
-                        logger.debug("Loading content from cache")
-                        file_info.update_cache(
-                            content=cached_content,
-                            encoding=_file_encodings.get(abs_path),
-                            hash_value=_file_hashes.get(abs_path)
-                        )
+                    # Create FileInfo and update from cache
+                    file_info = FileInfo(
+                        name=os.path.basename(file_path),
+                        path=file_path
+                    )
+                    file_info.update_cache(
+                        content=_file_cache[abs_path],
+                        encoding=_file_encodings.get(abs_path),
+                        hash_value=_file_hashes.get(abs_path)
+                    )
                     return file_info
 
-            # Load file content unless using lazy loading
-            if not lazy_load:
-                logger.debug("Eager loading content for %s", abs_path)
-                file_info.load_content(encoding=encoding)
-                # Update cache if content was loaded
-                if file_info.content is not None:
-                    with _cache_lock:
-                        logger.debug("Updating cache for %s", abs_path)
-                        _file_mtimes[abs_path] = mtime
-                        _file_cache[abs_path] = file_info.content
-                        if file_info.encoding is not None:
-                            _file_encodings[abs_path] = file_info.encoding
-                        if file_info.hash is not None:
-                            _file_hashes[abs_path] = file_info.hash
+            # Create new FileInfo - content will be loaded immediately
+            file_info = FileInfo(
+                name=os.path.basename(file_path),
+                path=file_path
+            )
 
-                        global _cache_size
-                        _cache_size = sum(len(content) for content in _file_cache.values())
-                        logger.debug("Cache updated - size: %d", _cache_size)
+            # Update cache with loaded content
+            with _cache_lock:
+                logger.debug("Updating cache for %s", abs_path)
+                _file_mtimes[abs_path] = mtime
+                _file_cache[abs_path] = file_info.content
+                if file_info.encoding is not None:
+                    _file_encodings[abs_path] = file_info.encoding
+                if file_info.hash is not None:
+                    _file_hashes[abs_path] = file_info.hash
 
-                        # Remove old entries if cache is too large
-                        while _cache_size > MAX_CACHE_SIZE:
-                            oldest = min(_file_mtimes.items(), key=lambda x: x[1])
-                            old_path = oldest[0]
-                            if old_path in _file_cache:
-                                _cache_size -= len(_file_cache[old_path])
-                                del _file_cache[old_path]
-                                del _file_encodings[old_path]
-                                del _file_hashes[old_path]
-                            del _file_mtimes[old_path]
-                            logger.debug("Removed old cache entry: %s", old_path)
+                global _cache_size
+                _cache_size = sum(len(content) for content in _file_cache.values())
+                logger.debug("Cache updated - size: %d", _cache_size)
+
+                # Remove old entries if cache is too large
+                while _cache_size > MAX_CACHE_SIZE:
+                    oldest = min(_file_mtimes.items(), key=lambda x: x[1])
+                    old_path = oldest[0]
+                    if old_path in _file_cache:
+                        _cache_size -= len(_file_cache[old_path])
+                        del _file_cache[old_path]
+                        del _file_encodings[old_path]
+                        del _file_hashes[old_path]
+                    del _file_mtimes[old_path]
+                    logger.debug("Removed old cache entry: %s", old_path)
 
             if progress:
                 progress.update(1)  # Update progress for successful read

@@ -61,14 +61,14 @@ import logging
 import os
 import threading
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union, List, cast, Tuple, TypeVar
 
 import jinja2
 from jinja2 import Environment
 
 from .file_utils import FileInfo
 from . import template_filters
-from .template_schema import StdinProxy
+from .template_schema import StdinProxy, DotDict
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,19 @@ MAX_CACHE_SIZE = 50 * 1024 * 1024  # 50MB total cache size
 _cache_lock = threading.Lock()
 _file_mtimes: Dict[str, float] = {}
 _cache_size: int = 0
+
+# Type alias for values that can appear in the template context
+TemplateContextValue = Union[
+    DotDict,
+    StdinProxy, 
+    FileInfo,
+    List[Union[FileInfo, Any]],  # For file lists
+    str,
+    int,
+    float,
+    bool,
+    None
+]
 
 def create_jinja_env(env: Optional[Environment] = None) -> Environment:
     """Create and configure a Jinja2 environment with custom filters and globals."""
@@ -141,6 +154,16 @@ def create_jinja_env(env: Optional[Environment] = None) -> Environment:
 
     return env
 
+def stream_content(file_info: FileInfo, chunk_size: int) -> str:
+    """Stream content from a file in chunks."""
+    # Direct property access for lazy loading
+    if file_info.content is not None:
+        return file_info.content
+
+    # Read file when content is not cached
+    with open(file_info.abs_path, 'r', encoding=file_info.encoding) as f:
+        return f.read()
+
 def render_template(
     template_str: str,
     context: Dict[str, Any],
@@ -163,7 +186,8 @@ def render_template(
         Rendered task template string
 
     Raises:
-        ValueError: If task template cannot be loaded or rendered
+        ValueError: If task template cannot be loaded or rendered. The original error
+                  will be chained using `from` for proper error context.
     """
     from .progress import ProgressContext  # Import here to avoid circular dependency
 
@@ -178,7 +202,7 @@ def render_template(
                 jinja_env = create_jinja_env()
 
             # Wrap JSON variables in DotDict and handle special cases
-            wrapped_context = {}
+            wrapped_context: Dict[str, TemplateContextValue] = {}
             for key, value in context.items():
                 if isinstance(value, dict):
                     wrapped_context[key] = DotDict(value)
@@ -200,18 +224,7 @@ def render_template(
                             file_info.load_content()
 
             # Add streaming support to template environment
-            def stream_content(file_info: FileInfo) -> str:
-                if file_info.content is not None:
-                    return file_info.content
-
-                chunks = []
-                with open(file_info.abs_path, 'r', encoding=file_info.encoding) as f:
-                    while chunk := f.read(chunk_size):
-                        chunks.append(chunk)
-                return ''.join(chunks)
-
-            # Add stream_content to globals
-            jinja_env.globals['stream_content'] = stream_content
+            jinja_env.globals['stream_content'] = lambda file_info: stream_content(file_info, chunk_size)
 
             if progress:
                 progress.update(1)  # Update progress for template creation
@@ -224,15 +237,16 @@ def render_template(
                 try:
                     template = jinja_env.get_template(template_str)
                 except jinja2.TemplateNotFound as e:
-                    raise ValueError(f"Task template file not found: {e.name}")
+                    raise ValueError(f"Task template file not found: {e.name}") from e
             else:
                 try:
                     template = jinja_env.from_string(template_str)
                 except jinja2.TemplateSyntaxError as e:
-                    raise ValueError(f"Task template syntax error: {str(e)}")
+                    raise ValueError(f"Task template syntax error: {str(e)}") from e
 
             if template is None:
                 raise ValueError("Failed to create task template")
+            assert template is not None  # Help mypy understand control flow
 
             # Add template globals
             template.globals["template_name"] = getattr(
@@ -248,49 +262,11 @@ def render_template(
                 if progress:
                     progress.update(1)  # Update progress for successful render
                 return result
-            except (
-                jinja2.UndefinedError,
-                jinja2.TemplateRuntimeError,
-                jinja2.TemplateError,
-            ) as e:
-                error_type = type(e).__name__.replace("Template", "")
-                raise ValueError(f"Task template {error_type.lower()}: {str(e)}")
+            except jinja2.TemplateError as e:
+                raise ValueError(f"Template error: {str(e)}") from e
             except Exception as e:
-                raise ValueError(f"Task template processing error: {str(e)}")
-        except Exception as e:
-            if isinstance(e, ValueError):
-                raise
-            raise ValueError(f"Task template processing error: {str(e)}")
+                raise ValueError(f"Rendering failed: {str(e)}") from e
 
-class DotDict:
-    """Dictionary wrapper that supports both dot notation and dictionary access."""
-    
-    def __init__(self, data: Dict[str, Any]):
-        self._data = data
-        
-    def __getattr__(self, name: str) -> Any:
-        try:
-            value = self._data[name]
-            return DotDict(value) if isinstance(value, dict) else value
-        except KeyError:
-            raise AttributeError(f"'DotDict' object has no attribute '{name}'")
-            
-    def __getitem__(self, key: str) -> Any:
-        value = self._data[key]
-        return DotDict(value) if isinstance(value, dict) else value
-        
-    def __contains__(self, key: str) -> bool:
-        return key in self._data
-        
-    def get(self, key: str, default: Any = None) -> Any:
-        value = self._data.get(key, default)
-        return DotDict(value) if isinstance(value, dict) else value
-        
-    def items(self):
-        return [(k, DotDict(v) if isinstance(v, dict) else v) for k, v in self._data.items()]
-        
-    def keys(self):
-        return self._data.keys()
-        
-    def values(self):
-        return [DotDict(v) if isinstance(v, dict) else v for v in self._data.values()] 
+        except ValueError as e:
+            # Re-raise with original context
+            raise e

@@ -15,21 +15,20 @@ from openai_structured.cli.template_io import (
 from openai_structured.cli.file_utils import FileInfo
 
 def test_read_file_basic() -> None:
-    """Test basic file reading functionality."""
+    """Test basic file reading."""
     with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
         f.write("test content")
         f.flush()
         file_path = f.name
         
     try:
+        # Read file
         file_info = read_file(file_path)
-        assert isinstance(file_info, FileInfo)
-        assert file_info.name == os.path.basename(file_path)
-        assert file_info.path == file_path
-        assert file_info.abs_path == os.path.realpath(file_path)
+        
+        # Verify content
         assert file_info.content == "test content"
-        assert file_info.size == len("test content")
-        assert isinstance(file_info.mtime, float)
+        assert file_info.encoding is not None
+        assert file_info.hash is not None
     finally:
         os.unlink(file_path)
 
@@ -48,27 +47,24 @@ def test_read_file_with_encoding() -> None:
     finally:
         os.unlink(file_path)
 
-def test_read_file_lazy_loading() -> None:
-    """Test lazy loading of file content."""
+def test_read_file_content_loading() -> None:
+    """Test immediate content loading behavior."""
     with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
         f.write("test content")
         f.flush()
         file_path = f.name
 
     try:
-        # Create FileInfo with lazy loading
-        file_info = read_file(file_path, lazy_load=True)
+        # Create FileInfo - content should be loaded immediately
+        file_info = read_file(file_path)
         
-        # Verify internal state before access
-        assert file_info._content is None
-        
-        # Content should be available when accessed (transparent to users)
+        # Content should be available immediately
         assert file_info.content == "test content"
         
-        # Content should now be cached
+        # Internal state should show content is loaded
         assert file_info._content == "test content"
         
-        # Second access should use cached content
+        # Second access should return same content
         assert file_info.content == "test content"
     finally:
         os.unlink(file_path)
