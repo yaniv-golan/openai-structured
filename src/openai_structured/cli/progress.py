@@ -2,7 +2,8 @@
 
 import sys
 from contextlib import contextmanager
-from typing import Iterator, Optional
+from types import TracebackType
+from typing import Iterator, Optional, Type
 
 from rich.console import Console
 from rich.progress import (
@@ -69,7 +70,10 @@ class ProgressContext:
             )
         return self
         
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, 
+                 exc_type: Optional[Type[BaseException]], 
+                 exc_val: Optional[BaseException], 
+                 exc_tb: Optional[TracebackType]) -> None:
         """Stop progress reporting."""
         if self.enabled and self._progress:
             if exc_type is None:

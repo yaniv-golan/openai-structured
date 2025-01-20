@@ -46,7 +46,7 @@ Notes:
 
 import logging
 import sys
-from typing import Any, Dict, Optional, Set, Union, Iterator, List, Tuple, Literal
+from typing import Any, Dict, Optional, Set, Union, Iterator, List, Tuple, Literal, cast
 
 from .file_utils import FileInfo
 
@@ -56,7 +56,7 @@ class ValidationProxy:
     """Proxy object that validates attribute/key access during template validation."""
 
     def __init__(self, var_name: str, value: Any = None, valid_attrs: Optional[Set[str]] = None,
-                 nested_attrs: Optional[Dict[str, Any]] = None, allow_nested: bool = True):
+                 nested_attrs: Optional[Dict[str, Any]] = None, allow_nested: bool = True) -> None:
         """Initialize the proxy.
 
         Args:
@@ -75,7 +75,7 @@ class ValidationProxy:
         logger.debug("Created ValidationProxy for %s with valid_attrs=%s, nested_attrs=%s, allow_nested=%s",
                     var_name, valid_attrs, nested_attrs, allow_nested)
 
-    def __getattr__(self, name: str) -> 'ValidationProxy':
+    def __getattr__(self, name: str) -> Union['ValidationProxy', 'DictProxy']:
         """Validate attribute access during template validation."""
         logger.debug("\n=== ValidationProxy.__getattr__ ===")
         logger.debug("Called for: %s.%s", self._var_name, name)
@@ -111,8 +111,8 @@ class ValidationProxy:
                 )
 
         # Validate against valid_attrs if present
-        if self._valid_attrs is not None:
-            if self._valid_attrs and name not in self._valid_attrs:
+        if self._valid_attrs:
+            if name not in self._valid_attrs:
                 raise ValueError(
                     f"Task template uses undefined attribute '{self._var_name}.{name}'"
                 )
@@ -121,21 +121,19 @@ class ValidationProxy:
                 allow_nested=False
             )
 
-        # Check nesting allowance
+        # Check nesting allowance and get actual value
         if not self._allow_nested:
             raise ValueError(
                 f"Task template uses undefined attribute '{self._var_name}.{name}'"
             )
 
-        # Get the actual value if available
+        value = None
         if self._value is not None and hasattr(self._value, name):
             value = getattr(self._value, name)
-        else:
-            value = None
 
         return ValidationProxy(f"{self._var_name}.{name}", value=value, allow_nested=True)
 
-    def __getitem__(self, key: Any) -> 'ValidationProxy':
+    def __getitem__(self, key: Any) -> Union['ValidationProxy', 'DictProxy']:
         """Support item access for validation."""
         key_str = f"['{key}']" if isinstance(key, str) else f"[{key}]"
         return ValidationProxy(f"{self._var_name}{key_str}", valid_attrs=self._valid_attrs, allow_nested=self._allow_nested)
@@ -152,7 +150,7 @@ class ValidationProxy:
         """Return formatted HTML representation."""
         return str(self)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Union['ValidationProxy', 'DictProxy']]:
         """Support iteration for validation."""
         yield ValidationProxy(f"{self._var_name}[0]", valid_attrs=self._valid_attrs)
 
@@ -207,7 +205,7 @@ class FileInfoProxy:
         _valid_attrs: Set of valid attribute names
     """
     
-    def __init__(self, var_name: str, value: 'FileInfo') -> None:
+    def __init__(self, var_name: str, value: FileInfo) -> None:
         """Initialize FileInfoProxy.
         
         Args:
@@ -216,7 +214,7 @@ class FileInfoProxy:
         """
         self._var_name = var_name
         self._value = value
-        self._accessed_attrs = set()
+        self._accessed_attrs: Set[str] = set()
         self._valid_attrs = {
             'name', 'path', 'content', 'ext', 'basename', 'dirname',
             'abs_path', 'exists', 'is_file', 'is_dir', 'size', 'mtime',
@@ -294,14 +292,20 @@ class DictProxy:
     Provides standard dictionary methods (get, items, keys, values).
     Supports HTML escaping for Jinja2 compatibility.
     """
-    def __init__(self, name: str, value: dict):
+    def __init__(self, name: str, value: Dict[str, Any]) -> None:
+        """Initialize the proxy.
+
+        Args:
+            name: The name of the variable being proxied.
+            value: The dictionary being proxied.
+        """
         self._name = name
         self._value = value
 
     def __getattr__(self, name: str) -> Union['DictProxy', ValidationProxy]:
         """Validate attribute access against actual dictionary structure."""
         if name in {'get', 'items', 'keys', 'values'}:
-            return getattr(self, f'_{name}')
+            return cast(Union['DictProxy', ValidationProxy], getattr(self, f'_{name}'))
             
         if name not in self._value:
             raise ValueError(f"Task template uses undefined attribute '{self._name}.{name}'")
@@ -335,7 +339,7 @@ class DictProxy:
         except ValueError:
             return default
 
-    def _items(self):
+    def _items(self) -> Iterator[Tuple[str, Union['DictProxy', ValidationProxy]]]:
         """Implement dict.items() method."""
         for key, value in self._value.items():
             if isinstance(value, dict):
@@ -343,11 +347,12 @@ class DictProxy:
             else:
                 yield (key, ValidationProxy(f"{self._name}['{key}']"))
 
-    def _keys(self):
+    def _keys(self) -> Iterator[str]:
         """Implement dict.keys() method."""
-        return self._value.keys()
+        for key in self._value.keys():
+            yield key
 
-    def _values(self):
+    def _values(self) -> Iterator[Union['DictProxy', ValidationProxy]]:
         """Implement dict.values() method."""
         for key, value in self._value.items():
             if isinstance(value, dict):
@@ -370,7 +375,13 @@ class ListProxy(ValidationProxy):
     are accessed. For other lists, validates indices and returns appropriate proxies
     based on the actual content type.
     """
-    def __init__(self, var_name: str, value: list):
+    def __init__(self, var_name: str, value: List[Any]) -> None:
+        """Initialize the proxy.
+
+        Args:
+            var_name: The name of the variable being proxied.
+            value: The list being proxied.
+        """
         super().__init__(var_name)
         self._value = value
         # Determine if this is a list of files
@@ -385,12 +396,12 @@ class ListProxy(ValidationProxy):
         """Support len() for validation."""
         return len(self._value)
 
-    def __iter__(self) -> Iterator[ValidationProxy]:
+    def __iter__(self) -> Iterator[Union[ValidationProxy, DictProxy]]:
         """Support iteration, returning appropriate proxies."""
         if self._is_file_list:
             # For file lists, return FileInfoProxy for validation
             for i in range(len(self._value)):
-                yield FileInfoProxy(f"{self._var_name}[{i}]", self._value[i])
+                yield cast(Union[ValidationProxy, DictProxy], FileInfoProxy(f"{self._var_name}[{i}]", self._value[i]))
         else:
             # For other lists, return basic ValidationProxy
             for i in range(len(self._value)):
@@ -399,7 +410,7 @@ class ListProxy(ValidationProxy):
                 else:
                     yield ValidationProxy(f"{self._var_name}[{i}]")
 
-    def __getitem__(self, key: Any) -> ValidationProxy:
+    def __getitem__(self, key: Any) -> Union[ValidationProxy, DictProxy]:
         """Validate list index access and return appropriate proxy."""
         if isinstance(key, int) and (key < 0 or key >= len(self._value)):
             raise ValueError(f"List index {key} out of range for {self._var_name}")
@@ -407,7 +418,7 @@ class ListProxy(ValidationProxy):
         key_str = f"['{key}']" if isinstance(key, str) else f"[{key}]"
         
         if self._is_file_list:
-            return FileInfoProxy(f"{self._var_name}{key_str}", self._value[key])
+            return cast(Union[ValidationProxy, DictProxy], FileInfoProxy(f"{self._var_name}{key_str}", self._value[key]))
         else:
             value = self._value[key]
             if isinstance(value, dict):
@@ -421,8 +432,9 @@ class StdinProxy:
     This prevents unnecessary stdin reads when the template doesn't use stdin.
     """
     
-    def __init__(self):
-        self._content = None
+    def __init__(self) -> None:
+        """Initialize the proxy."""
+        self._content: Optional[str] = None
         
     def __str__(self) -> str:
         """Return stdin content when converted to string."""
@@ -430,7 +442,7 @@ class StdinProxy:
             if sys.stdin.isatty():
                 raise ValueError("No input available on stdin")
             self._content = sys.stdin.read()
-        return self._content
+        return self._content or ""
         
     def __html__(self) -> str:
         """Support HTML escaping."""
@@ -459,7 +471,7 @@ def create_validation_context(template_context: Dict[str, Any]) -> Dict[str, Any
         >>> # context['config'] will be DictProxy validating against {'debug': True}
         >>> # context['files'] will be ListProxy validating file attributes
     """
-    validation_context = {}
+    validation_context: Dict[str, Any] = {}
     
     # Add stdin proxy by default - it will only read if accessed
     validation_context['stdin'] = StdinProxy()

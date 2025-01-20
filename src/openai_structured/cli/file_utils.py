@@ -7,7 +7,7 @@ import logging
 import chardet
 import inspect
 from pathlib import Path
-from typing import List, Dict, Union, Optional, Set, Any
+from typing import List, Dict, Union, Optional, Set, Any, Type, cast
 
 from .errors import (
     DirectoryNotFoundError,
@@ -15,17 +15,18 @@ from .errors import (
     FileNotFoundError,
 )
 from .security import is_temp_file
+from .security import SecurityManager
+from .security_types import SecurityManagerProtocol
 
 # Type for values in template context
 TemplateValue = Union[str, "FileInfo", List["FileInfo"]]
 
-# Import SecurityManager at runtime to avoid circular import
-SecurityManager = None
-
-def _get_security_manager():
-    global SecurityManager
-    if SecurityManager is None:
-        from .security import SecurityManager
+def _get_security_manager() -> Type[SecurityManagerProtocol]:
+    """Get the SecurityManager class.
+    
+    Returns:
+        The SecurityManager class type
+    """
     return SecurityManager
 
 class FileInfo:
@@ -173,7 +174,7 @@ class FileInfo:
     @property
     def parent(self) -> str:
         """Get parent directory."""
-        return str(self._path.parent)
+        return os.path.dirname(self._path)
         
     @property
     def stem(self) -> str:

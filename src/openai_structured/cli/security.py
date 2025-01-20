@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 from .errors import DirectoryNotFoundError, PathSecurityError
+from .security_types import SecurityManagerProtocol
 
 def is_temp_file(path: str) -> bool:
     """Check if a file is in a temporary directory.
@@ -59,7 +60,7 @@ def is_temp_file(path: str) -> bool:
     
     return False
 
-class SecurityManager:
+class SecurityManager(SecurityManagerProtocol):
     """Manages security for file access.
     
     Validates all file access against a base directory and optional
