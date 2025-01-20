@@ -57,13 +57,14 @@ import json
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from .file_utils import FileInfo
 from .progress import ProgressContext
 
 import jinja2
 from jinja2 import Environment
+from rich.progress import Progress as RichProgress
 
 logger = logging.getLogger(__name__)
 
@@ -138,8 +139,10 @@ def read_file(
                         logger.debug("Updating cache for %s", abs_path)
                         _file_mtimes[abs_path] = mtime
                         _file_cache[abs_path] = file_info.content
-                        _file_encodings[abs_path] = file_info.encoding
-                        _file_hashes[abs_path] = file_info.hash
+                        if file_info.encoding is not None:
+                            _file_encodings[abs_path] = file_info.encoding
+                        if file_info.hash is not None:
+                            _file_hashes[abs_path] = file_info.hash
 
                         global _cache_size
                         _cache_size = sum(len(content) for content in _file_cache.values())
@@ -170,26 +173,22 @@ def read_file(
 
 def extract_metadata(file_info: FileInfo) -> Dict[str, Any]:
     """Extract metadata from a FileInfo object.
-
-    Args:
-        file_info: The FileInfo object to extract metadata from.
-
-    Returns:
-        A dictionary containing the file's metadata.
-        Content is only included if it's already loaded.
+    
+    This function respects lazy loading - it will not force content loading
+    if the content hasn't been loaded yet.
     """
-    metadata = {
-        "name": file_info.name,
+    metadata: Dict[str, Any] = {
+        "name": os.path.basename(file_info.path),
         "path": file_info.path,
-        "abs_path": file_info.abs_path,
-        "size": file_info.size,
-        "mtime": file_info.mtime,
+        "abs_path": os.path.realpath(file_info.path),
+        "mtime": file_info.mtime
     }
     
-    # Only include content if it's already loaded
-    if file_info._content is not None:
+    # Only include content-related fields if content is already loaded
+    if not file_info.lazy or file_info._content is not None:
         metadata["content"] = file_info.content
-        
+        metadata["size"] = len(file_info.content) if file_info.content else 0
+    
     return metadata
 
 def extract_template_metadata(
@@ -197,56 +196,39 @@ def extract_template_metadata(
     context: Dict[str, Any],
     jinja_env: Optional[Environment] = None,
     progress_enabled: bool = True
-) -> Dict[str, Any]:
-    """Extract metadata from a template and its context.
+) -> Dict[str, Dict[str, Any]]:
+    """Extract metadata about a template string."""
+    metadata: Dict[str, Dict[str, Any]] = {
+        "template": {
+            "is_file": True,
+            "path": template_str
+        },
+        "context": {
+            "variables": sorted(context.keys()),
+            "dict_vars": [],
+            "list_vars": [],
+            "file_info_vars": [],
+            "other_vars": []
+        }
+    }
     
-    Args:
-        template_str: Template string or path to analyze
-        context: Template context dictionary
-        jinja_env: Jinja2 environment
-        progress_enabled: Whether to show progress indicators
+    with ProgressContext(description="Analyzing template", show_progress=progress_enabled) as progress:
+        # Categorize variables by type
+        for key, value in context.items():
+            if isinstance(value, dict):
+                metadata["context"]["dict_vars"].append(key)
+            elif isinstance(value, list):
+                metadata["context"]["list_vars"].append(key)
+            elif isinstance(value, FileInfo):
+                metadata["context"]["file_info_vars"].append(key)
+            else:
+                metadata["context"]["other_vars"].append(key)
         
-    Returns:
-        Dictionary containing template metadata
-    """
-    with ProgressContext(
-        "Extracting template metadata", show_progress=progress_enabled
-    ) as progress:
-        try:
-            # Extract template information
-            metadata = {
-                "template": {
-                    "is_file": template_str.endswith((".j2", ".jinja2", ".md")),
-                    "path": template_str if template_str.endswith((".j2", ".jinja2", ".md")) else None,
-                },
-                "context": {
-                    "variables": list(context.keys()),  # All variables
-                    "dict_vars": [],
-                    "list_vars": [],
-                    "file_info_vars": [],
-                    "other_vars": []
-                }
-            }
+        # Sort lists for consistent output
+        for key in ["dict_vars", "list_vars", "file_info_vars", "other_vars"]:
+            metadata["context"][key].sort()
             
-            # Categorize variables by type
-            for key, value in context.items():
-                if isinstance(value, dict):
-                    metadata["context"]["dict_vars"].append(key)
-                elif isinstance(value, list):
-                    metadata["context"]["list_vars"].append(key)
-                elif isinstance(value, FileInfo):
-                    metadata["context"]["file_info_vars"].append(key)
-                else:
-                    metadata["context"]["other_vars"].append(key)
+        if progress.enabled:
+            progress.current = 1
             
-            # Sort lists for consistent output
-            for var_list in metadata["context"].values():
-                var_list.sort()
-                
-            if progress:
-                progress.update(1)
-                
-            return metadata
-            
-        except Exception as e:
-            raise ValueError(f"Failed to extract template metadata: {str(e)}") 
+        return metadata 

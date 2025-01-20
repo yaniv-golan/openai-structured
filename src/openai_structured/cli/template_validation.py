@@ -50,10 +50,11 @@ Notes:
 """
 
 import logging
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, List, Callable, TypeVar, cast, Union, Tuple
 
 import jinja2
 from jinja2 import Environment, meta
+from jinja2.nodes import Node, For, Name
 
 from . import template_filters
 from .errors import TaskTemplateVariableError
@@ -65,6 +66,10 @@ from .template_schema import (
     create_validation_context
 )
 
+T = TypeVar('T')
+FilterFunc = Callable[..., Any]
+FilterWrapper = Callable[[Any, Any, Any], Optional[Union[Any, str, List[Any]]]]
+
 class SafeUndefined(jinja2.StrictUndefined):
     """A strict Undefined class that allows any attribute access during validation."""
 
@@ -75,6 +80,39 @@ class SafeUndefined(jinja2.StrictUndefined):
     def __getitem__(self, key: Any) -> Any:
         # Allow any key access during validation
         return self
+
+def safe_filter(func: FilterFunc) -> FilterWrapper:
+    """Wrap a filter function to handle None and proxy values safely."""
+    def wrapper(value: Any, *args: Any, **kwargs: Any) -> Optional[Union[Any, str, List[Any]]]:
+        if value is None:
+            return None
+        if isinstance(value, (ValidationProxy, FileInfoProxy, DictProxy)):
+            # For validation, just return an empty result of the appropriate type
+            if func.__name__ in ('extract_field', 'frequency', 'aggregate', 'pivot_table', 'summarize'):
+                return []
+            elif func.__name__ in ('dict_to_table', 'list_to_table'):
+                return ''
+            return value
+        return func(value, *args, **kwargs)
+    return wrapper
+
+def find_loop_vars(nodes: List[Node]) -> Set[str]:
+    """Find variables used in loop constructs."""
+    loop_vars = set()
+    for node in nodes:
+        if isinstance(node, For):
+            target = node.target
+            if isinstance(target, Name):
+                loop_vars.add(target.name)
+            elif hasattr(target, 'items'):
+                items = cast(List[Name], target.items)
+                for item in items:
+                    loop_vars.add(item.name)
+        if hasattr(node, 'body'):
+            loop_vars.update(find_loop_vars(cast(List[Node], node.body)))
+        if hasattr(node, 'else_'):
+            loop_vars.update(find_loop_vars(cast(List[Node], node.else_)))
+    return loop_vars
 
 def validate_template_placeholders(task_template: str, template_context: Dict[str, Any], env: Optional[Environment] = None) -> None:
     """Validate that a task template only uses available variables.
@@ -104,20 +142,6 @@ def validate_template_placeholders(task_template: str, template_context: Dict[st
             )
 
         # Register custom filters with None-safe wrappers
-        def safe_filter(func):
-            def wrapper(value, *args, **kwargs):
-                if value is None:
-                    return None
-                if isinstance(value, (ValidationProxy, FileInfoProxy, DictProxy)):
-                    # For validation, just return an empty result of the appropriate type
-                    if func.__name__ in ('extract_field', 'frequency', 'aggregate', 'pivot_table', 'summarize'):
-                        return []
-                    elif func.__name__ in ('dict_to_table', 'list_to_table'):
-                        return ''
-                    return value
-                return func(value, *args, **kwargs)
-            return wrapper
-
         env.filters.update({
             'format_code': safe_filter(template_filters.format_code),
             'strip_comments': safe_filter(template_filters.strip_comments),
@@ -165,23 +189,7 @@ def validate_template_placeholders(task_template: str, template_context: Dict[st
         logger.debug("Available variables: %s", available_vars)
         
         # Find loop variables
-        loop_vars = set()
-        def find_loop_vars(nodes):
-            for node in nodes:
-                if node.__class__.__name__ == 'For':
-                    if hasattr(node.target, 'name'):
-                        loop_vars.add(node.target.name)
-                    elif hasattr(node.target, 'items'):
-                        # Handle tuple unpacking in for loops
-                        for item in node.target.items:
-                            if hasattr(item, 'name'):
-                                loop_vars.add(item.name)
-                if hasattr(node, 'body'):
-                    find_loop_vars(node.body)
-                if hasattr(node, 'else_'):
-                    find_loop_vars(node.else_)
-        
-        find_loop_vars(ast.body)
+        loop_vars = find_loop_vars(ast.body)
         logger.debug("Found loop variables: %s", loop_vars)
         
         # Find all undeclared variables using jinja2.meta
