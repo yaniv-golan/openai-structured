@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 import pytest
-from typing import Any, Dict, List, Union, cast
+from typing import Any, Dict, List, Union
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.file_utils import (
@@ -87,10 +87,10 @@ def test_file_info_property_protection(fs: FakeFilesystem) -> None:
     
     # Attempt to set private fields should raise AttributeError
     with pytest.raises(AttributeError):
-        file_info._content = "new content"  # type: ignore
+        file_info._content = "new content"  # pyright: ignore[reportPrivateUsage]
     
     with pytest.raises(AttributeError):
-        file_info._hash = "new hash"  # type: ignore
+        file_info._hash = "new hash"  # pyright: ignore[reportPrivateUsage]
 
 
 def test_file_info_directory_traversal(fs: FakeFilesystem) -> None:
@@ -195,7 +195,7 @@ def test_collect_files(fs: FakeFilesystem) -> None:
     result = collect_files(files_args=["tests=*.py"])
     assert len(result) == 1
     assert isinstance(result["tests"], list)
-    file_list = cast(List[FileInfo], result["tests"])
+    file_list = result["tests"]
     assert len(file_list) == 2
     assert {f.path for f in file_list} == {"test1.py", "test2.py"}
     
@@ -203,7 +203,7 @@ def test_collect_files(fs: FakeFilesystem) -> None:
     result = collect_files(dir_args=["dir=dir"], recursive=True)
     assert len(result) == 1
     assert isinstance(result["dir"], list)
-    dir_list = cast(List[FileInfo], result["dir"])
+    dir_list = result["dir"]
     assert len(dir_list) == 2
     assert {f.path for f in dir_list} == {"dir/test3.py", "dir/test4.py"}
     
