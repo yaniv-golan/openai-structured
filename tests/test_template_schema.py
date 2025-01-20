@@ -34,20 +34,20 @@ def test_dict_proxy_access() -> None:
     
     # Test nested access
     settings = getattr(proxy, 'settings')
-    pytest.fail(f"settings type = {type(settings)}")  # This will show
+    assert isinstance(settings, DictProxy)  # Settings should be a DictProxy since it's a nested dict
     mode = getattr(settings, 'mode')
-    pytest.fail(f"mode type = {type(mode)}")  # This won't show since we failed above
+    assert isinstance(mode, ValidationProxy)
     
     # Test dictionary methods
     items = proxy.items()
-    print(f"DEBUG: items type = {type(items)}")
     items_list = list(items)
-    print(f"DEBUG: First item type = {type(items_list[0][1])}")
+    assert len(items_list) == 3
+    assert isinstance(items_list[0][1], ValidationProxy)  # Value should be a ValidationProxy
     
     values = proxy.values()
-    print(f"DEBUG: values type = {type(values)}")
     values_list = list(values)
-    print(f"DEBUG: First value type = {type(values_list[0])}")
+    assert len(values_list) == 3
+    assert isinstance(values_list[0], ValidationProxy)  # Value should be a ValidationProxy
 
     # Test invalid access
     with pytest.raises(ValueError, match="undefined attribute 'config.invalid'"):
@@ -65,12 +65,16 @@ def test_list_proxy_access() -> None:
     # Test iteration
     items = list(proxy)
     assert len(items) == 3
-    assert all(isinstance(item, ValidationProxy) for item in items)
+    # Each item should be a DictProxy since they are dictionaries
+    assert all(isinstance(item, DictProxy) for item in items)
     
     # Test indexing
     item = proxy[0]
-    assert isinstance(item, ValidationProxy)
+    assert isinstance(item, DictProxy)  # Should be DictProxy since it's a dictionary
     assert item._name == "items[0]"
+    
+    # Test accessing dictionary values through the proxy
+    assert isinstance(getattr(item, 'name'), ValidationProxy)
     
     # Test invalid index
     with pytest.raises(ValueError, match="List index"):
