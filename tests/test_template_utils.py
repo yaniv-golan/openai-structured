@@ -70,6 +70,7 @@ def fs() -> Generator[FakeFilesystem, None, None]:
     """Fixture to set up fake filesystem."""
     with Patcher() as patcher:
         fs = patcher.fs
+        assert fs is not None  # Type assertion for mypy
         # Create test files and directories
         fs.create_file('/path/to/file.txt', contents='Test file content')
         fs.create_file('/absolute/path/to/file.txt', contents='Test file content')

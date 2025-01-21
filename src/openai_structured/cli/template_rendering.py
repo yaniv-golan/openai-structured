@@ -3,8 +3,7 @@
 This module provides functionality for rendering Jinja2 templates with support for:
 1. Custom filters and functions
 2. Dot notation access for dictionaries
-3. Lazy loading of file content
-4. Error handling and reporting
+3. Error handling and reporting
 
 Key Components:
     - render_template: Main rendering function
@@ -47,11 +46,10 @@ Examples:
     File content rendering:
     >>> template = "Content: {{ file.content }}"
     >>> context = {'file': FileInfo('test.txt')}
-    >>> result = render_template(template, context)  # Content loaded on demand
+    >>> result = render_template(template, context)
 
 Notes:
     - All dictionaries are wrapped in DotDict for dot notation access
-    - FileInfo objects support lazy content loading
     - Custom filters are registered automatically
     - Provides detailed error messages for rendering failures
 """
@@ -59,7 +57,6 @@ Notes:
 import datetime
 import logging
 import os
-import threading
 import sys
 from typing import Any, Dict, Optional, Union, List, cast, Tuple, TypeVar
 
@@ -70,13 +67,9 @@ from .file_utils import FileInfo
 from . import template_filters
 from .template_schema import StdinProxy, DotDict
 
-logger = logging.getLogger(__name__)
+__all__ = ['render_template', 'DotDict', 'create_jinja_env']
 
-# Cache settings
-MAX_CACHE_SIZE = 50 * 1024 * 1024  # 50MB total cache size
-_cache_lock = threading.Lock()
-_file_mtimes: Dict[str, float] = {}
-_cache_size: int = 0
+logger = logging.getLogger(__name__)
 
 # Type alias for values that can appear in the template context
 TemplateContextValue = Union[
@@ -154,23 +147,11 @@ def create_jinja_env(env: Optional[Environment] = None) -> Environment:
 
     return env
 
-def stream_content(file_info: FileInfo, chunk_size: int) -> str:
-    """Stream content from a file in chunks."""
-    # Direct property access for lazy loading
-    if file_info.content is not None:
-        return file_info.content
-
-    # Read file when content is not cached
-    with open(file_info.abs_path, 'r', encoding=file_info.encoding) as f:
-        return f.read()
-
 def render_template(
     template_str: str,
     context: Dict[str, Any],
     jinja_env: Optional[Environment] = None,
-    progress_enabled: bool = True,
-    lazy_load: bool = True,
-    chunk_size: int = 1024 * 1024  # 1MB chunks
+    progress_enabled: bool = True
 ) -> str:
     """Render a task template with the given context.
 
@@ -179,8 +160,6 @@ def render_template(
         context: Task template variables
         jinja_env: Optional Jinja2 environment to use
         progress_enabled: Whether to show progress indicators
-        lazy_load: Whether to use lazy loading for large files
-        chunk_size: Size of chunks when streaming large files
 
     Returns:
         Rendered task template string
@@ -216,15 +195,10 @@ def render_template(
             # Load file content for FileInfo objects
             for key, value in context.items():
                 if isinstance(value, FileInfo):
-                    if not lazy_load or os.path.getsize(value.abs_path) < chunk_size:
-                        value.load_content()
+                    value.load_content()
                 elif isinstance(value, list) and value and isinstance(value[0], FileInfo):
                     for file_info in value:
-                        if not lazy_load or os.path.getsize(file_info.abs_path) < chunk_size:
-                            file_info.load_content()
-
-            # Add streaming support to template environment
-            jinja_env.globals['stream_content'] = lambda file_info: stream_content(file_info, chunk_size)
+                        file_info.load_content()
 
             if progress:
                 progress.update(1)  # Update progress for template creation
@@ -262,10 +236,9 @@ def render_template(
                 if progress:
                     progress.update(1)  # Update progress for successful render
                 return result
-            except jinja2.TemplateError as e:
-                raise ValueError(f"Template error: {str(e)}") from e
-            except Exception as e:
-                raise ValueError(f"Rendering failed: {str(e)}") from e
+            except (jinja2.TemplateError, Exception) as e:
+                # Convert all errors to ValueError with proper context
+                raise ValueError(f"Template rendering failed: {str(e)}") from e
 
         except ValueError as e:
             # Re-raise with original context

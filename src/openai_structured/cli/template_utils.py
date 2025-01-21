@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 import jinja2
 from jinja2 import Environment, meta
+from jinja2.nodes import Node
 import jsonschema
 
 from .errors import (
@@ -156,7 +157,12 @@ def find_all_template_variables(template: str, env: Optional[Environment] = None
     variables = variables - builtin_vars
     
     # Find template dependencies (include, extends, import)
-    def visit_nodes(nodes):
+    def visit_nodes(nodes: List[Node]) -> None:
+        """Visit AST nodes recursively to find template dependencies.
+        
+        Args:
+            nodes: List of AST nodes to visit
+        """
         for node in nodes:
             if node.__class__.__name__ in ('Include', 'Extends', 'Import', 'FromImport'):
                 # Get the template name
@@ -164,9 +170,10 @@ def find_all_template_variables(template: str, env: Optional[Environment] = None
                     template_name = node.template.value
                     try:
                         # Load and parse the referenced template
-                        included_template = env.loader.get_source(env, template_name)[0]
-                        # Recursively find variables in the included template
-                        variables.update(find_all_template_variables(included_template, env))
+                        if env.loader is not None:
+                            included_template = env.loader.get_source(env, template_name)[0]
+                            # Recursively find variables in the included template
+                            variables.update(find_all_template_variables(included_template, env))
                     except Exception:
                         # Skip if template can't be loaded - it will be caught during rendering
                         pass
