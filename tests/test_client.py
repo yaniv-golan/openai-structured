@@ -22,7 +22,7 @@ class SimpleResponse(BaseModel):
     message: str
 
 @pytest_asyncio.fixture
-async def openai_client() -> AsyncOpenAI:
+async def openai_client() -> AsyncGenerator[AsyncOpenAI, None]:
     """Create OpenAI client for testing."""
     client = AsyncOpenAI()
     yield client

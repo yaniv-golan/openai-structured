@@ -54,6 +54,7 @@ __all__ = [
     "InvalidResponseFormatError",
     "EmptyResponseError",
     "JSONParseError",
+    "ValidationError",
 ]
 
 # Standard library imports
