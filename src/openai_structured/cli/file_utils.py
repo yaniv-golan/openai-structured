@@ -42,13 +42,13 @@ Security Notes:
     - Environment variables are expanded in paths
 """
 
+import codecs
 import glob
 import logging
 import os
 from typing import Any, Dict, List, Optional, Type, Union
 
 import chardet
-import codecs
 
 from .errors import (
     DirectoryNotFoundError,
@@ -399,7 +399,9 @@ def detect_encoding(file_path: str) -> str:
 
             # Read more data for chardet (up to 1MB)
             f.seek(0)
-            raw_data = f.read(1024 * 1024)  # Read up to 1MB for better detection
+            raw_data = f.read(
+                1024 * 1024
+            )  # Read up to 1MB for better detection
 
             # Try chardet detection
             result = chardet.detect(raw_data)
@@ -447,10 +449,16 @@ def detect_encoding(file_path: str) -> str:
             # Low confidence or no detection - try UTF-8
             try:
                 raw_data.decode("utf-8")
-                logger.debug("No confident detection, but UTF-8 decode successful")
+                logger.debug(
+                    "No confident detection, but UTF-8 decode successful"
+                )
                 return "utf-8"
             except UnicodeDecodeError:
-                if result and isinstance(result, dict) and result.get("encoding"):
+                if (
+                    result
+                    and isinstance(result, dict)
+                    and result.get("encoding")
+                ):
                     detected_encoding = str(result["encoding"]).lower()
                     logger.debug(
                         "Falling back to detected encoding with low confidence: %s",

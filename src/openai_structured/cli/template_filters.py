@@ -8,10 +8,11 @@ import textwrap
 from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence, TypeVar, Union
 
-import pygments
 import tiktoken
+from pygments import highlight
 from pygments.formatters import HtmlFormatter, NullFormatter, TerminalFormatter
-from pygments.lexers import TextLexer, get_lexer_by_name
+from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer
+from pygments.util import ClassNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -536,16 +537,14 @@ def strip_comments(text: str, lang: str = "python") -> str:
 
 
 def format_code(
-    text: str,
-    lang: str = "python",
-    output_format: str = "terminal",
+    text: str, output_format: str = "terminal", language: str = "python"
 ) -> str:
     """Format code with syntax highlighting.
 
     Args:
-        text: The code text to format
-        lang: The language of the code
-        output_format: The output format (terminal, html, etc)
+        text (str): The code text to format
+        output_format (str): The output format ('terminal', 'html', or 'plain')
+        language (str): The programming language for syntax highlighting
 
     Returns:
         str: Formatted code string
@@ -553,36 +552,33 @@ def format_code(
     Raises:
         ValueError: If output_format is not one of 'terminal', 'html', or 'plain'
     """
-    if not text.strip():
-        logger.debug("Empty text provided to format_code")
+    if not text:
         return ""
 
-    if output_format not in ("terminal", "html", "plain"):
+    if output_format not in ["terminal", "html", "plain"]:
         raise ValueError(
-            f"Invalid format: {output_format}. Must be 'terminal', 'html', or 'plain'"
+            "output_format must be one of 'terminal', 'html', or 'plain'"
         )
 
-    # Get lexer
     try:
-        lexer = get_lexer_by_name(lang)
+        lexer = get_lexer_by_name(language)
     except ClassNotFound:
-        logger.warning(f"No lexer found for language {lang}")
-        lexer = TextLexer()
+        try:
+            lexer = guess_lexer(text)
+        except ClassNotFound:
+            lexer = TextLexer()
 
-    # Get formatter based on output format
-    if output_format == "html":
-        formatter = HtmlFormatter()
-    elif output_format == "terminal":
-        formatter = TerminalFormatter()
-    else:
-        formatter = NullFormatter()
-
-    # Format code with error handling
     try:
-        formatted = pygments.highlight(text, lexer, formatter)
-        if not isinstance(formatted, str):
-            formatted = str(formatted)
-        return formatted
+        if output_format == "terminal":
+            formatter: Union[
+                TerminalFormatter[str], HtmlFormatter[str], NullFormatter[str]
+            ] = TerminalFormatter[str]()
+        elif output_format == "html":
+            formatter = HtmlFormatter[str]()
+        else:  # plain
+            formatter = NullFormatter[str]()
+
+        return highlight(text, lexer, formatter)
     except Exception as e:
-        logger.error(f"Failed to format code: {e}")
+        logger.error(f"Error formatting code: {e}")
         return text
