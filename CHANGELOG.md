@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] - 2025-01-25
+## [Unreleased]
+
+## [0.8.0] - 2025-01-22
 
 ### Added
 
@@ -47,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced file access validation
   - Improved error handling for file operations
 
-## [0.7.0] - 2025-01-25
+## [0.7.0] - 2024-01-20
 
 ### Added
 
@@ -232,6 +234,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling
 - Documentation framework
 
+[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.4.0...v0.5.0
