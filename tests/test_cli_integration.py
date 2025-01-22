@@ -1,25 +1,24 @@
 """Tests for CLI integration."""
 
+import logging
 import os
+import shutil
+from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, Generator, List
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
-from typing import Dict, Any, AsyncGenerator, List, Optional, Generator
-from pathlib import Path
-import json
-import logging
-import shutil
-
+from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
-from openai import AsyncOpenAI, OpenAIError
 
-from openai_structured.cli.cli import _main, ExitCode
-from openai_structured.cli.file_utils import FileInfo
+from openai_structured.cli.cli import ExitCode, _main
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
 
 # Mock tiktoken
 class MockEncoding:
@@ -28,6 +27,7 @@ class MockEncoding:
 
     def decode(self, tokens: List[int]) -> str:
         return " " * len(tokens)
+
 
 class MockTiktoken:
     @staticmethod
@@ -38,45 +38,51 @@ class MockTiktoken:
     def encoding_for_model(model_name: str) -> MockEncoding:
         return MockEncoding()
 
+
 @pytest_asyncio.fixture
 async def mock_openai_client() -> AsyncOpenAI:
     """Create mock OpenAI client."""
     mock_client = AsyncMock(spec=AsyncOpenAI)
     mock_client.chat = AsyncMock()
     mock_client.chat.completions = AsyncMock()
-    
-    async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[ChatCompletionChunk, None]:
+
+    async def mock_stream(
+        *args: Any, **kwargs: Any
+    ) -> AsyncGenerator[ChatCompletionChunk, None]:
         """Mock streaming response."""
         yield ChatCompletionChunk(
             id="test",
             choices=[
                 Choice(
-                    delta=ChoiceDelta(content='{"result": "test", "status": "success"}'),
+                    delta=ChoiceDelta(
+                        content='{"result": "test", "status": "success"}'
+                    ),
                     finish_reason=None,
-                    index=0
+                    index=0,
                 )
             ],
             created=1234567890,
             model="gpt-4",
-            object="chat.completion.chunk"
+            object="chat.completion.chunk",
         )
-        
+
         yield ChatCompletionChunk(
             id="test",
             choices=[
                 Choice(
                     delta=ChoiceDelta(content=""),
                     finish_reason="stop",
-                    index=0
+                    index=0,
                 )
             ],
             created=1234567890,
             model="gpt-4",
-            object="chat.completion.chunk"
+            object="chat.completion.chunk",
         )
-    
+
     mock_client.chat.completions.create = AsyncMock(side_effect=mock_stream)
     return mock_client
+
 
 @pytest.fixture(autouse=True)
 def mock_tiktoken() -> Generator[None, None, None]:
@@ -84,35 +90,41 @@ def mock_tiktoken() -> Generator[None, None, None]:
     with patch("openai_structured.cli.cli.tiktoken", MockTiktoken()):
         yield
 
+
 @pytest.fixture
 def test_files(tmp_path: Path) -> Dict[str, str]:
     # Create test files and directories
     test_dir = tmp_path / "test_dir"
     test_dir.mkdir()
-    
+
     input_file = test_dir / "input.txt"
     input_file.write_text("test input")
-    
+
     template_file = test_dir / "template.txt"
     template_file.write_text("test template {{ input }}")
-    
+
     schema_file = test_dir / "schema.json"
-    schema_file.write_text('{"type": "object", "properties": {"result": {"type": "string"}}}')
-    
+    schema_file.write_text(
+        '{"type": "object", "properties": {"result": {"type": "string"}}}'
+    )
+
     # Create subdirectories for testing recursive functionality
     subdir = test_dir / "subdir"
     subdir.mkdir()
     (subdir / "subfile.txt").write_text("test subfile")
-    
+
     return {
         "test_dir": str(test_dir),
         "input_file": str(input_file),
         "template_file": str(template_file),
-        "schema_file": str(schema_file)
+        "schema_file": str(schema_file),
     }
 
+
 @pytest.fixture(autouse=True)
-def cleanup_test_dirs(test_files: Dict[str, str]) -> Generator[None, None, None]:
+def cleanup_test_dirs(
+    test_files: Dict[str, str]
+) -> Generator[None, None, None]:
     """Clean up test directories after each test."""
     yield
     # Clean up external directories after tests
@@ -122,127 +134,213 @@ def cleanup_test_dirs(test_files: Dict[str, str]) -> Generator[None, None, None]
         if ext_dir.exists():
             shutil.rmtree(ext_dir)
 
+
 @pytest.mark.asyncio
 async def test_basic_cli_execution(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(os.path.dirname(test_files["test_dir"]))
-    with patch('sys.argv', ['cli.py', 
-                          '--task', test_files["template_file"],
-                          '--file', f'input={test_files["input_file"]}',
-                          '--schema', test_files["schema_file"]]), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--file",
+                f'input={test_files["input_file"]}',
+                "--schema",
+                test_files["schema_file"],
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
+
 
 @pytest.mark.asyncio
 async def test_cli_with_directory_input(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     test_dir = Path(test_files["test_dir"])
     monkeypatch.chdir(test_dir.parent)
     dir_name = test_dir.name
-    print(f"\nDEBUG INFO for test_cli_with_directory_input:")
+    print("\nDEBUG INFO for test_cli_with_directory_input:")
     print(f"test_dir = {test_dir}")
     print(f"dir_name = {dir_name}")
     print(f"current working directory = {os.getcwd()}")
     print(f"test_dir exists? {os.path.exists(dir_name)}")
     print(f"test_dir is directory? {os.path.isdir(dir_name)}")
     print(f"directory contents: {os.listdir('.')}")
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--dir', f'input={dir_name}',
-                          '--schema', test_files["schema_file"]]), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--dir",
+                f"input={dir_name}",
+                "--schema",
+                test_files["schema_file"],
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
+
 
 @pytest.mark.asyncio
 async def test_cli_with_multiple_files(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(os.path.dirname(test_files["test_dir"]))
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--file', f'input={test_files["input_file"]}',
-                          '--schema', test_files["schema_file"]]), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--file",
+                f'input={test_files["input_file"]}',
+                "--schema",
+                test_files["schema_file"],
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
+
 
 @pytest.mark.asyncio
 async def test_cli_dry_run(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(os.path.dirname(test_files["test_dir"]))
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--file', f'input={test_files["input_file"]}',
-                          '--schema', test_files["schema_file"],
-                          '--dry-run']), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--file",
+                f'input={test_files["input_file"]}',
+                "--schema",
+                test_files["schema_file"],
+                "--dry-run",
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
+
 
 @pytest.mark.asyncio
 async def test_cli_with_output_file(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(os.path.dirname(test_files["test_dir"]))
     output_file = os.path.join(test_files["test_dir"], "output.json")
-    
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--file', f'input={test_files["input_file"]}',
-                          '--schema', test_files["schema_file"],
-                          '--output', output_file]), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client), \
-         patch('json.dump', return_value=None) as mock_dump:
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--file",
+                f'input={test_files["input_file"]}',
+                "--schema",
+                test_files["schema_file"],
+                "--output",
+                output_file,
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+        patch("json.dump", return_value=None) as mock_dump,
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
         assert os.path.exists(output_file)
         mock_dump.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_cli_with_recursive_directory(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     test_dir = Path(test_files["test_dir"])
     monkeypatch.chdir(test_dir.parent)
     dir_name = test_dir.name
-    print(f"\nDEBUG INFO for test_cli_with_recursive_directory:")
+    print("\nDEBUG INFO for test_cli_with_recursive_directory:")
     print(f"test_dir = {test_dir}")
     print(f"dir_name = {dir_name}")
     print(f"current working directory = {os.getcwd()}")
     print(f"test_dir exists? {os.path.exists(dir_name)}")
     print(f"test_dir is directory? {os.path.isdir(dir_name)}")
     print(f"directory contents: {os.listdir('.')}")
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--dir', f'input={dir_name}',
-                          '--recursive',
-                          '--schema', test_files["schema_file"]]), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--dir",
+                f"input={dir_name}",
+                "--recursive",
+                "--schema",
+                test_files["schema_file"],
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
+
 
 @pytest.mark.asyncio
 async def test_cli_with_allowed_dir(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test CLI with --allowed-dir argument."""
     test_dir = Path(test_files["test_dir"])
@@ -250,23 +348,38 @@ async def test_cli_with_allowed_dir(
     outside_dir.mkdir(exist_ok=True)
     outside_file = outside_dir / "external.txt"
     outside_file.write_text("external data")
-    
+
     monkeypatch.chdir(test_dir)
-    
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--file', f'external={outside_file}',
-                          '--schema', test_files["schema_file"],
-                          '--allowed-dir', str(outside_dir.resolve())]), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--file",
+                f"external={outside_file}",
+                "--schema",
+                test_files["schema_file"],
+                "--allowed-dir",
+                str(outside_dir.resolve()),
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
+
 
 @pytest.mark.asyncio
 async def test_cli_with_allowed_dir_file(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test CLI with --allowed-dir @file argument."""
     # Create test directories outside main test directory
@@ -275,34 +388,50 @@ async def test_cli_with_allowed_dir_file(
     outside_dir2 = test_dir.parent / "external_data2"
     outside_dir1.mkdir()
     outside_dir2.mkdir()
-    
+
     # Create test files in external directories
     file1 = outside_dir1 / "data1.txt"
     file2 = outside_dir2 / "data2.txt"
     file1.write_text("external data 1")
     file2.write_text("external data 2")
-    
+
     # Create allowed dirs file
     allowed_dirs_file = test_dir / "allowed_dirs.txt"
     allowed_dirs_file.write_text(f"{outside_dir1}\n{outside_dir2}")
-    
+
     monkeypatch.chdir(test_dir)
-    
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--file', f'data1={file1}',
-                          '--file', f'data2={file2}',
-                          '--schema', test_files["schema_file"],
-                          '--allowed-dir', f'@{allowed_dirs_file}']), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--file",
+                f"data1={file1}",
+                "--file",
+                f"data2={file2}",
+                "--schema",
+                test_files["schema_file"],
+                "--allowed-dir",
+                f"@{allowed_dirs_file}",
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
+
 
 @pytest.mark.asyncio
 async def test_cli_with_multiple_allowed_dirs(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test CLI with multiple --allowed-dir arguments."""
     test_dir = Path(test_files["test_dir"])
@@ -310,30 +439,47 @@ async def test_cli_with_multiple_allowed_dirs(
     outside_dir2 = test_dir.parent / "external_data2"
     outside_dir1.mkdir()
     outside_dir2.mkdir()
-    
+
     file1 = outside_dir1 / "data1.txt"
     file2 = outside_dir2 / "data2.txt"
     file1.write_text("external data 1")
     file2.write_text("external data 2")
-    
+
     monkeypatch.chdir(test_dir)
-    
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--file', f'data1={file1}',
-                          '--file', f'data2={file2}',
-                          '--schema', test_files["schema_file"],
-                          '--allowed-dir', str(outside_dir1.resolve()),
-                          '--allowed-dir', str(outside_dir2.resolve())]), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--file",
+                f"data1={file1}",
+                "--file",
+                f"data2={file2}",
+                "--schema",
+                test_files["schema_file"],
+                "--allowed-dir",
+                str(outside_dir1.resolve()),
+                "--allowed-dir",
+                str(outside_dir2.resolve()),
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SUCCESS
+
 
 @pytest.mark.asyncio
 async def test_cli_with_disallowed_dir(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test CLI with file in disallowed directory."""
     test_dir = Path(test_files["test_dir"])
@@ -341,13 +487,26 @@ async def test_cli_with_disallowed_dir(
     outside_dir.mkdir()
     outside_file = outside_dir / "external.txt"
     outside_file.write_text("external data")
-    
+
     monkeypatch.chdir(test_dir)
-    
-    with patch('sys.argv', ['cli.py',
-                          '--task', test_files["template_file"],
-                          '--file', f'external={outside_file}',
-                          '--schema', test_files["schema_file"]]), \
-         patch('openai_structured.cli.cli.AsyncOpenAI', return_value=mock_openai_client):
+
+    with (
+        patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--task",
+                test_files["template_file"],
+                "--file",
+                f"external={outside_file}",
+                "--schema",
+                test_files["schema_file"],
+            ],
+        ),
+        patch(
+            "openai_structured.cli.cli.AsyncOpenAI",
+            return_value=mock_openai_client,
+        ),
+    ):
         result = await _main()
         assert result == ExitCode.SECURITY_ERROR

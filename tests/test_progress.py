@@ -1,10 +1,8 @@
 """Tests for progress reporting utilities."""
 
 import io
-import sys
 import time
 from unittest.mock import patch
-from typing import Any, Callable
 
 import pytest
 
@@ -18,7 +16,7 @@ def test_progress_disabled() -> None:
             progress.update()
             with progress.step("Step 1"):
                 pass
-        
+
         assert fake_out.getvalue() == ""
 
 
@@ -26,28 +24,29 @@ def test_progress_no_tty() -> None:
     """Test progress reporting when stdout is not a TTY."""
     with patch("sys.stdout", new=io.StringIO()) as fake_out:
         # Use setattr instead of direct assignment for isatty
-        setattr(fake_out, 'isatty', lambda: False)
-        
+        setattr(fake_out, "isatty", lambda: False)
+
         with ProgressContext("Testing") as progress:
             progress.update()
             with progress.step("Step 1"):
                 pass
-        
+
         assert fake_out.getvalue() == ""
 
 
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape sequences from text."""
     import re
-    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-    return ansi_escape.sub('', text)
+
+    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+    return ansi_escape.sub("", text)
 
 
 def test_progress_with_total() -> None:
     """Test progress reporting with total count."""
     with patch("sys.stdout", new=io.StringIO()) as fake_out:
         # Use setattr instead of direct assignment for isatty
-        setattr(fake_out, 'isatty', lambda: True)
+        setattr(fake_out, "isatty", lambda: True)
 
         with ProgressContext("Testing", total=2) as progress:
             time.sleep(0.2)  # Let spinner run
@@ -70,7 +69,7 @@ def test_progress_without_total() -> None:
     """Test progress reporting without total count."""
     with patch("sys.stdout", new=io.StringIO()) as fake_out:
         # Use setattr instead of direct assignment for isatty
-        setattr(fake_out, 'isatty', lambda: True)
+        setattr(fake_out, "isatty", lambda: True)
 
         with ProgressContext("Testing") as progress:
             time.sleep(0.2)  # Let spinner run
@@ -89,7 +88,7 @@ def test_progress_with_error() -> None:
     """Test progress reporting when an error occurs."""
     with patch("sys.stdout", new=io.StringIO()) as fake_out:
         # Use setattr instead of direct assignment for isatty
-        setattr(fake_out, 'isatty', lambda: True)
+        setattr(fake_out, "isatty", lambda: True)
 
         with pytest.raises(ValueError):
             with ProgressContext("Testing") as progress:
@@ -108,7 +107,7 @@ def test_progress_update_amount() -> None:
     """Test progress updating with custom amounts."""
     with patch("sys.stdout", new=io.StringIO()) as fake_out:
         # Use setattr instead of direct assignment for isatty
-        setattr(fake_out, 'isatty', lambda: True)
+        setattr(fake_out, "isatty", lambda: True)
 
         with ProgressContext("Testing", total=10) as progress:
             time.sleep(0.2)  # Let spinner run
@@ -122,4 +121,6 @@ def test_progress_update_amount() -> None:
         # Check for key elements in output
         assert "Testing" in output
         assert "100%" in output
-        assert "10" in output  # Just check for the number 10 somewhere in output
+        assert (
+            "10" in output
+        )  # Just check for the number 10 somewhere in output

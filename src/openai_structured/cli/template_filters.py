@@ -1,6 +1,5 @@
 """Template filters for Jinja2 environment."""
 
-import datetime
 import itertools
 import json
 import logging
@@ -9,77 +8,81 @@ import textwrap
 from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence, TypeVar, Union
 
-import tiktoken
 import pygments
-from pygments.formatters import (
-    HtmlFormatter,
-    NullFormatter,
-    TerminalFormatter,
-)
+import tiktoken
+from pygments.formatters import HtmlFormatter, NullFormatter, TerminalFormatter
 from pygments.lexers import TextLexer, get_lexer_by_name
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+
 def extract_keywords(text: str) -> List[str]:
     """Extract keywords from text."""
     return text.split()
+
 
 def word_count(text: str) -> int:
     """Count words in text."""
     return len(text.split())
 
+
 def char_count(text: str) -> int:
     """Count characters in text."""
     return len(text)
+
 
 def to_json(obj: Any) -> str:
     """Convert object to JSON string."""
     return json.dumps(obj, indent=2)
 
+
 def from_json(text: str) -> Any:
     """Parse JSON string to object."""
     return json.loads(text)
 
+
 def remove_comments(text: str) -> str:
     """Remove comments from text."""
-    return re.sub(
-        r"#.*$|//.*$|/\*[\s\S]*?\*/", "", text, flags=re.MULTILINE
-    )
+    return re.sub(r"#.*$|//.*$|/\*[\s\S]*?\*/", "", text, flags=re.MULTILINE)
+
 
 def wrap_text(text: str, width: int = 80) -> str:
     """Wrap text to specified width."""
     return textwrap.fill(text, width)
 
+
 def indent_text(text: str, width: int = 4) -> str:
     """Indent text by specified width."""
     return textwrap.indent(text, " " * width)
+
 
 def dedent_text(text: str) -> str:
     """Remove common leading whitespace from text."""
     return textwrap.dedent(text)
 
+
 def normalize_text(text: str) -> str:
     """Normalize whitespace in text."""
     return " ".join(text.split())
+
 
 def strip_markdown(text: str) -> str:
     """Remove markdown formatting characters."""
     return re.sub(r"[#*`_~]", "", text)
 
-def format_table(
-    headers: Sequence[Any], rows: Sequence[Sequence[Any]]
-) -> str:
+
+def format_table(headers: Sequence[Any], rows: Sequence[Sequence[Any]]) -> str:
     """Format data as a markdown table."""
     return (
         f"| {' | '.join(str(h) for h in headers)} |\n"
         f"| {' | '.join('-' * max(len(str(h)), 3) for h in headers)} |\n"
         + "\n".join(
-            f"| {' | '.join(str(cell) for cell in row)} |"
-            for row in rows
+            f"| {' | '.join(str(cell) for cell in row)} |" for row in rows
         )
     )
+
 
 def align_table(
     headers: Sequence[Any],
@@ -103,16 +106,17 @@ def align_table(
         f"| {' | '.join(str(h) for h in headers)} |\n"
         f"| {' | '.join(alignment_markers)} |\n"
         + "\n".join(
-            f"| {' | '.join(str(cell) for cell in row)} |"
-            for row in rows
+            f"| {' | '.join(str(cell) for cell in row)} |" for row in rows
         )
     )
+
 
 def dict_to_table(data: Dict[Any, Any]) -> str:
     """Convert dictionary to markdown table."""
     return "| Key | Value |\n| --- | --- |\n" + "\n".join(
         f"| {k} | {v} |" for k, v in data.items()
     )
+
 
 def list_to_table(
     items: Sequence[Any], headers: Optional[Sequence[str]] = None
@@ -125,30 +129,35 @@ def list_to_table(
     return (
         f"| {' | '.join(headers)} |\n| {' | '.join('-' * len(h) for h in headers)} |\n"
         + "\n".join(
-            f"| {' | '.join(str(cell) for cell in row)} |"
-            for row in items
+            f"| {' | '.join(str(cell) for cell in row)} |" for row in items
         )
     )
+
 
 def escape_special(text: str) -> str:
     """Escape special characters in text."""
     return re.sub(r'([{}\[\]"\'\\])', r"\\\1", text)
 
+
 def debug_print(x: Any) -> None:
     """Print debug information."""
     print(f"DEBUG: {x}")
+
 
 def type_of(x: Any) -> str:
     """Get type name of object."""
     return type(x).__name__
 
+
 def dir_of(x: Any) -> List[str]:
     """Get list of attributes."""
     return dir(x)
 
+
 def len_of(x: Any) -> Optional[int]:
     """Get length of object if available."""
     return len(x) if hasattr(x, "__len__") else None
+
 
 def validate_json(text: str) -> bool:
     """Check if text is valid JSON."""
@@ -160,9 +169,11 @@ def validate_json(text: str) -> bool:
     except json.JSONDecodeError:
         return False
 
+
 def format_error(e: Exception) -> str:
     """Format exception as string."""
     return f"{type(e).__name__}: {str(e)}"
+
 
 def estimate_tokens(text: str) -> int:
     """Estimate number of tokens in text."""
@@ -173,9 +184,11 @@ def estimate_tokens(text: str) -> int:
         logger.warning(f"Failed to estimate tokens: {e}")
         return len(str(text).split())
 
+
 def format_json(obj: Any) -> str:
     """Format JSON with indentation."""
     return json.dumps(obj, indent=2, default=str)
+
 
 def auto_table(data: Any) -> str:
     """Format data as table based on type."""
@@ -185,8 +198,10 @@ def auto_table(data: Any) -> str:
         return list_to_table(data)
     return str(data)
 
+
 def sort_by(items: Sequence[T], key: str) -> List[T]:
     """Sort items by key."""
+
     def get_key(x: T) -> Any:
         if isinstance(x, dict):
             return x.get(key, 0)
@@ -194,8 +209,10 @@ def sort_by(items: Sequence[T], key: str) -> List[T]:
 
     return sorted(items, key=get_key)
 
+
 def group_by(items: Sequence[T], key: str) -> Dict[Any, List[T]]:
     """Group items by key."""
+
     def safe_get_key(x: T) -> Any:
         if isinstance(x, dict):
             return x.get(key)
@@ -203,16 +220,20 @@ def group_by(items: Sequence[T], key: str) -> Dict[Any, List[T]]:
 
     sorted_items = sorted(items, key=safe_get_key)
     return {
-        k: list(g) for k, g in itertools.groupby(sorted_items, key=safe_get_key)
+        k: list(g)
+        for k, g in itertools.groupby(sorted_items, key=safe_get_key)
     }
+
 
 def filter_by(items: Sequence[T], key: str, value: Any) -> List[T]:
     """Filter items by key-value pair."""
     return [
         x
         for x in items
-        if (x.get(key) if isinstance(x, dict) else getattr(x, key, None)) == value
+        if (x.get(key) if isinstance(x, dict) else getattr(x, key, None))
+        == value
     ]
+
 
 def extract_field(items: Sequence[Any], key: str) -> List[Any]:
     """Extract field from each item."""
@@ -221,9 +242,11 @@ def extract_field(items: Sequence[Any], key: str) -> List[Any]:
         for x in items
     ]
 
+
 def frequency(items: Sequence[T]) -> Dict[T, int]:
     """Count frequency of items."""
     return dict(Counter(items))
+
 
 def aggregate(
     items: Sequence[Any], key: Optional[str] = None
@@ -251,9 +274,11 @@ def aggregate(
         "max": max(values),
     }
 
+
 def unique(items: Sequence[Any]) -> List[Any]:
     """Get unique values while preserving order."""
     return list(dict.fromkeys(items))
+
 
 def pivot_table(
     data: Sequence[Dict[str, Any]],
@@ -328,6 +353,7 @@ def pivot_table(
         "invalid_values": invalid_values,
     }
     return result
+
 
 def summarize(
     data: Sequence[Any], keys: Optional[Sequence[str]] = None
@@ -434,6 +460,7 @@ def summarize(
         logger.error(f"Failed to analyze data: {e}", exc_info=True)
         raise ValueError(f"Failed to analyze data: {str(e)}")
 
+
 def strip_comments(text: str, lang: str = "python") -> str:
     """Remove comments from code text based on language.
 
@@ -507,6 +534,7 @@ def strip_comments(text: str, lang: str = "python") -> str:
 
     return text
 
+
 def format_code(
     text: str,
     lang: str = "python",
@@ -559,4 +587,4 @@ def format_code(
         logger.error(f"Failed to format code: {e}")
         return text
 
-    return formatted 
+    return formatted

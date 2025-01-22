@@ -482,7 +482,9 @@ def _handle_api_error(
             _log(on_log, logging.ERROR, "OpenAI API error details", error_data)
 
     # Re-raise OpenAI errors and our own errors as is, wrap others in OpenAIClientError
-    if isinstance(error, (OpenAIError, InvalidResponseFormatError, JSONParseError)):
+    if isinstance(
+        error, (OpenAIError, InvalidResponseFormatError, JSONParseError)
+    ):
         raise error
     raise OpenAIClientError(
         f"Unexpected error during API call: {error}"

@@ -1,7 +1,7 @@
 """Test configuration and fixtures."""
 
 # Standard library imports
-import asyncio
+import json
 from typing import Dict, Generator
 
 # Third-party imports
@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
 from pyfakefs.fake_filesystem import FakeFilesystem
-from unittest.mock import MagicMock
 
 pytest_plugins = ["pytest_asyncio"]
 
@@ -44,14 +43,14 @@ def env_setup(
 @pytest.fixture
 def fs(fs: FakeFilesystem) -> Generator[FakeFilesystem, None, None]:
     """Create a fake filesystem for testing.
-    
+
     This fixture is automatically used by tests that have an fs parameter.
     It provides a clean filesystem for each test, preventing interference
     between tests.
-    
+
     Args:
         fs: The pyfakefs fixture
-        
+
     Returns:
         The pyfakefs FakeFilesystem object
     """
@@ -76,19 +75,19 @@ def mock_openai_client() -> OpenAI:
 @pytest.fixture
 def test_files(fs: FakeFilesystem) -> Dict[str, str]:
     """Create test files for testing.
-    
+
     This fixture creates a set of test files in a temporary directory
     and returns their paths.
-    
+
     Args:
         fs: The pyfakefs fixture
-        
+
     Returns:
         A dictionary mapping file names to their paths
     """
     base_dir = "/Users/yaniv/Documents/code/openai-structured/tests/test_files"
     fs.create_dir(base_dir)
-    
+
     # Create test files
     files = {
         "base_dir": base_dir,
@@ -98,35 +97,41 @@ def test_files(fs: FakeFilesystem) -> Dict[str, str]:
         "schema": f"{base_dir}/schema.json",
         "system_prompt": f"{base_dir}/system.txt",
     }
-    
+
     # Create input file
     fs.create_file(files["input"], contents="Test input file")
-    
+
     # Create template with YAML frontmatter
     fs.create_file(
         files["template"],
-        contents="""---
-system_prompt: You are a test assistant using YAML frontmatter.
----
-Process input: {{ input }}"""
+        contents=(
+            "---\n"
+            "system_prompt: You are a test assistant using YAML frontmatter.\n"
+            "---\n"
+            "Process input: {{ input }}"
+        ),
     )
-    
+
     # Create template without YAML frontmatter
     fs.create_file(
-        files["template_no_prompt"],
-        contents="Process input: {{ input }}"
+        files["template_no_prompt"], contents="Process input: {{ input }}"
     )
-    
+
     # Create schema file
-    fs.create_file(
-        files["schema"],
-        contents='{"type": "object", "properties": {"result": {"type": "string"}, "status": {"type": "string"}}, "required": ["result", "status"]}'
-    )
-    
+    schema_content = {
+        "type": "object",
+        "properties": {
+            "result": {"type": "string"},
+            "status": {"type": "string"},
+        },
+        "required": ["result", "status"],
+    }
+    fs.create_file(files["schema"], contents=json.dumps(schema_content))
+
     # Create system prompt file
     fs.create_file(
         files["system_prompt"],
-        contents="You are a test assistant from a file."
+        contents="You are a test assistant from a file.",
     )
-    
+
     return files
