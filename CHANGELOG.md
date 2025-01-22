@@ -5,7 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2025-01-25
+
+### Added
+
+- Template system prompts with YAML frontmatter support
+  - Added support for template metadata and configuration
+  - Enhanced template validation and processing
+  - Added template filters for data transformation
+- Comprehensive security management for file operations
+  - Added SecurityManager for path validation
+  - Implemented secure file access controls
+  - Added path traversal protection
+- New template rendering capabilities
+  - Added lazy content loading for improved performance
+  - Enhanced template context validation
+  - Added support for complex data structures in templates
+
+### Changed
+
+- Complete CLI architecture overhaul
+  - Split monolithic cli.py into specialized modules
+  - Improved code organization and maintainability
+  - Enhanced error handling with custom exceptions
+- Enhanced FileInfo handling
+  - Improved encapsulation and security
+  - Added better file metadata management
+  - Implemented efficient content caching
+- Progress control moved to command-line flags
+  - Simplified progress reporting configuration
+  - Added granular control over progress updates
+
+### Fixed
+
+- Template validation and processing
+  - Fixed template placeholder validation
+  - Improved error reporting for template issues
+  - Enhanced type safety in template rendering
+- File operation security
+  - Fixed path traversal vulnerabilities
+  - Enhanced file access validation
+  - Improved error handling for file operations
+
+## [0.7.0] - 2025-01-25
+
+### Added
+
+- New `--dry-run` option for CLI operations
+  - Preview template output without writing files
+  - Test template processing without side effects
+- Enhanced stream buffer implementation
+  - Added new `StreamBuffer` class for efficient streaming
+  - Improved memory management for large responses
+  - Added buffer cleanup mechanisms
+- Comprehensive Jinja2 template support
+  - Added advanced template filters
+  - Enhanced template processing capabilities
+  - Improved template error handling
+
+### Changed
+
+- Improved template engine architecture
+  - Refactored template processing for better maintainability
+  - Enhanced test coverage for template operations
+  - Optimized template rendering performance
+- Enhanced documentation
+  - Updated API documentation with new features
+  - Improved CLI documentation with examples
+  - Added comprehensive template usage guide
+- Standardized OpenAI Structured Outputs references
+  - Unified terminology across documentation
+  - Improved consistency in API references
+  - Enhanced example clarity
+
+### Fixed
+
+- Buffer management and error handling
+  - Improved stream buffer cleanup
+  - Enhanced error reporting for template issues
+  - Fixed memory management in streaming operations
+- Documentation and examples
+  - Fixed incorrect schema references
+  - Updated outdated examples
+  - Corrected API usage documentation
 
 ## [0.6.0] - 2025-01-20
 
@@ -150,7 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling
 - Documentation framework
 
-[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.6.0...HEAD
+[0.7.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.3.0...v0.4.0
