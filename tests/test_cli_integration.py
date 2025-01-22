@@ -4,7 +4,7 @@ import os
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
-from typing import Dict, Any, AsyncGenerator, List, Optional
+from typing import Dict, Any, AsyncGenerator, List, Optional, Generator
 from pathlib import Path
 import json
 import logging
@@ -79,7 +79,7 @@ async def mock_openai_client() -> AsyncOpenAI:
     return mock_client
 
 @pytest.fixture(autouse=True)
-def mock_tiktoken() -> None:
+def mock_tiktoken() -> Generator[None, None, None]:
     """Mock tiktoken for testing."""
     with patch("openai_structured.cli.cli.tiktoken", MockTiktoken()):
         yield
@@ -112,7 +112,7 @@ def test_files(tmp_path: Path) -> Dict[str, str]:
     }
 
 @pytest.fixture(autouse=True)
-def cleanup_test_dirs(test_files: Dict[str, str]) -> None:
+def cleanup_test_dirs(test_files: Dict[str, str]) -> Generator[None, None, None]:
     """Clean up test directories after each test."""
     yield
     # Clean up external directories after tests

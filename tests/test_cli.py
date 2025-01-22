@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from io import StringIO
-from typing import Any, Dict, List, Optional, AsyncGenerator, AsyncIterator
+from typing import Any, Dict, List, Optional, AsyncGenerator, AsyncIterator, Union
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -349,7 +349,7 @@ Template with {{ var2 }} and {{ input.content }}""")
         fs.create_file("input.txt", contents="test content")
 
         # Create mock structured stream
-        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, str]]:
+        async def mock_structured_stream(*args: Any, **kwargs: Any) -> AsyncIterator[Dict[str, Union[str, float]]]:
             yield {
                 "analysis": "Test analysis",
                 "score": 0.95

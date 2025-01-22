@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Type, Union, Literal
 from pyfakefs.fake_filesystem import FakeFilesystem
 from openai_structured.cli.cli import (
     validate_variable_mapping,
@@ -69,7 +69,7 @@ def test_validate_path_mapping_dir(fs: FakeFilesystem) -> None:
     ("test=nonexistent.txt", False, FileNotFoundError),  # Non-existent file
     ("test=nonexistent", True, DirectoryNotFoundError),  # Non-existent directory
 ])
-def test_validate_path_mapping_not_found(mapping: str, is_dir: bool, error_type: Type[Exception]) -> None:
+def test_validate_path_mapping_not_found(mapping: str, is_dir: Union[Literal[True], Literal[False]], error_type: Type[Exception]) -> None:
     """Test path mapping with non-existent paths."""
     with pytest.raises(error_type) as exc:
         validate_path_mapping(mapping, is_dir=is_dir)
@@ -85,9 +85,9 @@ def test_validate_path_mapping_wrong_type(fs: FakeFilesystem) -> None:
         validate_path_mapping("test=test.txt", is_dir=True)
     assert "not a directory" in str(exc.value).lower()
     
-    with pytest.raises(FileNotFoundError) as exc:
+    with pytest.raises(FileNotFoundError) as exc_file:
         validate_path_mapping("test=test_dir")
-    assert "not a file" in str(exc.value).lower()
+    assert "not a file" in str(exc_file.value).lower()
 
 def test_validate_path_mapping_outside_base(fs: FakeFilesystem) -> None:
     """Test path mapping with path outside base directory."""
