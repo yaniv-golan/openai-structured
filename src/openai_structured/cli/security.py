@@ -7,6 +7,7 @@ This module provides security checks for file access, including:
 - Temporary directory handling
 """
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -148,8 +149,12 @@ class SecurityManager(SecurityManagerProtocol):
                 str(real_path), purpose="read allowed directories"
             )
         except PathSecurityError:
-            raise PathSecurityError(
-                f"Cannot read allowed directories file outside allowed paths: {file_path}"
+            raise PathSecurityError.from_expanded_paths(
+                original_path=file_path,
+                expanded_path=str(real_path),
+                error_logged=True,
+                base_dir=str(self._base_dir),
+                allowed_dirs=[str(d) for d in self._allowed_dirs],
             )
 
         if not real_path.exists():
@@ -216,11 +221,24 @@ class SecurityManager(SecurityManagerProtocol):
         try:
             real_path = Path(os.path.realpath(path))
         except (ValueError, OSError) as e:
-            raise PathSecurityError(f"Invalid path format: {e}")
+            logger = logging.getLogger("ostruct")
+            logger.error("Invalid path format: %s", e)
+            raise PathSecurityError(
+                f"Invalid path format: {e}", error_logged=True
+            )
 
         if not self.is_path_allowed(str(real_path)):
-            raise PathSecurityError(
-                f"Path {purpose} denied: {path} is outside allowed directories"
+            logger = logging.getLogger("ostruct")
+            logger.error(
+                "Access denied: %s is outside base directory and not in allowed directories",
+                path,
+            )
+            raise PathSecurityError.from_expanded_paths(
+                original_path=path,
+                expanded_path=str(real_path),
+                base_dir=str(self._base_dir),
+                allowed_dirs=[str(d) for d in self._allowed_dirs],
+                error_logged=True,
             )
 
         return real_path

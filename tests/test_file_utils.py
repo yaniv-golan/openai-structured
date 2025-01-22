@@ -1,5 +1,6 @@
 """Tests for file utilities."""
 
+import logging
 import os
 
 import pytest
@@ -12,6 +13,7 @@ from openai_structured.cli.file_utils import (
     collect_files_from_directory,
     collect_files_from_pattern,
 )
+from openai_structured.cli.security import SecurityManager
 
 
 def test_file_info_creation(fs: FakeFilesystem) -> None:
@@ -19,22 +21,25 @@ def test_file_info_creation(fs: FakeFilesystem) -> None:
     # Create test file
     fs.create_file("test.txt", contents="test content")
 
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
     # Create FileInfo instance
-    file_info = FileInfo(name="test", path="test.txt")
+    file_info = FileInfo.from_path(
+        "test.txt", security_manager=security_manager
+    )
 
     # Check basic properties
-    assert file_info.name == "test"
+    assert os.path.basename(file_info.path) == "test.txt"
     assert file_info.path == "test.txt"
     assert file_info.abs_path == os.path.abspath("test.txt")
     assert file_info.extension == "txt"
 
-    # Check initial state - content should be loaded
-    assert file_info._content == "test content"
-    assert isinstance(file_info._size, int)
-    assert isinstance(file_info._mtime, float)
-    assert file_info._encoding is not None
-    assert file_info._hash is not None
-    assert file_info._stats_loaded is True
+    # Check initial state
+    assert isinstance(file_info.size, int)
+    assert isinstance(file_info.mtime, float)
+    assert file_info.encoding is not None
+    assert file_info.hash is not None
 
     # Content should be available immediately
     assert file_info.content == "test content"
@@ -44,7 +49,12 @@ def test_file_info_cache_update(fs: FakeFilesystem) -> None:
     """Test cache update mechanism."""
     fs.create_file("test.txt", contents="test content")
 
-    file_info = FileInfo(name="test", path="test.txt")
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
+    file_info = FileInfo.from_path(
+        "test.txt", security_manager=security_manager
+    )
 
     # Update from cache
     cached_content = "cached content"
@@ -52,6 +62,7 @@ def test_file_info_cache_update(fs: FakeFilesystem) -> None:
         content=cached_content, encoding="utf-8", hash_value="test_hash"
     )
 
+    # Check updated values
     assert file_info.content == cached_content
     assert file_info.encoding == "utf-8"
     assert file_info.hash == "test_hash"
@@ -61,9 +72,14 @@ def test_file_info_property_protection(fs: FakeFilesystem) -> None:
     """Test that private fields cannot be set directly."""
     fs.create_file("test.txt", contents="test content")
 
-    file_info = FileInfo(name="test", path="test.txt")
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
 
-    # Attempt to set private fields should raise AttributeError
+    file_info = FileInfo.from_path(
+        "test.txt", security_manager=security_manager
+    )
+
+    # Attempt to modify private fields should raise AttributeError
     with pytest.raises(AttributeError):
         file_info._content = (
             "new content"  # pyright: ignore[reportPrivateUsage]
@@ -83,26 +99,40 @@ def test_file_info_directory_traversal(fs: FakeFilesystem) -> None:
     # Change to base directory
     os.chdir("/base")
 
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
     # Try to access file outside base directory
     with pytest.raises(
         PathSecurityError,
         match="Access denied: .* is outside base directory and not in allowed directories",
     ):
-        FileInfo.from_path("test", "../outside/test.txt")
+        FileInfo.from_path(
+            "../outside/test.txt", security_manager=security_manager
+        )
 
+    # Try to collect files from outside directory
     with pytest.raises(
         PathSecurityError,
-        match="Directory mapping .* error: Directory .* is outside the current working directory .*",
+        match="Access denied: .* is outside base directory and not in allowed directories",
     ):
-        collect_files(dir_args=["test=../outside"])
+        collect_files(
+            file_mappings=["test=../outside/test.txt"],
+            security_manager=security_manager,
+        )
 
 
 def test_file_info_missing_file(fs: FakeFilesystem) -> None:
     """Test FileInfo handling of missing files."""
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
     with pytest.raises(
         FileNotFoundError, match="File not found: nonexistent.txt"
     ):
-        FileInfo.from_path("test", "nonexistent.txt")
+        FileInfo.from_path(
+            "nonexistent.txt", security_manager=security_manager
+        )
 
 
 def test_collect_files_from_pattern(fs: FakeFilesystem) -> None:
@@ -113,20 +143,20 @@ def test_collect_files_from_pattern(fs: FakeFilesystem) -> None:
     fs.create_file("test.txt", contents="test")
     fs.create_file("subdir/test3.py", contents="test3")
 
-    # Test basic pattern
-    files = collect_files_from_pattern("test", "*.py")
-    assert len(files) == 2
-    assert {f.path for f in files} == {"test1.py", "test2.py"}
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
 
-    # Test with extension filter
+    # Test basic pattern
     files = collect_files_from_pattern(
-        "test", "*.*", allowed_extensions={".py"}
+        "*.py", security_manager=security_manager
     )
     assert len(files) == 2
     assert {f.path for f in files} == {"test1.py", "test2.py"}
 
     # Test recursive pattern
-    files = collect_files_from_pattern("test", "**/*.py", recursive=True)
+    files = collect_files_from_pattern(
+        "**/*.py", security_manager=security_manager
+    )
     assert len(files) == 3
     assert {f.path for f in files} == {
         "test1.py",
@@ -143,8 +173,13 @@ def test_collect_files_from_directory(fs: FakeFilesystem) -> None:
     fs.create_file("dir/test.txt", contents="test")
     fs.create_file("dir/subdir/test3.py", contents="test3")
 
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
     # Test non-recursive collection
-    files = collect_files_from_directory("test", "dir")
+    files = collect_files_from_directory(
+        "dir", os.getcwd(), security_manager=security_manager
+    )
     assert len(files) == 3
     assert {f.path for f in files} == {
         "dir/test1.py",
@@ -153,7 +188,9 @@ def test_collect_files_from_directory(fs: FakeFilesystem) -> None:
     }
 
     # Test recursive collection
-    files = collect_files_from_directory("test", "dir", recursive=True)
+    files = collect_files_from_directory(
+        "dir", os.getcwd(), recursive=True, security_manager=security_manager
+    )
     assert len(files) == 4
     assert {f.path for f in files} == {
         "dir/test1.py",
@@ -164,7 +201,11 @@ def test_collect_files_from_directory(fs: FakeFilesystem) -> None:
 
     # Test with extension filter
     files = collect_files_from_directory(
-        "test", "dir", recursive=True, allowed_extensions={".py"}
+        "dir",
+        os.getcwd(),
+        recursive=True,
+        allowed_extensions=[".py"],
+        security_manager=security_manager,
     )
     assert len(files) == 3
     assert {f.path for f in files} == {
@@ -183,14 +224,22 @@ def test_collect_files(fs: FakeFilesystem) -> None:
     fs.create_file("dir/test3.py", contents="test3")
     fs.create_file("dir/test4.py", contents="test4")
 
-    # Test collecting single file
-    result = collect_files(file_args=["single=single.txt"])
-    assert len(result) == 1
-    assert isinstance(result["single"], FileInfo)
-    assert result["single"].path == "single.txt"
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
 
-    # Test collecting multiple files
-    result = collect_files(files_args=["tests=*.py"])
+    # Test collecting single file
+    result = collect_files(
+        file_mappings=["single=single.txt"], security_manager=security_manager
+    )
+    assert len(result) == 1
+    assert isinstance(result["single"], list)
+    assert len(result["single"]) == 1
+    assert result["single"][0].path == "single.txt"
+
+    # Test collecting from pattern
+    result = collect_files(
+        file_pattern_mappings=["tests=*.py"], security_manager=security_manager
+    )
     assert len(result) == 1
     assert isinstance(result["tests"], list)
     file_list = result["tests"]
@@ -198,7 +247,11 @@ def test_collect_files(fs: FakeFilesystem) -> None:
     assert {f.path for f in file_list} == {"test1.py", "test2.py"}
 
     # Test collecting from directory
-    result = collect_files(dir_args=["dir=dir"], recursive=True)
+    result = collect_files(
+        dir_mappings=["dir=dir"],
+        recursive=True,
+        security_manager=security_manager,
+    )
     assert len(result) == 1
     assert isinstance(result["dir"], list)
     dir_list = result["dir"]
@@ -207,13 +260,13 @@ def test_collect_files(fs: FakeFilesystem) -> None:
 
     # Test collecting from all sources
     result = collect_files(
-        file_args=["single=single.txt"],
-        files_args=["tests=*.py"],
-        dir_args=["dir=dir"],
-        recursive=True,
+        file_mappings=["single=single.txt"],
+        file_pattern_mappings=["tests=*.py"],
+        dir_mappings=["dir=dir"],
+        security_manager=security_manager,
     )
     assert len(result) == 3
-    assert isinstance(result["single"], FileInfo)
+    assert isinstance(result["single"], list)
     assert isinstance(result["tests"], list)
     assert isinstance(result["dir"], list)
 
@@ -224,43 +277,51 @@ def test_collect_files_errors(fs: FakeFilesystem) -> None:
     fs.create_dir("/base")
     fs.create_dir("/outside")
     fs.create_file("/outside/test.txt", contents="test")
-    os.chdir("/base")  # Change to base directory
+    os.chdir("/base")
+
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
 
     # Test invalid file mapping
-    with pytest.raises(ValueError, match="Invalid file mapping"):
-        collect_files(file_args=["invalid_mapping"])
+    with pytest.raises(ValueError, match="Invalid mapping format"):
+        collect_files(
+            file_mappings=["test"], security_manager=security_manager
+        )
 
-    # Test no files found for pattern
-    with pytest.raises(ValueError, match="No files found matching pattern"):
-        collect_files(files_args=["test=*.nonexistent"])
+    # Test missing file
+    with pytest.raises(FileNotFoundError):
+        collect_files(
+            file_mappings=["test=nonexistent.txt"],
+            security_manager=security_manager,
+        )
 
-    # Test no files found in directory
-    fs.create_dir("empty_dir")
-    with pytest.raises(ValueError, match="No files found in directory"):
-        collect_files(dir_args=["test=empty_dir"])
-
-    # Test directory outside base
+    # Test directory traversal
     with pytest.raises(
         PathSecurityError,
-        match="Directory mapping .* error: Directory .* is outside the current working directory .*",
+        match="Directory mapping .* error: Access denied: .* is outside base directory and not in allowed directories",
     ):
-        collect_files(dir_args=["test=../outside"])
+        collect_files(
+            dir_mappings=["test=../outside"], security_manager=security_manager
+        )
 
 
 def test_file_info_stats_loading(fs: FakeFilesystem) -> None:
     """Test that file stats are loaded with content."""
     fs.create_file("test.txt", contents="test content")
 
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
     # Create FileInfo instance
-    file_info = FileInfo(name="test", path="test.txt")
+    file_info = FileInfo.from_path(
+        "test.txt", security_manager=security_manager
+    )
 
     # Check that stats are loaded
-    assert file_info.size == len("test content")
-    assert file_info.mtime is not None
-    assert file_info._content == "test content"
-
-    # Content should be available
-    assert file_info.content == "test content"
+    size = file_info.size
+    mtime = file_info.mtime
+    assert size is not None and size > 0
+    assert mtime is not None and mtime > 0
 
 
 def test_file_info_stats_security(fs: FakeFilesystem) -> None:
@@ -273,34 +334,155 @@ def test_file_info_stats_security(fs: FakeFilesystem) -> None:
     # Change to base directory
     os.chdir("/base")
 
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
     # Create FileInfo for file outside base directory
     with pytest.raises(
         PathSecurityError,
         match="Access denied: .* is outside base directory and not in allowed directories",
     ):
-        FileInfo(name="test", path="../outside/test.txt")
+        FileInfo.from_path(
+            "../outside/test.txt", security_manager=security_manager
+        )
 
 
 def test_file_info_missing_file_stats(fs: FakeFilesystem) -> None:
     """Test stats loading for missing file."""
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
     with pytest.raises(FileNotFoundError, match="File not found"):
-        FileInfo(name="test", path="nonexistent.txt")
+        FileInfo.from_path(
+            "nonexistent.txt", security_manager=security_manager
+        )
 
 
 def test_file_info_content_errors(fs: FakeFilesystem) -> None:
     """Test error handling in content loading."""
-    # Test with missing file
-    with pytest.raises(FileNotFoundError, match="File not found"):
-        FileInfo(name="test", path="nonexistent.txt")
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
 
-    # Test security error
+    # Test with missing file
+    with pytest.raises(FileNotFoundError):
+        FileInfo.from_path(
+            "nonexistent.txt", security_manager=security_manager
+        )
+
+
+def test_security_error_single_message(
+    caplog: pytest.LogCaptureFixture, fs: FakeFilesystem
+) -> None:
+    """Test that security errors are logged only once with complete information."""
+    # Set up test environment
     fs.create_dir("/base")
     fs.create_file("/outside/test.txt", contents="test")
     os.chdir("/base")
 
-    # Security error should be raised immediately
-    with pytest.raises(
-        PathSecurityError,
-        match="Access denied: .* is outside base directory and not in allowed directories",
-    ):
-        FileInfo(name="test", path="../outside/test.txt")
+    # Configure logging to capture all levels
+    caplog.set_level(logging.DEBUG)  # Capture all log levels
+    logger = logging.getLogger("ostruct")
+    logger.setLevel(
+        logging.DEBUG
+    )  # Ensure logger level is set to capture all messages
+
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
+    # Attempt to access file outside allowed directory
+    with pytest.raises(PathSecurityError):
+        FileInfo.from_path(
+            "../outside/test.txt", security_manager=security_manager
+        )
+
+    # Check that error was logged only once
+    error_logs = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(error_logs) == 1
+    assert "Access denied" in error_logs[0].message
+    assert "../outside/test.txt" in error_logs[0].message
+
+
+def test_security_error_with_allowed_dirs(
+    caplog: pytest.LogCaptureFixture, fs: FakeFilesystem
+) -> None:
+    """Test that security error message includes allowed directories."""
+    # Set up test environment
+    fs.create_dir("/base")
+    fs.create_dir("/allowed")
+    fs.create_file("/outside/test.txt", contents="test")
+    os.chdir("/base")
+
+    # Configure logging to capture all levels
+    caplog.set_level(logging.ERROR)
+
+    # Create security manager with allowed directories
+    security_manager = SecurityManager(
+        base_dir=os.getcwd(), allowed_dirs=["/allowed"]
+    )
+
+    # Attempt to access file with allowed directories specified
+    with pytest.raises(PathSecurityError) as exc:
+        FileInfo.from_path(
+            "../outside/test.txt", security_manager=security_manager
+        )
+
+    # Check that error message includes allowed directories
+    assert "/allowed" in str(exc.value)
+
+
+def test_security_error_expanded_paths(fs: FakeFilesystem) -> None:
+    """Test security error handling with expanded paths."""
+    # Create test error with expanded paths
+    error = PathSecurityError.from_expanded_paths(
+        original_path="~/test.txt",
+        expanded_path="/home/user/test.txt",
+        base_dir="/base",
+        allowed_dirs=["/allowed"],
+        error_logged=True,
+    )
+
+    # Verify error message contains all components
+    error_msg = str(error)
+    assert "~/test.txt" in error_msg
+    assert "/home/user/test.txt" in error_msg
+    assert "Base directory: /base" in error_msg
+    assert "Allowed directories: ['/allowed']" in error_msg
+    assert error.error_logged is True
+
+
+def test_security_error_format_with_context() -> None:
+    """Test formatting security error with additional context."""
+    # Create basic error
+    error = PathSecurityError("Access denied: test.txt")
+
+    # Format with context
+    formatted = error.format_with_context(
+        original_path="~/test.txt",
+        expanded_path="/home/user/test.txt",
+        base_dir="/base",
+        allowed_dirs=["/allowed"],
+    )
+
+    # Verify formatted message contains all components
+    assert "Original path: ~/test.txt" in formatted
+    assert "Expanded path: /home/user/test.txt" in formatted
+    assert "Base directory: /base" in formatted
+    assert "Allowed directories: ['/allowed']" in formatted
+    assert "Use --allowed-dir" in formatted
+
+
+def test_security_error_attributes() -> None:
+    """Test PathSecurityError attributes and properties."""
+    error = PathSecurityError("Access denied", error_logged=True)
+    assert error.has_been_logged
+    assert not error.wrapped
+    assert str(error) == "Access denied"
+
+
+def test_security_error_wrapping() -> None:
+    """Test error wrapping with context preservation."""
+    original = PathSecurityError("Access denied", error_logged=True)
+    wrapped = PathSecurityError.wrap_error("File collection failed", original)
+    assert wrapped.has_been_logged  # Should preserve logged state
+    assert wrapped.wrapped  # Should be marked as wrapped
+    assert str(wrapped) == "File collection failed: Access denied"

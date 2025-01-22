@@ -115,9 +115,7 @@ def read_file(
                     if progress:
                         progress.update(1)  # Update progress for cache hit
                     # Create FileInfo and update from cache
-                    file_info = FileInfo(
-                        name=os.path.basename(file_path), path=file_path
-                    )
+                    file_info = FileInfo.from_path(path=file_path)
                     file_info.update_cache(
                         content=_file_cache[abs_path],
                         encoding=_file_encodings.get(abs_path),
@@ -126,9 +124,7 @@ def read_file(
                     return file_info
 
             # Create new FileInfo - content will be loaded immediately
-            file_info = FileInfo(
-                name=os.path.basename(file_path), path=file_path
-            )
+            file_info = FileInfo.from_path(path=file_path)
 
             # Update cache with loaded content
             with _cache_lock:

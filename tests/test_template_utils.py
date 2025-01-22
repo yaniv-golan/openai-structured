@@ -89,16 +89,20 @@ def fs() -> Generator[FakeFilesystem, None, None]:
 
 def test_validate_fileinfo_attributes(fs: FakeFilesystem) -> None:
     """Test validation of FileInfo attribute access."""
+    fs.create_dir("/test1")
+    fs.create_file("/test1/file.txt", contents="test content")
     template = "Content: {{ file.content }}, Path: {{ file.abs_path }}"
-    file_info = FileInfo(name="file", path="/path/to/file.txt")
+    file_info = FileInfo.from_path(path="/test1/file.txt")
     file_mappings: Dict[str, Any] = {"file": file_info}
     validate_template_placeholders(template, file_mappings)
 
 
 def test_validate_fileinfo_invalid_attribute(fs: FakeFilesystem) -> None:
     """Test validation with invalid FileInfo attribute."""
+    fs.create_dir("/test2")
+    fs.create_file("/test2/file.txt", contents="test content")
     template = "{{ file.invalid_attr }}"
-    file_info = FileInfo(name="file", path="/path/to/file.txt")
+    file_info = FileInfo.from_path(path="/test2/file.txt")
     file_mappings: Dict[str, Any] = {"file": file_info}
     with pytest.raises(ValueError) as exc:
         validate_template_placeholders(template, file_mappings)
@@ -150,8 +154,8 @@ def test_validate_complex_template(fs: FakeFilesystem) -> None:
         Dict[str, Any],
         {
             "source_files": [
-                FileInfo("file1.txt", "/test/file1.txt"),
-                FileInfo("file2.txt", "/test/file2.txt"),
+                FileInfo.from_path(path="/test/file1.txt"),
+                FileInfo.from_path(path="/test/file2.txt"),
             ],
             "config": {
                 "exclude": {"file1.txt": "reason1"},
@@ -172,7 +176,7 @@ def test_validate_template_with_filters(fs: FakeFilesystem) -> None:
     {{ content|extract_field("status")|frequency|dict_to_table }}
     """
     file_mappings: Dict[str, Any] = {
-        "file": FileInfo("file", "/test/data.txt")
+        "file": FileInfo.from_path(path="/test/data.txt")
     }
     validate_template_placeholders(template, file_mappings)
 
@@ -236,7 +240,7 @@ def test_validate_template_custom_functions(fs: FakeFilesystem) -> None:
     file_mappings: Dict[str, Any] = cast(
         Dict[str, Any],
         {
-            "file": FileInfo("file", "/test/file.txt"),
+            "file": FileInfo.from_path(path="/test/file.txt"),
             "data": {"category": "test", "value": 1},
             "text": "print('hello')",
         },
@@ -249,7 +253,7 @@ def test_render_template_with_file_content(fs: FakeFilesystem) -> None:
     fs.create_file("/test/input.txt", contents="Hello from file!")
 
     template = "Content: {{ file.content }}"
-    file_info = FileInfo(name="file", path="/test/input.txt")
+    file_info = FileInfo.from_path(path="/test/input.txt")
     file_info.load_content()
     context: Dict[str, Any] = {"file": file_info}
     result = render_template(template, context)

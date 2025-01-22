@@ -7,12 +7,17 @@ from typing import Any, Dict
 
 import pytest
 from jinja2 import Environment, StrictUndefined
+from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.file_utils import FileInfo
 from openai_structured.cli.template_rendering import (
     DotDict,
     create_jinja_env,
     render_template,
+)
+from openai_structured.cli.template_utils import (
+    read_file,
+    validate_template_placeholders,
 )
 
 
@@ -61,10 +66,9 @@ def test_render_template_with_file_info() -> None:
         f.write("test content")
         f.flush()
         file_path = f.name
-        file_name = os.path.basename(file_path)
 
     try:
-        file_info = FileInfo(name=file_name, path=file_path)
+        file_info = FileInfo.from_path(path=file_path)
         file_info.load_content()
 
         template: str = (
@@ -87,17 +91,15 @@ def test_render_template_with_immediate_loading() -> None:
         f.write("test content")
         f.flush()
         file_path = f.name
-        file_name = os.path.basename(file_path)
         logger.debug(
             "Created test file %s with content 'test content'", file_path
         )
 
     try:
-        file_info = FileInfo(name=file_name, path=file_path)
+        file_info = FileInfo.from_path(path=file_path)
         logger.debug("Created FileInfo instance")
 
         # Content should be loaded immediately
-        assert file_info._content == "test content"
         assert file_info.content == "test content"
 
         # Render template with file info
@@ -175,3 +177,80 @@ def test_dot_dict() -> None:
         dot_dict.missing
     with pytest.raises(KeyError):
         dot_dict["missing"]
+
+
+def test_read_file(fs: FakeFilesystem) -> None:
+    """Test reading file contents."""
+    # Create test file
+    fs.create_file("test.txt", contents="test content")
+
+    # Read file
+    file_info = read_file("test.txt")
+    assert file_info.content == "test content"
+
+
+def test_render_template_with_file(fs: FakeFilesystem) -> None:
+    """Test template rendering with file content."""
+    # Create test file
+    fs.create_file("test.txt", contents="test content")
+
+    # Create template using file content
+    template = "Content: {{ file.content }}"
+    context = {"file": read_file("test.txt")}
+    env = Environment()
+    result = render_template(template, context, env)
+    assert result == "Content: test content"
+
+
+def test_validate_template_placeholders_basic() -> None:
+    """Test basic template placeholder validation."""
+    template = "Hello {{ name }}!"
+    context = {"name": "World"}
+    env = Environment()
+    # Should not raise any exceptions
+    validate_template_placeholders(template, context, env)
+
+
+def test_validate_template_placeholders_missing() -> None:
+    """Test template validation with missing variables."""
+    template = "Hello {{ name }}!"
+    context: Dict[str, str] = {}  # Empty context
+    env = Environment()
+    with pytest.raises(ValueError):
+        validate_template_placeholders(template, context, env)
+
+
+def test_validate_template_placeholders_undefined() -> None:
+    """Test template validation with undefined variables."""
+    template = "Hello {{ name }}!"
+    context = {"wrong_name": "World"}
+    env = Environment()
+    with pytest.raises(ValueError):
+        validate_template_placeholders(template, context, env)
+
+
+def test_validate_template_placeholders_nested() -> None:
+    """Test template validation with nested variables."""
+    template = "{{ user.name }} is {{ user.age }} years old"
+    context = {"user": {"name": "Alice", "age": 30}}
+    env = Environment()
+    # Should not raise any exceptions
+    validate_template_placeholders(template, context, env)
+
+
+def test_validate_template_placeholders_complex() -> None:
+    """Test template validation with complex expressions."""
+    template = """
+    {% for item in items %}
+        {{ item.name }}: {{ item.value }}
+    {% endfor %}
+    """
+    context = {
+        "items": [
+            {"name": "A", "value": 1},
+            {"name": "B", "value": 2},
+        ]
+    }
+    env = Environment()
+    # Should not raise any exceptions
+    validate_template_placeholders(template, context, env)

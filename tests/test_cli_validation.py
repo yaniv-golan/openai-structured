@@ -13,7 +13,7 @@ from openai_structured.cli.cli import (
     validate_task_template,
     validate_variable_mapping,
 )
-from openai_structured.errors import (
+from openai_structured.cli.errors import (
     DirectoryNotFoundError,
     FileNotFoundError,
     InvalidJSONError,
@@ -23,6 +23,7 @@ from openai_structured.errors import (
     VariableNameError,
     VariableValueError,
 )
+from openai_structured.cli.security import SecurityManager
 
 
 # Variable mapping tests
@@ -126,8 +127,11 @@ def test_validate_path_mapping_outside_base(fs: FakeFilesystem) -> None:
     os.chdir("/base")
     fs.create_file("/outside.txt", contents="test")
 
+    security_manager = SecurityManager(base_dir="/base")
     with pytest.raises(PathSecurityError) as exc:
-        validate_path_mapping("file=/outside.txt")
+        validate_path_mapping(
+            "file=/outside.txt", security_manager=security_manager
+        )
     assert "outside" in str(exc.value).lower()
     assert "base directory" in str(exc.value).lower()
 

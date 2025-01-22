@@ -36,7 +36,7 @@ class TestCLICore:
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--file",
                     "input=input.txt",
@@ -127,7 +127,7 @@ class TestCLIVariables:
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--var",
                     "test_var=test_value",
@@ -168,7 +168,7 @@ class TestCLIVariables:
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--json-var",
                     'config={"key": "value"}',
@@ -203,7 +203,7 @@ class TestCLIVariables:
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--var",
                     "123invalid=value",  # Invalid: starts with a number
@@ -245,7 +245,7 @@ class TestCLIVariables:
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--json-var",
                     "config={invalid_json}",
@@ -273,7 +273,9 @@ class TestCLIVariables:
             error_msg = mock_error_logger.error.call_args[0][0].lower()
             assert "invalid json" in error_msg
             assert "config" in error_msg
-            assert "property name" in error_msg
+            assert (
+                "{invalid_json}" in error_msg
+            )  # Check for the actual invalid JSON value
 
 
 # I/O Tests
@@ -284,7 +286,7 @@ class TestCLIIO:
     async def test_file_input(self, fs: FakeFilesystem) -> None:
         """Test file input handling."""
         fs.create_file("schema.json", contents='{"type": "string"}')
-        fs.create_file("task.txt", contents="Content: {{ input.content }}")
+        fs.create_file("task.txt", contents="Content: {{ input[0].content }}")
         fs.create_file("input.txt", contents="test content")
 
         # Create mock structured stream
@@ -300,7 +302,7 @@ class TestCLIIO:
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--file",
                     "input=input.txt",
@@ -341,7 +343,7 @@ class TestCLIIO:
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--api-key",
                     "test-key",
@@ -385,7 +387,7 @@ class TestCLIIO:
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--dir",
                     "files=test_dir",
@@ -423,7 +425,7 @@ class TestCLIIntegration:
             contents="""---
 system_prompt: Test prompt with {{ var1 }}
 ---
-Template with {{ var2 }} and {{ input.content }}""",
+Template with {{ var2 }} and {{ input[0].content }}""",
         )
         fs.create_file("input.txt", contents="test content")
 
@@ -440,7 +442,7 @@ Template with {{ var2 }} and {{ input.content }}""",
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--file",
                     "input=input.txt",
@@ -496,7 +498,7 @@ Template with {{ var2 }} and {{ input.content }}""",
                     "ostruct",
                     "--task",
                     "@task.txt",
-                    "--schema-file",
+                    "--schema",
                     "schema.json",
                     "--file",
                     "input=input.txt",

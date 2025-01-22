@@ -39,28 +39,31 @@ from pydantic import BaseModel, ConfigDict, create_model
 from ..client import async_openai_structured_stream, supports_structured_output
 from ..errors import (
     APIResponseError,
-    DirectoryNotFoundError,
     EmptyResponseError,
-    FileNotFoundError,
-    InvalidJSONError,
     InvalidResponseFormatError,
     JSONParseError,
     ModelNotSupportedError,
     ModelVersionError,
     OpenAIClientError,
-    PathSecurityError,
     SchemaFileError,
     SchemaValidationError,
     StreamBufferError,
     StreamInterruptedError,
     StreamParseError,
+)
+from .errors import (
+    DirectoryNotFoundError,
+    FileNotFoundError,
+    InvalidJSONError,
+    PathSecurityError,
     TaskTemplateSyntaxError,
     TaskTemplateVariableError,
     VariableError,
     VariableNameError,
     VariableValueError,
 )
-from .file_utils import FileInfo, TemplateValue, collect_files
+from .file_utils import TemplateValue, collect_files
+from .path_utils import validate_path_mapping
 from .progress import ProgressContext
 from .security import SecurityManager
 from .template_utils import (
@@ -373,18 +376,24 @@ def validate_variable_mapping(
 
 
 @overload
-def validate_path_mapping(
-    mapping: str, is_dir: Literal[True]
+def _validate_path_mapping_internal(
+    mapping: str,
+    is_dir: Literal[True],
+    base_dir: Optional[str] = None,
+    security_manager: Optional[SecurityManager] = None,
 ) -> Tuple[str, str]: ...
 
 
 @overload
-def validate_path_mapping(
-    mapping: str, is_dir: Literal[False] = False
+def _validate_path_mapping_internal(
+    mapping: str,
+    is_dir: Literal[False] = False,
+    base_dir: Optional[str] = None,
+    security_manager: Optional[SecurityManager] = None,
 ) -> Tuple[str, str]: ...
 
 
-def validate_path_mapping(
+def _validate_path_mapping_internal(
     mapping: str,
     is_dir: bool = False,
     base_dir: Optional[str] = None,
@@ -408,12 +417,6 @@ def validate_path_mapping(
         PathSecurityError: If the path is inaccessible or outside the allowed directory.
         ValueError: If the format is invalid (missing "=").
         OSError: If there is an underlying OS error (permissions, etc.).
-
-    Example:
-        >>> validate_path_mapping("config=settings.txt")  # Validates file
-        ('config', 'settings.txt')
-        >>> validate_path_mapping("data=config/", is_dir=True)  # Validates directory
-        ('data', 'config/')
     """
     try:
         if not mapping or "=" not in mapping:
@@ -448,7 +451,8 @@ def validate_path_mapping(
             )
             if not str(resolved_path).startswith(str(base_path)):
                 raise PathSecurityError(
-                    f"Path {path!r} is outside the base directory"
+                    f"Path {str(path)!r} resolves to {str(resolved_path)!r} which is outside "
+                    f"base directory {str(base_path)!r}"
                 )
         except OSError as e:
             raise OSError(f"Failed to resolve base path: {e}")
@@ -476,13 +480,22 @@ def validate_path_mapping(
         except OSError as e:
             if e.errno == 13:  # Permission denied
                 raise PathSecurityError(
-                    f"Permission denied accessing path: {path!r}"
+                    f"Permission denied accessing path: {path!r}",
+                    error_logged=True,
                 )
             raise
 
         if security_manager:
             if not security_manager.is_allowed_file(str(resolved_path)):
-                raise PathSecurityError(f"Path {path!r} is not allowed")
+                raise PathSecurityError.from_expanded_paths(
+                    original_path=str(path),
+                    expanded_path=str(resolved_path),
+                    base_dir=str(security_manager.base_dir),
+                    allowed_dirs=[
+                        str(d) for d in security_manager.allowed_dirs
+                    ],
+                    error_logged=True,
+                )
 
         # Return the original path to maintain relative paths in the output
         return name, path
@@ -567,42 +580,44 @@ def validate_schema_file(path: str) -> Dict[str, Any]:
         raise InvalidJSONError(f"Invalid JSON: {e.msg}")
 
 
-def collect_file_variables(
+def collect_template_files(
     args: argparse.Namespace,
+    security_manager: SecurityManager,
 ) -> Dict[str, TemplateValue]:
-    """Collect file-related variables from command line arguments.
-
-    This function handles all file-related argument types:
-    - Single files (--file)
-    - Multiple files (--files)
-    - Directories (--dir)
+    """Collect files from command line arguments.
 
     Args:
         args: Parsed command line arguments
+        security_manager: Security manager for path validation
 
     Returns:
-        Dictionary mapping variable names to FileInfo objects or lists
+        Dictionary mapping variable names to file info objects
 
     Raises:
-        ValueError: If file mappings are invalid
-        FileNotFoundError: If files do not exist
-        DirectoryNotFoundError: If directories do not exist
-        PathSecurityError: If paths violate security constraints
+        PathSecurityError: If any file paths violate security constraints
+        ValueError: If file mappings are invalid or files cannot be accessed
     """
     try:
         result = collect_files(
-            file_args=args.file,
-            files_args=args.files,
-            dir_args=args.dir,
+            file_mappings=args.file,
+            file_pattern_mappings=args.files,
+            dir_mappings=args.dir,
             recursive=args.recursive,
-            allowed_extensions=None,  # We'll handle extensions elsewhere if needed
-            load_content=False,  # Keep content loading lazy
-            allowed_dirs=args.allowed_dir,
+            extensions=args.ext.split(",") if args.ext else None,
+            security_manager=security_manager,
         )
         return cast(Dict[str, TemplateValue], result)
-    except (FileNotFoundError, DirectoryNotFoundError, PathSecurityError):
-        raise  # Let these propagate unchanged
+    except PathSecurityError:
+        # Let PathSecurityError propagate without wrapping
+        raise
+    except (FileNotFoundError, DirectoryNotFoundError) as e:
+        # Wrap file-related errors
+        raise ValueError(f"File access error: {e}")
     except Exception as e:
+        # Check if this is a wrapped security error
+        if isinstance(e.__cause__, PathSecurityError):
+            raise e.__cause__
+        # Wrap unexpected errors
         raise ValueError(f"Error collecting files: {e}")
 
 
@@ -633,7 +648,7 @@ def collect_simple_variables(args: argparse.Namespace) -> Dict[str, str]:
                 all_names.add(name)
             except ValueError:
                 raise VariableNameError(
-                    f"Invalid variable mapping format: {mapping}. Expected name=value"
+                    f"Invalid variable mapping (expected name=value format): {mapping!r}"
                 )
 
     return variables
@@ -680,56 +695,81 @@ def collect_json_variables(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def create_template_context(
-    args: argparse.Namespace, security_manager: SecurityManager
-) -> Dict[str, TemplateValue]:
-    """Create template context from CLI arguments."""
-    # Collect variables from different sources
-    file_variables = collect_file_variables(args)
-    simple_variables = collect_simple_variables(args)
-    json_variables = collect_json_variables(args)
+    args: argparse.Namespace,
+    security_manager: SecurityManager,
+) -> Dict[str, Any]:
+    """Create template context from command line arguments.
 
-    # Check for naming conflicts
-    all_names = set()
-    for name in file_variables:
-        if name in all_names:
-            raise VariableNameError(f"Duplicate variable name: {name}")
-        all_names.add(name)
+    Args:
+        args: Parsed command line arguments
+        security_manager: Security manager for path validation
 
-    for name in simple_variables:
-        if name in all_names:
-            raise VariableNameError(f"Duplicate variable name: {name}")
-        all_names.add(name)
+    Returns:
+        Template context dictionary
 
-    for name in json_variables:
-        if name in all_names:
-            raise VariableNameError(f"Duplicate variable name: {name}")
-        all_names.add(name)
+    Raises:
+        PathSecurityError: If any file paths violate security constraints
+        VariableError: If variable mappings are invalid
+        ValueError: If file mappings are invalid or files cannot be accessed
+    """
+    context: Dict[str, Any] = {}
 
-    # Combine all variables into template context
-    template_context = {
-        **file_variables,  # FileInfo objects and lists
-        **simple_variables,  # Simple string values
-        **json_variables,  # Parsed JSON structures
-    }
+    # Collect files first to catch security errors early
+    try:
+        files = collect_template_files(args, security_manager)
+        context.update(files)
+    except PathSecurityError as e:
+        # Let security errors propagate without wrapping
+        logger.debug(
+            "[create_template_context] Caught PathSecurityError, propagating: %s (logged=%s)",
+            str(e),
+            getattr(e, "has_been_logged", False),
+        )
+        raise
+    except ValueError as e:
+        # Check if this is a wrapped security error
+        if isinstance(e.__cause__, PathSecurityError):
+            logger.debug(
+                "[create_template_context] Caught wrapped PathSecurityError in ValueError, propagating: %s (logged=%s)",
+                str(e.__cause__),
+                getattr(e.__cause__, "has_been_logged", False),
+            )
+            # Let wrapped security errors propagate
+            raise e.__cause__
+        # Otherwise wrap in a more specific error
+        logger.debug(
+            "[create_template_context] Caught ValueError, wrapping: %s",
+            str(e),
+        )
+        raise ValueError(f"Error collecting files: {e}")
 
-    # Apply security checks only to FileInfo objects
-    for name, value in template_context.items():
-        if isinstance(value, FileInfo):
-            if not security_manager.is_allowed_file(str(value.path)):
-                raise PathSecurityError(f"File access denied: {value.path}")
-        elif (
-            isinstance(value, list)
-            and value
-            and isinstance(value[0], FileInfo)
-        ):
-            # Check each FileInfo in a list
-            for file_info in value:
-                if not security_manager.is_allowed_file(str(file_info.path)):
-                    raise PathSecurityError(
-                        f"File access denied: {file_info.path}"
+    # Collect simple variables
+    try:
+        variables = collect_simple_variables(args)
+        context.update(variables)
+    except VariableNameError as e:
+        raise VariableError(str(e))
+
+    # Collect JSON variables
+    if args.json_var:
+        for mapping in args.json_var:
+            try:
+                name, value = mapping.split("=", 1)
+                if not name.isidentifier():
+                    raise VariableNameError(f"Invalid variable name: {name}")
+                try:
+                    json_value = json.loads(value)
+                except json.JSONDecodeError as e:
+                    raise InvalidJSONError(
+                        f"Invalid JSON value for {name} ({value!r}): {e}"
                     )
+                context[name] = json_value
+            except ValueError:
+                raise VariableError(
+                    f"Invalid JSON variable mapping (expected name=value format): {mapping!r}"
+                )
 
-    return template_context
+    return context
 
 
 def validate_security_manager(
@@ -765,186 +805,275 @@ def validate_security_manager(
     return security_manager
 
 
-async def _main() -> ExitCode:
-    """Main CLI entry point."""
+def parse_var(var_str: str) -> Tuple[str, str]:
+    """Parse a variable string in the format 'name=value'.
+
+    Args:
+        var_str: Variable string in format 'name=value'
+
+    Returns:
+        Tuple of (name, value)
+
+    Raises:
+        VariableNameError: If variable name is empty or invalid
+        VariableValueError: If variable format is invalid
+    """
+    try:
+        name, value = var_str.split("=", 1)
+        if not name:
+            raise VariableNameError("Empty name in variable mapping")
+        if not name.isidentifier():
+            raise VariableNameError(
+                f"Invalid variable name: {name}. Must be a valid Python identifier"
+            )
+        return name, value
+
+    except ValueError as e:
+        if "not enough values to unpack" in str(e):
+            raise VariableValueError(
+                f"Invalid variable mapping (expected name=value format): {var_str!r}"
+            )
+        raise
+
+
+def parse_json_var(var_str: str) -> Tuple[str, Any]:
+    """Parse a JSON variable string in the format 'name=json_value'.
+
+    Args:
+        var_str: Variable string in format 'name=json_value'
+
+    Returns:
+        Tuple of (name, parsed_value)
+
+    Raises:
+        VariableNameError: If variable name is empty or invalid
+        VariableValueError: If variable format is invalid
+        InvalidJSONError: If JSON value is invalid
+    """
+    try:
+        name, json_str = var_str.split("=", 1)
+        if not name:
+            raise VariableNameError("Empty name in JSON variable mapping")
+        if not name.isidentifier():
+            raise VariableNameError(
+                f"Invalid variable name: {name}. Must be a valid Python identifier"
+            )
+
+        try:
+            value = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            raise InvalidJSONError(
+                f"Invalid JSON value for variable {name!r}: {json_str!r}"
+            ) from e
+
+        return name, value
+
+    except ValueError as e:
+        if "not enough values to unpack" in str(e):
+            raise VariableValueError(
+                f"Invalid JSON variable mapping (expected name=json format): {var_str!r}"
+            )
+        raise
+
+
+def create_argument_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser for the CLI.
+
+    Returns:
+        The configured argument parser.
+    """
     parser = argparse.ArgumentParser(
-        description="Make structured OpenAI API calls from the command line."
+        description="Make structured OpenAI API calls from the command line.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Add version argument
+    # Required arguments
     parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
-        help="Show program's version number and exit",
+        "--task",
+        required=True,
+        help="Task template string or @file",
     )
 
-    # Add task argument
-    parser.add_argument(
-        "--task", type=str, required=True, help="Task template string or @file"
-    )
-
-    # File input arguments
+    # File access arguments
     parser.add_argument(
         "--file",
         action="append",
+        default=[],
+        help="Map file to variable (name=path)",
         metavar="NAME=PATH",
-        help="Map file to variable name. Format: name=path. Can be specified multiple times.",
     )
     parser.add_argument(
         "--files",
         action="append",
+        default=[],
+        help="Map file pattern to variable (name=pattern)",
         metavar="NAME=PATTERN",
-        help="Map glob pattern to variable name. Format: name=pattern. Can be specified multiple times.",
     )
     parser.add_argument(
         "--dir",
         action="append",
+        default=[],
+        help="Map directory to variable (name=path)",
         metavar="NAME=PATH",
-        help="Map directory to variable name. Format: name=path. Can be specified multiple times.",
+    )
+    parser.add_argument(
+        "--allowed-dir",
+        action="append",
+        default=[],
+        help="Additional allowed directory or @file",
+        metavar="PATH",
     )
     parser.add_argument(
         "--recursive",
         action="store_true",
-        help="Recursively process directories",
+        help="Process directories recursively",
     )
     parser.add_argument(
-        "--ext", help="Comma-separated list of file extensions to include"
+        "--ext",
+        help="Comma-separated list of file extensions to include",
     )
 
     # Variable arguments
     parser.add_argument(
         "--var",
         action="append",
+        default=[],
+        help="Pass simple variables (name=value)",
         metavar="NAME=VALUE",
-        help="Set variable to string value. Format: name=value. Can be specified multiple times.",
     )
     parser.add_argument(
         "--json-var",
         action="append",
+        default=[],
+        help="Pass JSON variables (name=json)",
         metavar="NAME=JSON",
-        help="Set variable to JSON value. Format: name=json. Can be specified multiple times.",
-    )
-    parser.add_argument(
-        "--value",
-        action="append",
-        metavar="NAME=VALUE",
-        help="Value mapping in name=value format. Can be specified multiple times.",
     )
 
-    # Model arguments
+    # System prompt options
+    parser.add_argument(
+        "--system-prompt",
+        help=(
+            "System prompt for the model (use @file to load from file, "
+            "can also be specified in task template YAML frontmatter)"
+        ),
+        default=DEFAULT_SYSTEM_PROMPT,
+    )
+    parser.add_argument(
+        "--ignore-task-sysprompt",
+        action="store_true",
+        help="Ignore system prompt from task template YAML frontmatter",
+    )
+
+    # Schema validation
+    parser.add_argument(
+        "--schema",
+        dest="schema_file",
+        required=True,
+        help="JSON schema file for response validation",
+    )
+    parser.add_argument(
+        "--validate-schema",
+        action="store_true",
+        help="Validate schema and response",
+    )
+
+    # Model configuration
     parser.add_argument(
         "--model",
         default="gpt-4o-2024-08-06",
-        help=(
-            "OpenAI model to use. Supported models:\n"
-            "- gpt-4o: 128K context, 16K output\n"
-            "- gpt-4o-mini: 128K context, 16K output\n"
-            "- o1: 200K context, 100K output"
-        ),
+        help="Model to use",
     )
     parser.add_argument(
         "--temperature",
         type=float,
         default=0.0,
-        help="Temperature for sampling (default: 0.0)",
+        help="Temperature (0.0-2.0)",
     )
     parser.add_argument(
         "--max-tokens",
         type=int,
-        help=(
-            "Maximum number of tokens to generate. Set to 0 or negative to disable "
-            "token limit checks. Defaults to model-specific limit."
-        ),
+        help="Maximum tokens to generate",
     )
     parser.add_argument(
         "--top-p",
         type=float,
         default=1.0,
-        help="Top-p sampling parameter (default: 1.0)",
+        help="Top-p sampling (0.0-1.0)",
     )
     parser.add_argument(
         "--frequency-penalty",
         type=float,
         default=0.0,
-        help="Frequency penalty parameter (default: 0.0)",
+        help="Frequency penalty (-2.0-2.0)",
     )
     parser.add_argument(
         "--presence-penalty",
         type=float,
         default=0.0,
-        help="Presence penalty parameter (default: 0.0)",
+        help="Presence penalty (-2.0-2.0)",
     )
     parser.add_argument(
         "--timeout",
         type=float,
         default=60.0,
-        help="Timeout in seconds for API calls (default: 60.0)",
+        help="API timeout in seconds",
     )
 
-    # System prompt arguments
-    parser.add_argument(
-        "--system-prompt",
-        help="System prompt string or @file. Overrides task template system prompt.",
-    )
-    parser.add_argument(
-        "--ignore-task-sysprompt",
-        action="store_true",
-        help="Ignore system prompt in task template even if present.",
-    )
-
-    # Output arguments
+    # Output options
     parser.add_argument(
         "--output-file",
-        help="Write JSON output to this file instead of stdout",
+        help="Write JSON output to file",
     )
     parser.add_argument(
-        "--schema-file",
-        required=True,
-        help="Path to JSON schema file defining the response structure",
-    )
-    parser.add_argument(
-        "--validate-schema",
+        "--dry-run",
         action="store_true",
-        help="Validate the JSON schema file and response",
+        help="Simulate API call without making request",
     )
     parser.add_argument(
         "--no-progress",
         action="store_true",
         help="Disable progress indicators",
     )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Print request without sending"
-    )
 
-    # Other arguments
-    parser.add_argument(
-        "--verbose", action="store_true", help="Enable verbose logging"
-    )
+    # Other options
     parser.add_argument(
         "--api-key",
-        help="OpenAI API key. Overrides OPENAI_API_KEY environment variable. "
-        "Warning: Key might be visible in process list or shell history.",
+        help="OpenAI API key (overrides env var)",
     )
     parser.add_argument(
-        "--allowed-dir",
-        action="append",
-        type=str,
-        help="Additional directory to allow file access or a file containing a list of allowed "
-        "directories (using @ notation) (can be used multiple times)",
+        "--verbose",
+        action="store_true",
+        help="Enable detailed logging",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
+    return parser
+
+
+async def _main() -> ExitCode:
+    """Main entry point for the CLI.
+
+    Returns:
+        Exit code indicating success or type of failure
+    """
+    # Parse command line arguments
+    parser = create_argument_parser()
     args = parser.parse_args()
 
     # Configure logging
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(message)s",
+        format="%(levelname)s:%(name)s:%(funcName)s: %(message)s",
     )
     logger = logging.getLogger("ostruct")
 
     # Initialize security manager with current directory as base
     security_manager = SecurityManager(str(Path.cwd()))
+    logger.debug("Initialized security manager with base dir: %s", Path.cwd())
 
     # Process allowed directories
     if args.allowed_dir:
@@ -955,7 +1084,8 @@ async def _main() -> ExitCode:
                 try:
                     security_manager.add_allowed_dirs_from_file(allowed_file)
                 except PathSecurityError as e:
-                    logger.error(str(e))
+                    if not e.has_been_logged:
+                        logger.error(str(e))
                     return ExitCode.SECURITY_ERROR
                 except OSError as e:
                     logger.error(
@@ -972,17 +1102,45 @@ async def _main() -> ExitCode:
 
     # Create template context from arguments with security checks
     try:
+        logger.debug("[_main] Creating template context from arguments")
         template_context = create_template_context(args, security_manager)
     except PathSecurityError as e:
-        logger.error(str(e))
+        logger.debug(
+            "[_main] Caught PathSecurityError: %s (logged=%s)",
+            str(e),
+            getattr(e, "has_been_logged", False),
+        )
+        if not getattr(e, "has_been_logged", False):
+            logger.error(str(e))
         return ExitCode.SECURITY_ERROR
-    except VariableError as e:  # Add specific handling for variable errors
+    except VariableError as e:
+        logger.debug("[_main] Caught VariableError: %s", str(e))
         logger.error(str(e))
         return ExitCode.DATA_ERROR
     except OSError as e:
+        logger.debug("[_main] Caught OSError: %s", str(e))
         logger.error(f"File access error: {e}")
         return ExitCode.IO_ERROR
     except ValueError as e:
+        # Check if this is a wrapped security error
+        if isinstance(e.__cause__, PathSecurityError):
+            logger.debug(
+                "[_main] Caught wrapped PathSecurityError in ValueError: %s (logged=%s)",
+                str(e.__cause__),
+                getattr(e.__cause__, "has_been_logged", False),
+            )
+            if not getattr(e.__cause__, "has_been_logged", False):
+                logger.error(str(e.__cause__))
+            return ExitCode.SECURITY_ERROR
+        # Check if this is a wrapped security error in the error message
+        if "Access denied:" in str(e):
+            logger.debug(
+                "[_main] Detected security error in ValueError message: %s",
+                str(e),
+            )
+            logger.error(f"Invalid input: {e}")
+            return ExitCode.SECURITY_ERROR
+        logger.debug("[_main] Caught ValueError: %s", str(e))
         logger.error(f"Invalid input: {e}")
         return ExitCode.DATA_ERROR
 
@@ -1005,6 +1163,10 @@ async def _main() -> ExitCode:
     except TaskTemplateSyntaxError as e:
         logger.error(f"Template syntax error: {e}")
         return ExitCode.VALIDATION_ERROR
+    except PathSecurityError as e:
+        if not e.has_been_logged:
+            logger.error(str(e))
+        return ExitCode.SECURITY_ERROR
     except OSError as e:
         logger.error(f"Could not read template file: {e}")
         return ExitCode.IO_ERROR
@@ -1022,6 +1184,10 @@ async def _main() -> ExitCode:
     except SchemaValidationError as e:
         logger.error(f"Schema validation error: {e}")
         return ExitCode.SCHEMA_ERROR
+    except PathSecurityError as e:
+        if not e.has_been_logged:
+            logger.error(str(e))
+        return ExitCode.SECURITY_ERROR
     except OSError as e:
         logger.error(f"Could not read schema file: {e}")
         return ExitCode.IO_ERROR
@@ -1112,10 +1278,7 @@ async def _main() -> ExitCode:
             else create_model(
                 "DynamicModel",
                 __config__=ConfigDict(arbitrary_types_allowed=True),
-                result=(
-                    Any,
-                    ...,
-                ),  # Pass field definition directly, not as a dict
+                result=(Any, ...),
             )
         )
 
@@ -1144,8 +1307,8 @@ async def _main() -> ExitCode:
             try:
                 with open(args.output_file, "w") as f:
                     json.dump(response, f, indent=2)
-            except OSError as e:
-                raise ValueError(f"Could not write to output file: {e}")
+            except OSError:
+                raise ValueError("Could not write to output file")
 
         return ExitCode.SUCCESS
 
@@ -1203,8 +1366,8 @@ async def _main() -> ExitCode:
         logger.error(str(e))
         return ExitCode.API_ERROR
 
-    except Exception as e:
-        logger.error("Unexpected error: %s", e)
+    except Exception:
+        logger.error("Unexpected error occurred")
         if args.verbose:
             import traceback
 
@@ -1212,29 +1375,61 @@ async def _main() -> ExitCode:
         return ExitCode.INTERNAL_ERROR
 
 
-async def main() -> ExitCode:
-    """Async main entry point for the CLI."""
+def main() -> None:
+    """CLI entry point that handles all errors."""
     try:
-        return await _main()
+        logger.debug("[main] Starting main execution")
+        exit_code = asyncio.run(_main())
+        sys.exit(exit_code.value)
     except KeyboardInterrupt:
-        print("\nOperation cancelled by user", file=sys.stderr)
-        return ExitCode.INTERRUPTED
+        logger.error("Operation cancelled by user")
+        sys.exit(ExitCode.INTERRUPTED.value)
+    except PathSecurityError as e:
+        # Only log security errors if they haven't been logged already
+        logger.debug(
+            "[main] Caught PathSecurityError: %s (logged=%s)",
+            str(e),
+            getattr(e, "has_been_logged", False),
+        )
+        if not getattr(e, "has_been_logged", False):
+            logger.error(str(e))
+        sys.exit(ExitCode.SECURITY_ERROR.value)
+    except ValueError as e:
+        # Get the original cause of the error
+        cause = e.__cause__ or e.__context__
+        if isinstance(cause, PathSecurityError):
+            logger.debug(
+                "[main] Caught wrapped PathSecurityError in ValueError: %s (logged=%s)",
+                str(cause),
+                getattr(cause, "has_been_logged", False),
+            )
+            # Only log security errors if they haven't been logged already
+            if not getattr(cause, "has_been_logged", False):
+                logger.error(str(cause))
+            sys.exit(ExitCode.SECURITY_ERROR.value)
+        else:
+            logger.debug("[main] Caught ValueError: %s", str(e))
+            logger.error(f"Invalid input: {e}")
+            sys.exit(ExitCode.DATA_ERROR.value)
     except Exception as e:
-        print(f"Unexpected error: {e}", file=sys.stderr)
-        return ExitCode.UNKNOWN_ERROR
-
-
-def cli_main() -> int:
-    """Synchronous entry point for command line usage."""
-    try:
-        return int(asyncio.run(main()))
-    except Exception as e:
-        print(f"Unexpected error: {e}", file=sys.stderr)
-        return int(ExitCode.UNKNOWN_ERROR)
+        # Check if this is a wrapped security error
+        if isinstance(e.__cause__, PathSecurityError):
+            logger.debug(
+                "[main] Caught wrapped PathSecurityError in Exception: %s (logged=%s)",
+                str(e.__cause__),
+                getattr(e.__cause__, "has_been_logged", False),
+            )
+            # Only log security errors if they haven't been logged already
+            if not getattr(e.__cause__, "has_been_logged", False):
+                logger.error(str(e.__cause__))
+            sys.exit(ExitCode.SECURITY_ERROR.value)
+        logger.debug("[main] Caught unexpected error: %s", str(e))
+        logger.error(f"Invalid input: {e}")
+        sys.exit(ExitCode.DATA_ERROR.value)
 
 
 if __name__ == "__main__":
-    sys.exit(cli_main())
+    main()
 
 # Export public API
 __all__ = [
@@ -1246,4 +1441,5 @@ __all__ = [
     "validate_token_limits",
     "supports_structured_output",
     "ProgressContext",
+    "validate_path_mapping",
 ]

@@ -9,14 +9,24 @@ A Python library for structured output from OpenAI's API.
 """
 __version__ = "0.6.0"  # Follow Semantic Versioning
 
-from .cli.cli import ExitCode, main
+from .cli import (
+    ExitCode,
+    ProgressContext,
+    create_dynamic_model,
+    estimate_tokens_for_chat,
+    get_context_window_limit,
+    get_default_token_limit,
+    main,
+    supports_structured_output,
+    validate_template_placeholders,
+    validate_token_limits,
+)
 from .client import (
     StreamConfig,
     async_openai_structured_call,
     async_openai_structured_stream,
     openai_structured_call,
     openai_structured_stream,
-    supports_structured_output,
 )
 from .errors import (
     APIResponseError,
@@ -47,8 +57,15 @@ __all__ = [
     # Utility functions
     "parse_model_version",
     # CLI
-    "main",
     "ExitCode",
+    "main",
+    "create_dynamic_model",
+    "validate_template_placeholders",
+    "estimate_tokens_for_chat",
+    "get_context_window_limit",
+    "get_default_token_limit",
+    "validate_token_limits",
+    "ProgressContext",
     # Exceptions
     "OpenAIClientError",
     "ModelNotSupportedError",

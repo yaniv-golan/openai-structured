@@ -192,16 +192,50 @@ Template Features
 
 Task templates use Jinja2 syntax with special features:
 
-System Prompts
-~~~~~~~~~~~~
+YAML Frontmatter
+~~~~~~~~~~~~~
 
-Define a system prompt within the template:
+Templates can include YAML frontmatter at the beginning of the file to configure template behavior:
 
 .. code-block:: jinja
 
-    {% system_prompt %}
-    You are a helpful assistant.
-    {% end_system_prompt %}
+    ---
+    system_prompt: |
+      You are a helpful assistant.
+      You will help analyze code.
+    schema: schema.json
+    ---
+    
+    Analyze this code: {{ code.content }}
+
+The frontmatter section must:
+- Start with ``---`` on the first line
+- End with ``---``
+- Contain valid YAML
+
+Supported frontmatter fields:
+- ``system_prompt``: Set the system prompt (can be overridden by --system-prompt)
+- ``schema``: Specify the schema file (can be overridden by --schema)
+
+System Prompts
+~~~~~~~~~~~~
+
+System prompts can be specified in two ways (in order of precedence):
+
+1. Command line argument:
+   .. code-block:: bash
+   
+       ostruct --system-prompt "You are a helpful assistant"
+       ostruct --system-prompt @system_prompt.txt
+
+2. YAML frontmatter in template:
+   .. code-block:: yaml
+   
+       ---
+       system_prompt: You are a helpful assistant
+       ---
+
+Use --ignore-task-sysprompt to ignore system prompts from the template's YAML frontmatter.
 
 File Content Access
 ~~~~~~~~~~~~~~~~
@@ -221,22 +255,185 @@ Always use the .content attribute to access file contents:
 Template Functions
 ~~~~~~~~~~~~~~~
 
-Text Processing:
-    - ``format_code(text, lang='python')``
-    - ``strip_comments(text, lang='python')``
-    - ``wrap(text, width=80)``
-    - ``indent(text, width=4)``
+The CLI provides a rich set of template functions for text processing, data manipulation, and formatting:
 
-Data Analysis:
-    - ``extract_field(items, key)``
-    - ``pivot_table(data, index, value, aggfunc='sum')``
-    - ``summarize(data, keys=None)``
-    - ``frequency(items)``
+Text Processing
+^^^^^^^^^^^^^
 
-Formatting:
-    - ``dict_to_table(data)``
-    - ``list_to_table(items, headers=None)``
-    - ``format_json(obj)``
+- ``word_count(text)``: Count words in text
+    .. code-block:: jinja
+    
+        Words: {{ input.content | word_count }}
+
+- ``char_count(text)``: Count characters in text
+    .. code-block:: jinja
+    
+        Characters: {{ input.content | char_count }}
+
+- ``wrap_text(text, width=80)``: Wrap text to specified width
+    .. code-block:: jinja
+    
+        {{ long_text | wrap_text(width=60) }}
+
+- ``indent_text(text, width=4)``: Indent text by specified width
+    .. code-block:: jinja
+    
+        {{ code.content | indent_text(width=2) }}
+
+- ``dedent_text(text)``: Remove common leading whitespace
+    .. code-block:: jinja
+    
+        {{ indented_text | dedent_text }}
+
+- ``normalize_text(text)``: Normalize whitespace
+    .. code-block:: jinja
+    
+        {{ messy_text | normalize_text }}
+
+- ``strip_markdown(text)``: Remove markdown formatting
+    .. code-block:: jinja
+    
+        {{ markdown | strip_markdown }}
+
+Code Processing
+^^^^^^^^^^^^
+
+- ``format_code(text, lang='python', output_format='terminal')``: Format and highlight code
+    .. code-block:: jinja
+    
+        {{ code.content | format_code(lang='javascript') }}
+
+- ``strip_comments(text, lang='python')``: Remove code comments
+    .. code-block:: jinja
+    
+        {{ code.content | strip_comments(lang='python') }}
+
+Data Analysis
+^^^^^^^^^^
+
+- ``extract_keywords(text)``: Extract words as keywords
+    .. code-block:: jinja
+    
+        Keywords: {{ text | extract_keywords }}
+
+- ``frequency(items)``: Count item frequencies
+    .. code-block:: jinja
+    
+        {{ words | frequency | dict_to_table }}
+
+- ``aggregate(items, key=None)``: Calculate statistics (count, sum, mean, etc.)
+    .. code-block:: jinja
+    
+        {{ numbers | aggregate | dict_to_table }}
+
+- ``unique(items)``: Get unique items
+    .. code-block:: jinja
+    
+        {{ items | unique }}
+
+- ``sort_by(items, key)``: Sort items by key
+    .. code-block:: jinja
+    
+        {{ users | sort_by('name') }}
+
+- ``group_by(items, key)``: Group items by key
+    .. code-block:: jinja
+    
+        {% for group, items in data | group_by('category') %}
+        Group {{ group }}:
+        {{ items | list_to_table }}
+        {% endfor %}
+
+- ``filter_by(items, key, value)``: Filter items by key-value
+    .. code-block:: jinja
+    
+        {{ users | filter_by('active', true) }}
+
+- ``extract_field(items, key)``: Extract values of a field
+    .. code-block:: jinja
+    
+        {{ users | extract_field('email') }}
+
+- ``pivot_table(data, index, value, aggfunc='sum')``: Create pivot table
+    .. code-block:: jinja
+    
+        {{ sales | pivot_table(index='category', value='amount') | dict_to_table }}
+
+- ``summarize(data, keys=None)``: Generate statistical summary
+    .. code-block:: jinja
+    
+        {{ dataset | summarize | dict_to_table }}
+
+Formatting
+^^^^^^^^
+
+- ``to_json(obj)``: Convert to JSON string
+    .. code-block:: jinja
+    
+        {{ data | to_json }}
+
+- ``from_json(text)``: Parse JSON string
+    .. code-block:: jinja
+    
+        {{ json_text | from_json | dict_to_table }}
+
+- ``format_json(obj)``: Format JSON with indentation
+    .. code-block:: jinja
+    
+        {{ data | format_json }}
+
+- ``dict_to_table(data)``: Convert dictionary to markdown table
+    .. code-block:: jinja
+    
+        {{ stats | dict_to_table }}
+
+- ``list_to_table(items, headers=None)``: Convert list to markdown table
+    .. code-block:: jinja
+    
+        {{ users | list_to_table(headers=['Name', 'Email']) }}
+
+- ``auto_table(data)``: Auto-format data as table
+    .. code-block:: jinja
+    
+        {{ data | auto_table }}
+
+- ``format_table(headers, rows)``: Create markdown table
+    .. code-block:: jinja
+    
+        {{ format_table(['Name', 'Age'], [['Alice', 25], ['Bob', 30]]) }}
+
+- ``align_table(headers, rows, alignments=None)``: Create aligned markdown table
+    .. code-block:: jinja
+    
+        {{ align_table(['Name', 'Age'], users, ['left', 'right']) }}
+
+Utility Functions
+^^^^^^^^^^^^^
+
+- ``estimate_tokens(text)``: Estimate token count
+    .. code-block:: jinja
+    
+        Tokens: {{ text | estimate_tokens }}
+
+- ``validate_json(text)``: Check if text is valid JSON
+    .. code-block:: jinja
+    
+        {% if json_text | validate_json %}Valid JSON{% endif %}
+
+- ``type_of(x)``: Get type name
+    .. code-block:: jinja
+    
+        Type: {{ value | type_of }}
+
+- ``len_of(x)``: Get length if available
+    .. code-block:: jinja
+    
+        Length: {{ value | len_of }}
+
+- ``escape_special(text)``: Escape special characters
+    .. code-block:: jinja
+    
+        {{ text | escape_special }}
 
 Examples
 -------

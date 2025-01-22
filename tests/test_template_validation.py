@@ -130,7 +130,7 @@ def test_validate_fileinfo_attributes(fs: FakeFilesystem) -> None:
     fs.create_file("/path/to/file.txt", contents="test content")
 
     template = "Content: {{ file.content }}, Path: {{ file.abs_path }}"
-    file_info = FileInfo(name="file", path="/path/to/file.txt")
+    file_info = FileInfo.from_path(path="/path/to/file.txt")
     file_mappings: Dict[str, Any] = {"file": file_info}
     validate_template_placeholders(template, file_mappings)
 
@@ -163,9 +163,9 @@ def test_validate_invalid_access(
 
 
 def create_test_file(fs: FakeFilesystem, filename: str) -> FileInfo:
-    """Helper to create a test file in the fake filesystem."""
+    """Create a test file and return FileInfo instance."""
     fs.create_file(filename, contents="test content")
-    return FileInfo("file", filename)
+    return FileInfo.from_path(path=filename)
 
 
 def test_validate_complex_template(fs: FakeFilesystem) -> None:
@@ -190,11 +190,11 @@ def test_validate_complex_template(fs: FakeFilesystem) -> None:
     """
     file_mappings: Dict[str, Any] = {
         "source_files": [
-            FileInfo("file1", "/test/file1.txt"),
-            FileInfo("file2", "/test/file2.txt"),
+            FileInfo.from_path(path="/test/file1.txt"),
+            FileInfo.from_path(path="/test/file2.txt"),
         ],
         "config": {
-            "exclude": {"file1": "reason1"},
+            "exclude": {"file1.txt": "reason1"},
             "settings": {"mode": "test"},
         },
     }

@@ -32,14 +32,14 @@ Basic CLI usage examples:
 
 ```bash
 # Simple analysis
-openai-structured \
+ostruct \
   --system-prompt "Analyze the text" \
   --template "Content: {{ input }}" \
   --file input=data.txt \
   --schema-file analysis_schema.json
 
 # Multiple files
-openai-structured \
+ostruct \
   --system-prompt "Compare the files" \
   --template "File A: {{ file_a }}\nFile B: {{ file_b }}" \
   --file file_a=a.txt \
@@ -48,7 +48,7 @@ openai-structured \
   --output-file result.json
 
 # With validation
-openai-structured \
+ostruct \
   --system-prompt "Analyze code" \
   --template "Code: {{ source }}" \
   --file source=code.py \

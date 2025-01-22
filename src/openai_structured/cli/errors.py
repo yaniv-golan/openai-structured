@@ -1,7 +1,7 @@
 """Custom error classes for CLI error handling."""
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 
 class CLIError(Exception):
@@ -53,24 +53,51 @@ class DirectoryNotFoundError(PathError):
 
 
 class PathSecurityError(Exception):
-    """Error raised for security violations in path access.
+    """Exception raised when file access is denied due to security constraints.
 
-    Provides standardized error messages for different types of security violations:
-    - Access denied (general)
-    - Outside allowed directories
-    - Directory traversal attempts
-    - Invalid path access
+    Attributes:
+        message: The error message with full context
+        error_logged: Whether this error has already been logged
+        wrapped: Whether this error has been wrapped by another error
     """
+
+    def __init__(
+        self, message: str, error_logged: bool = False, wrapped: bool = False
+    ) -> None:
+        """Initialize PathSecurityError.
+
+        Args:
+            message: Detailed error message with context
+            error_logged: Whether this error has already been logged
+            wrapped: Whether this error has been wrapped by another error
+        """
+        super().__init__(message)
+        self.error_logged = error_logged
+        self.message = message
+        self.wrapped = wrapped
+
+    @property
+    def has_been_logged(self) -> bool:
+        """Check if this error has been logged, more readable than accessing error_logged directly."""
+        return self.error_logged
+
+    def __str__(self) -> str:
+        """Get string representation of the error."""
+        return self.message
 
     @classmethod
     def access_denied(
-        cls, path: Path, reason: Optional[str] = None
+        cls,
+        path: Path,
+        reason: Optional[str] = None,
+        error_logged: bool = False,
     ) -> "PathSecurityError":
         """Create access denied error.
 
         Args:
             path: Path that was denied
             reason: Optional reason for denial
+            error_logged: Whether this error has already been logged
 
         Returns:
             PathSecurityError with standardized message
@@ -78,37 +105,140 @@ class PathSecurityError(Exception):
         msg = f"Access denied: {path}"
         if reason:
             msg += f" - {reason}"
-        return cls(msg)
+        return cls(msg, error_logged=error_logged)
 
     @classmethod
     def outside_allowed(
-        cls, path: Path, base_dir: Optional[Path] = None
+        cls,
+        path: Path,
+        base_dir: Optional[Path] = None,
+        error_logged: bool = False,
     ) -> "PathSecurityError":
         """Create error for path outside allowed directories.
 
         Args:
             path: Path that was outside
             base_dir: Optional base directory for context
+            error_logged: Whether this error has already been logged
 
         Returns:
             PathSecurityError with standardized message
         """
-        msg = f"Access denied: {path} is outside allowed directories"
+        parts = [
+            f"Access denied: {path} is outside base directory and not in allowed directories"
+        ]
         if base_dir:
-            msg += f" (base: {base_dir})"
-        return cls(msg)
+            parts.append(f"Base directory: {base_dir}")
+        parts.append(
+            "Use --allowed-dir to specify additional allowed directories"
+        )
+        return cls("\n".join(parts), error_logged=error_logged)
 
     @classmethod
-    def traversal_attempt(cls, path: Path) -> "PathSecurityError":
+    def traversal_attempt(
+        cls, path: Path, error_logged: bool = False
+    ) -> "PathSecurityError":
         """Create error for directory traversal attempt.
 
         Args:
             path: Path that attempted traversal
+            error_logged: Whether this error has already been logged
 
         Returns:
             PathSecurityError with standardized message
         """
-        return cls(f"Access denied: {path} - directory traversal not allowed")
+        return cls(
+            f"Access denied: {path} - directory traversal not allowed",
+            error_logged=error_logged,
+        )
+
+    @classmethod
+    def from_expanded_paths(
+        cls,
+        original_path: str,
+        expanded_path: str,
+        base_dir: Optional[str] = None,
+        allowed_dirs: Optional[List[str]] = None,
+        error_logged: bool = False,
+    ) -> "PathSecurityError":
+        """Create error with expanded path context.
+
+        Args:
+            original_path: Original path as provided by user
+            expanded_path: Expanded absolute path
+            base_dir: Optional base directory
+            allowed_dirs: Optional list of allowed directories
+            error_logged: Whether this error has already been logged
+
+        Returns:
+            PathSecurityError with detailed path context
+        """
+        parts = [
+            f"Access denied: {original_path} is outside base directory and not in allowed directories",
+            f"File absolute path: {expanded_path}",
+        ]
+        if base_dir:
+            parts.append(f"Base directory: {base_dir}")
+        if allowed_dirs:
+            parts.append(f"Allowed directories: {allowed_dirs}")
+        parts.append(
+            "Use --allowed-dir to specify additional allowed directories"
+        )
+        return cls("\n".join(parts), error_logged=error_logged)
+
+    def format_with_context(
+        self,
+        original_path: Optional[str] = None,
+        expanded_path: Optional[str] = None,
+        base_dir: Optional[str] = None,
+        allowed_dirs: Optional[List[str]] = None,
+    ) -> str:
+        """Format error message with additional context.
+
+        Args:
+            original_path: Optional original path as provided by user
+            expanded_path: Optional expanded absolute path
+            base_dir: Optional base directory
+            allowed_dirs: Optional list of allowed directories
+
+        Returns:
+            Formatted error message with context
+        """
+        parts = [self.message]
+        if original_path and expanded_path and original_path != expanded_path:
+            parts.append(f"Original path: {original_path}")
+            parts.append(f"Expanded path: {expanded_path}")
+        if base_dir:
+            parts.append(f"Base directory: {base_dir}")
+        if allowed_dirs:
+            parts.append(f"Allowed directories: {allowed_dirs}")
+        if not any(
+            p.endswith(
+                "Use --allowed-dir to specify additional allowed directories"
+            )
+            for p in parts
+        ):
+            parts.append(
+                "Use --allowed-dir to specify additional allowed directories"
+            )
+        return "\n".join(parts)
+
+    @classmethod
+    def wrap_error(
+        cls, context: str, original: "PathSecurityError"
+    ) -> "PathSecurityError":
+        """Wrap an error with additional context while preserving attributes.
+
+        Args:
+            context: Additional context to add to the error message
+            original: The original PathSecurityError to wrap
+
+        Returns:
+            PathSecurityError with additional context and preserved attributes
+        """
+        base_message = str(original)
+        message = f"{context}: {base_message}"
+        return cls(message, error_logged=original.error_logged, wrapped=True)
 
 
 class TaskTemplateError(CLIError):
