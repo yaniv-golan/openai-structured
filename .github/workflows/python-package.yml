@@ -38,7 +38,7 @@ jobs:
         poetry run mypy src/ tests/
     - name: Run tests with pytest
       run: |
-        poetry run pytest
+        poetry run pytest -m "not live"
     - name: Build documentation
       run: |
         cd docs
