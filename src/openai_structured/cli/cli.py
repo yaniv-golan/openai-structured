@@ -5,10 +5,30 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 from enum import IntEnum
+from functools import wraps
 from importlib.metadata import version
-from typing import Any, Dict, List, Optional, Type, TypeVar, Set, Union
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Mapping,
+    NoReturn,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+    overload,
+)
 from pathlib import Path
 
 import jinja2
@@ -351,67 +371,107 @@ def validate_variable_mapping(mapping: str, is_json: bool = False) -> tuple[str,
         raise
 
 
-def validate_path_mapping(mapping: str, is_dir: bool = False) -> tuple[str, str]:
-    """Validate a path mapping in name=path format.
-    
+@overload
+def validate_path_mapping(mapping: str, is_dir: Literal[True]) -> Tuple[str, str]: ...
+
+@overload
+def validate_path_mapping(mapping: str, is_dir: Literal[False] = False) -> Tuple[str, str]: ...
+
+def validate_path_mapping(
+    mapping: str,
+    is_dir: bool = False,
+    base_dir: Optional[str] = None,
+    security_manager: Optional[SecurityManager] = None,
+) -> Tuple[str, str]:
+    """Validate a path mapping in the format "name=path".
+
     Args:
-        mapping: The path mapping string in name=path format
-        is_dir: Whether the path should be a directory
-        
+        mapping: The path mapping string (e.g., "myvar=/path/to/file").
+        is_dir: Whether the path is expected to be a directory (True) or file (False).
+        base_dir: Optional base directory to resolve relative paths against.
+        security_manager: Optional security manager to validate paths.
+
     Returns:
-        Tuple of (name, path)
-        
+        A (name, path) tuple.
+
     Raises:
-        ValueError: If the mapping is invalid
-        OSError: If the path does not exist or is inaccessible
-        VariableNameError: If the name part is empty
-        FileNotFoundError: If the specified file does not exist
-        DirectoryNotFoundError: If the specified directory does not exist
-        PathSecurityError: If the path violates security constraints
+        VariableNameError: If the variable name portion is empty or invalid.
+        DirectoryNotFoundError: If is_dir=True and the path is not a directory or doesn't exist.
+        FileNotFoundError: If is_dir=False and the path is not a file or doesn't exist.
+        PathSecurityError: If the path is inaccessible or outside the allowed directory.
+        ValueError: If the format is invalid (missing "=").
+        OSError: If there is an underlying OS error (permissions, etc.).
+
+    Example:
+        >>> validate_path_mapping("config=settings.txt")  # Validates file
+        ('config', 'settings.txt')
+        >>> validate_path_mapping("data=config/", is_dir=True)  # Validates directory
+        ('data', 'config/')
     """
     try:
+        if not mapping or "=" not in mapping:
+            raise ValueError("Invalid path mapping format. Expected format: name=path")
+
         name, path = mapping.split("=", 1)
         if not name:
             raise VariableNameError(
                 f"Empty name in {'directory' if is_dir else 'file'} mapping"
             )
-            
+
+        if not path:
+            raise VariableValueError("Path cannot be empty")
+
+        # Convert to Path object and resolve against base_dir if provided
+        path_obj = Path(path)
+        if base_dir:
+            path_obj = Path(base_dir) / path_obj
+
+        # Resolve the path to catch directory traversal attempts
+        try:
+            resolved_path = path_obj.resolve()
+        except OSError as e:
+            raise OSError(f"Failed to resolve path: {e}")
+
+        # Check for directory traversal
+        try:
+            base_path = Path.cwd() if base_dir is None else Path(base_dir).resolve()
+            if not str(resolved_path).startswith(str(base_path)):
+                raise PathSecurityError(f"Path {path!r} is outside the base directory")
+        except OSError as e:
+            raise OSError(f"Failed to resolve base path: {e}")
+
         # Check if path exists
-        if not os.path.exists(path):
+        if not resolved_path.exists():
             if is_dir:
                 raise DirectoryNotFoundError(f"Directory not found: {path!r}")
             else:
                 raise FileNotFoundError(f"File not found: {path!r}")
-            
+
         # Check if path is correct type
-        if is_dir and not os.path.isdir(path):
+        if is_dir and not resolved_path.is_dir():
             raise DirectoryNotFoundError(f"Path is not a directory: {path!r}")
-        elif not is_dir and not os.path.isfile(path):
+        elif not is_dir and not resolved_path.is_file():
             raise FileNotFoundError(f"Path is not a file: {path!r}")
-            
+
         # Check if path is accessible
         try:
             if is_dir:
-                os.listdir(path)
+                os.listdir(str(resolved_path))
             else:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(str(resolved_path), "r", encoding="utf-8") as f:
                     f.read(1)
         except OSError as e:
             if e.errno == 13:  # Permission denied
                 raise PathSecurityError(f"Permission denied accessing path: {path!r}")
             raise
-            
-        # Normalize path to catch directory traversal attempts
-        norm_path = os.path.realpath(path)
-        base_dir = os.path.realpath(".")
-        
-        # Check if normalized path starts with base directory
-        rel_path = os.path.relpath(norm_path, base_dir)
-        if rel_path.startswith(".."):
-            raise PathSecurityError(f"Path {path!r} is outside the base directory")
-            
+
+        if security_manager:
+            if not security_manager.is_allowed_file(str(resolved_path)):
+                raise PathSecurityError(f"Path {path!r} is not allowed")
+
+        # Return the original path to maintain relative paths in the output
         return name, path
-        
+
     except ValueError as e:
         if "not enough values to unpack" in str(e):
             raise VariableValueError(
@@ -459,7 +519,7 @@ def validate_task_template(task: str) -> str:
         )
 
 
-def validate_schema_file(path: str) -> dict:
+def validate_schema_file(path: str) -> Dict[str, Any]:
     """Validate and load a JSON schema file.
 
     Args:
@@ -487,7 +547,7 @@ def validate_schema_file(path: str) -> dict:
 
         # Validate schema
         validate_json_schema(schema)
-        return schema
+        return cast(Dict[str, Any], schema)
     except json.JSONDecodeError as e:
         raise InvalidJSONError(f"Invalid JSON: {e.msg}")
 
@@ -513,7 +573,7 @@ def collect_file_variables(args: argparse.Namespace) -> Dict[str, TemplateValue]
         PathSecurityError: If paths violate security constraints
     """
     try:
-        return collect_files(
+        result = collect_files(
             file_args=args.file,
             files_args=args.files,
             dir_args=args.dir,
@@ -522,13 +582,14 @@ def collect_file_variables(args: argparse.Namespace) -> Dict[str, TemplateValue]
             load_content=False,  # Keep content loading lazy
             allowed_dirs=args.allowed_dir,
         )
+        return cast(Dict[str, TemplateValue], result)
     except (FileNotFoundError, DirectoryNotFoundError, PathSecurityError):
         raise  # Let these propagate unchanged
     except Exception as e:
         raise ValueError(f"Error collecting files: {e}")
 
 
-def collect_simple_variables(args) -> Dict[str, str]:
+def collect_simple_variables(args: argparse.Namespace) -> Dict[str, str]:
     """Collect simple string variables from --var arguments.
     
     Args:
@@ -540,8 +601,8 @@ def collect_simple_variables(args) -> Dict[str, str]:
     Raises:
         VariableNameError: If a variable name is invalid or duplicate
     """
-    variables = {}
-    all_names = set()
+    variables: Dict[str, str] = {}
+    all_names: Set[str] = set()
     
     if args.var:
         for mapping in args.var:
@@ -559,7 +620,7 @@ def collect_simple_variables(args) -> Dict[str, str]:
     return variables
 
 
-def collect_json_variables(args) -> Dict[str, Any]:
+def collect_json_variables(args: argparse.Namespace) -> Dict[str, Any]:
     """Collect JSON variables from --json-var arguments.
     
     Args:
@@ -572,8 +633,8 @@ def collect_json_variables(args) -> Dict[str, Any]:
         VariableNameError: If a variable name is invalid or duplicate
         InvalidJSONError: If a JSON value is invalid
     """
-    variables = {}
-    all_names = set()
+    variables: Dict[str, Any] = {}
+    all_names: Set[str] = set()
     
     if args.json_var:
         for mapping in args.json_var:
@@ -629,15 +690,48 @@ def create_template_context(args: argparse.Namespace, security_manager: Security
     # Apply security checks only to FileInfo objects
     for name, value in template_context.items():
         if isinstance(value, FileInfo):
-            if not security_manager.is_allowed_file(Path(value.path)):
+            if not security_manager.is_allowed_file(str(value.path)):
                 raise PathSecurityError(f"File access denied: {value.path}")
         elif isinstance(value, list) and value and isinstance(value[0], FileInfo):
             # Check each FileInfo in a list
             for file_info in value:
-                if not security_manager.is_allowed_file(Path(file_info.path)):
+                if not security_manager.is_allowed_file(str(file_info.path)):
                     raise PathSecurityError(f"File access denied: {file_info.path}")
     
     return template_context
+
+
+def validate_security_manager(
+    base_dir: Optional[str] = None,
+    allowed_dirs: Optional[List[str]] = None,
+    allowed_dirs_file: Optional[str] = None,
+) -> SecurityManager:
+    """Create and validate a security manager.
+    
+    Args:
+        base_dir: Optional base directory to resolve paths against
+        allowed_dirs: Optional list of allowed directory paths
+        allowed_dirs_file: Optional path to file containing allowed directories
+        
+    Returns:
+        Configured SecurityManager instance
+        
+    Raises:
+        FileNotFoundError: If allowed_dirs_file does not exist
+        PathSecurityError: If any paths are outside base directory
+    """
+    # Convert base_dir to string if it's a Path
+    base_dir_str = str(base_dir) if base_dir else None
+    security_manager = SecurityManager(base_dir_str)
+
+    if allowed_dirs_file:
+        security_manager.add_allowed_dirs_from_file(str(allowed_dirs_file))
+
+    if allowed_dirs:
+        for allowed_dir in allowed_dirs:
+            security_manager.add_allowed_dir(str(allowed_dir))
+
+    return security_manager
 
 
 async def _main() -> ExitCode:
@@ -743,14 +837,14 @@ async def _main() -> ExitCode:
     logger = logging.getLogger("ostruct")
     
     # Initialize security manager with current directory as base
-    security_manager = SecurityManager(Path.cwd())
+    security_manager = SecurityManager(str(Path.cwd()))
     
     # Process allowed directories
     if args.allowed_dir:
         for allowed_dir in args.allowed_dir:
             if allowed_dir.startswith('@'):
                 # Read allowed directories from file
-                allowed_file = Path(allowed_dir[1:])
+                allowed_file = allowed_dir[1:]
                 try:
                     security_manager.add_allowed_dirs_from_file(allowed_file)
                 except PathSecurityError as e:
@@ -762,7 +856,7 @@ async def _main() -> ExitCode:
             else:
                 # Add single allowed directory
                 try:
-                    security_manager.add_allowed_dir(Path(allowed_dir))
+                    security_manager.add_allowed_dir(allowed_dir)
                 except OSError as e:
                     logger.error(f"Invalid allowed directory path: {e}")
                     return ExitCode.IO_ERROR
@@ -915,7 +1009,7 @@ async def _main() -> ExitCode:
         output_model = create_dynamic_model(schema) if args.validate_schema else create_model(
             "DynamicModel",
             __config__=ConfigDict(arbitrary_types_allowed=True),
-            **{"result": (Any, ...)}
+            result=(Any, ...)  # Pass field definition directly, not as a dict
         )
         
         # Initialize response
