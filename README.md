@@ -88,7 +88,7 @@ Required:
 --task TEXT           # Task template string or path to template file (with @ prefix)
                      # Example: --task "Analyze this: {{ input }}"
                      # Example with file: --task @task.txt
---schema-file PATH    # JSON schema for response structure
+--schema PATH    # JSON schema for response structure
 ```
 
 Optional:
