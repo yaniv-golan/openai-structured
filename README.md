@@ -43,20 +43,16 @@ pip install openai-structured
 
 ### Using Poetry (recommended for development)
 
-```bash
-# Install Poetry if you haven't already
-curl -sSL https://install.python-poetry.org | python3 -
+# Install Poetry (if needed)
 
-# Clone the repository
-git clone https://github.com/yaniv-golan/openai-structured.git
+curl -sSL <https://install.python-poetry.org> | python3 -
+
+# Clone, install, and activate
+
+git clone <https://github.com/yaniv-golan/openai-structured.git>
 cd openai-structured
-
-# Install dependencies
 poetry install
-
-# Activate the virtual environment
 poetry shell
-```
 
 ## Command-Line Interface
 
@@ -125,16 +121,23 @@ Authentication:
 --api-key TEXT       # OpenAI API key (overrides env var)
 ```
 
-## Security
+## File Handling and Security
 
-The CLI implements several security measures for file access:
+The CLI provides powerful file input capabilities, but it's crucial to use them securely:
 
-* Files must be within the current working directory by default
-* Temporary files are allowed for processing
-* Additional directories can be explicitly allowed using `--allowed-dir`
-* Directory lists can be loaded from files using `@` notation
+* **Restricted Access:** By default, the CLI only allows access to files within the current working directory.
+* **Explicitly Allowed Directories:** Use the `--allowed-dir` option to grant access to additional directories. Be very specific when using this option.
+  * Example: `--allowed-dir ~/Documents/data`
+* **Avoid Overly Permissive Access:** Do not use `--allowed-dir` with root (`/`) or overly broad paths.
+* **No Symlink Following:** The CLI does not follow symbolic links, preventing accidental access to files outside the allowed directories.
+* **`@` Notation for Directory Lists:** You can load a list of allowed directories from a file using the `@` notation:
+  * Example: `--allowed-dir @allowed_dirs.txt`
+  * `allowed_dirs.txt` should contain one directory path per line.
 
-For more details, see the [CLI documentation](docs/source/cli.rst).
+**Security Implications:**
+
+* **Careless use of `--allowed-dir` can expose sensitive data.** Only allow access to directories that are absolutely necessary for your task.
+* **Review your allowed directories regularly.**
 
 ## Supported Models
 
