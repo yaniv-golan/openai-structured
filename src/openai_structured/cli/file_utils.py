@@ -405,9 +405,9 @@ def detect_encoding(file_path: str) -> str:
             result = chardet.detect(raw_data)
             logger.debug("Chardet detection result: %s", result)
 
-            if result["encoding"]:
-                detected = result["encoding"].lower()
-                confidence = result["confidence"]
+            if result and isinstance(result, dict) and result.get("encoding"):
+                detected = str(result["encoding"]).lower()
+                confidence = float(result.get("confidence", 0.0))
 
                 # Handle ASCII detection
                 if detected == "ascii":
@@ -450,8 +450,8 @@ def detect_encoding(file_path: str) -> str:
                 logger.debug("No confident detection, but UTF-8 decode successful")
                 return "utf-8"
             except UnicodeDecodeError:
-                if result["encoding"]:
-                    detected_encoding = result["encoding"].lower()
+                if result and isinstance(result, dict) and result.get("encoding"):
+                    detected_encoding = str(result["encoding"]).lower()
                     logger.debug(
                         "Falling back to detected encoding with low confidence: %s",
                         detected_encoding,

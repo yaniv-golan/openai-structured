@@ -580,9 +580,9 @@ def format_code(
     # Format code with error handling
     try:
         formatted = pygments.highlight(text, lexer, formatter)
-        if isinstance(formatted, str):
-            return formatted
-        return str(formatted)
+        if not isinstance(formatted, str):
+            formatted = str(formatted)
+        return formatted
     except Exception as e:
         logger.error(f"Failed to format code: {e}")
         return text
