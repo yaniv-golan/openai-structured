@@ -1,5 +1,7 @@
 """Tests for template validation."""
 
+import os
+import tempfile
 from typing import Any, Dict, List, Set, TypedDict, Union, cast
 
 import jinja2
@@ -8,10 +10,19 @@ from jinja2 import Environment
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.file_utils import FileInfo
+from openai_structured.cli.security import SecurityManager
 from openai_structured.cli.template_validation import (
     SafeUndefined,
     validate_template_placeholders,
 )
+
+
+@pytest.fixture
+def security_manager() -> SecurityManager:
+    """Create a security manager for testing."""
+    manager = SecurityManager(base_dir=os.getcwd())
+    manager.add_allowed_dir(tempfile.gettempdir())
+    return manager
 
 
 class FileMapping(TypedDict, total=False):
@@ -124,15 +135,27 @@ def test_validate_with_filters() -> None:
     validate_template_placeholders(template, file_mappings)
 
 
-def test_validate_fileinfo_attributes(fs: FakeFilesystem) -> None:
+def test_validate_fileinfo_attributes(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test validation of FileInfo attribute access."""
     # Create test file in fake filesystem
     fs.create_file("/path/to/file.txt", contents="test content")
 
     template = "Content: {{ file.content }}, Path: {{ file.abs_path }}"
-    file_info = FileInfo.from_path(path="/path/to/file.txt")
+    file_info = FileInfo.from_path(
+        path="/path/to/file.txt", security_manager=security_manager
+    )
     file_mappings: Dict[str, Any] = {"file": file_info}
     validate_template_placeholders(template, file_mappings)
+
+
+def create_test_file(
+    fs: FakeFilesystem, filename: str, security_manager: SecurityManager
+) -> FileInfo:
+    """Create a test file and return FileInfo instance."""
+    fs.create_file(filename, contents="test content")
+    return FileInfo.from_path(path=filename, security_manager=security_manager)
 
 
 @pytest.mark.parametrize(
@@ -140,35 +163,34 @@ def test_validate_fileinfo_attributes(fs: FakeFilesystem) -> None:
     [
         (
             "{{ file.invalid_attr }}",
-            lambda fs: {"file": create_test_file(fs, "test.txt")},
+            lambda fs, sm: {"file": create_test_file(fs, "test.txt", sm)},
         ),  # Invalid FileInfo attribute
         (
             "{{ config['invalid'] }}",
-            lambda _: {"config": {}},
+            lambda _, __: {"config": {}},
         ),  # Invalid dict key
         (
             "{{ config.settings.invalid }}",
-            lambda _: {"config": {"settings": {}}},
+            lambda _, __: {"config": {"settings": {}}},
         ),  # Invalid nested dict key
     ],
 )
 def test_validate_invalid_access(
-    template: str, context_setup: Any, fs: FakeFilesystem
+    template: str,
+    context_setup: Any,
+    fs: FakeFilesystem,
+    security_manager: SecurityManager,
 ) -> None:
     """Test validation with invalid attribute/key access."""
-    file_mappings = context_setup(fs)
+    file_mappings = context_setup(fs, security_manager)
     with pytest.raises(ValueError) as exc:
         validate_template_placeholders(template, file_mappings)
     assert "undefined" in str(exc.value)
 
 
-def create_test_file(fs: FakeFilesystem, filename: str) -> FileInfo:
-    """Create a test file and return FileInfo instance."""
-    fs.create_file(filename, contents="test content")
-    return FileInfo.from_path(path=filename)
-
-
-def test_validate_complex_template(fs: FakeFilesystem) -> None:
+def test_validate_complex_template(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test validation of complex template with multiple features."""
     # Set up fake filesystem
     fs.create_file("/test/file1.txt", contents="content1")
@@ -190,8 +212,12 @@ def test_validate_complex_template(fs: FakeFilesystem) -> None:
     """
     file_mappings: Dict[str, Any] = {
         "source_files": [
-            FileInfo.from_path(path="/test/file1.txt"),
-            FileInfo.from_path(path="/test/file2.txt"),
+            FileInfo.from_path(
+                path="/test/file1.txt", security_manager=security_manager
+            ),
+            FileInfo.from_path(
+                path="/test/file2.txt", security_manager=security_manager
+            ),
         ],
         "config": {
             "exclude": {"file1.txt": "reason1"},

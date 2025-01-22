@@ -7,7 +7,12 @@ A Python library for structured output from OpenAI's API.
 
 :noindex:
 """
-__version__ = "0.6.0"  # Follow Semantic Versioning
+from importlib.metadata import version
+
+try:
+    __version__ = version("openai-structured")
+except Exception:
+    __version__ = "unknown"
 
 from .cli import (
     ExitCode,

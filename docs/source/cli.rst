@@ -240,17 +240,30 @@ Use --ignore-task-sysprompt to ignore system prompts from the template's YAML fr
 File Content Access
 ~~~~~~~~~~~~~~~~
 
-Always use the .content attribute to access file contents:
+Use the `.content` attribute to access file contents within your Jinja templates. However, be mindful of file sizes and their impact on the overall prompt length.
 
 .. code-block:: jinja
 
-    # Correct
     {{ input.content }}
     {{ file.content }}
-    
-    # Incorrect
-    {{ input }}
-    {{ file }}
+
+**Important Considerations for File Sizes:**
+
+*   **Small Files:** For small files, it's generally safe to include the entire content directly in the prompt using `{{ input.content }}`.
+*   **Medium to Large Files:** For larger files, strategically place the content at the **end** of your prompt, clearly delimited by XML tags or other markers. This helps the model process the instructions and schema first, then focus on the content.
+*   **Very Large Files:**  If a file approaches or exceeds the model's context window, you **must** reduce its size. Consider:
+    *   **Pre-processing:** Extract the most relevant sections of the file before passing it to `ostruct`.
+    *   **Chunking:** Divide the file into smaller chunks and process them in multiple calls to `ostruct`.
+    *   **Summarization:** Use another tool or model to summarize the file content before analysis.
+*   **Token Limits:** Always be aware of the model's token limit. Use the `--verbose` flag to see the total token count in your prompt and adjust accordingly.
+
+**Example of strategic placement for medium to large files:**
+
+.. code-block:: bash
+
+    ostruct --task "Distill all claims from the document in the <doc> element into the JSON response. Place the claim itself in claim element, and the source (if available) in the source element. <doc>{{ input.content }}</doc>" --file input=input.txt --schema schema.json
+
+**Note:** The effectiveness of this approach can vary depending on the model and the specific task. Experimentation is key.
 
 Template Functions
 ~~~~~~~~~~~~~~~
@@ -556,4 +569,63 @@ Best Practices
 3. Use ``--verbose`` for troubleshooting
 4. Validate schemas during development
 5. Use meaningful variable names
+
+File Access in Templates
+----------------------
+
+The CLI provides convenient access to file contents in templates:
+
+Single File Access
+~~~~~~~~~~~~~~~~
+
+When using ``--file``, you can access content directly:
+
+.. code-block:: jinja
+
+    {{ doc.content }}  # Returns the file content
+    {{ doc[0].content }}  # Traditional access (still works)
+    {{ doc.path }}  # Access the file path
+
+Multiple File Access
+~~~~~~~~~~~~~~~~~~
+
+When using ``--files`` or ``--dir``, content is returned as a list:
+
+.. code-block:: jinja
+
+    {% for content in doc.content %}
+        {{ content }}
+    {% endfor %}
+
+    # Or access individual files:
+    {{ doc[0].content }}
+    {{ doc.path }}  # Returns list of paths
+
+Available Properties
+~~~~~~~~~~~~~~~~~~
+
+The following properties are available for both single and multiple files:
+
+- ``content``: File content(s)
+- ``path``: File path(s)
+- ``abs_path``: Absolute file path(s)
+- ``size``: File size(s) in bytes
+
+For single files (``--file``), these properties return single values.
+For multiple files (``--files``, ``--dir``), they return lists of values.
+
+Examples
+~~~~~~~~
+
+.. code-block:: bash
+
+    # Single file
+    ostruct --task "Content: {{ doc.content }}" --file doc=input.txt
+
+    # Multiple files
+    ostruct --task "Files: {% for c in docs.content %}{{ c }}{% endfor %}" --files docs=*.txt
+
+    # Mixed usage
+    ostruct --task "Single: {{ doc.content }}, Multiple: {{ files.content }}" \
+        --file doc=input.txt --files files=*.txt
 

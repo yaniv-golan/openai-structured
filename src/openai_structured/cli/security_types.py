@@ -40,3 +40,10 @@ class SecurityManagerProtocol(Protocol):
     def is_allowed_path(self, path_str: str) -> bool:
         """Check if string path is allowed."""
         ...
+
+    def resolve_path(self, path: str) -> Path:
+        """Resolve and validate a path.
+
+        This is an alias for validate_path() for backward compatibility.
+        """
+        ...

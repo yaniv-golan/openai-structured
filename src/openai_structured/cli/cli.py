@@ -600,7 +600,7 @@ def collect_template_files(
     try:
         result = collect_files(
             file_mappings=args.file,
-            file_pattern_mappings=args.files,
+            pattern_mappings=args.files,
             dir_mappings=args.dir,
             recursive=args.recursive,
             extensions=args.ext.split(",") if args.ext else None,
@@ -705,71 +705,85 @@ def create_template_context(
         security_manager: Security manager for path validation
 
     Returns:
-        Template context dictionary
+        Template context dictionary with files accessible as:
+            doc.content  # For single files
+            doc[0].content  # Traditional access (still works)
+            doc.content  # Returns list for multiple files
 
     Raises:
         PathSecurityError: If any file paths violate security constraints
         VariableError: If variable mappings are invalid
         ValueError: If file mappings are invalid or files cannot be accessed
     """
-    context: Dict[str, Any] = {}
-
-    # Collect files first to catch security errors early
     try:
-        files = collect_template_files(args, security_manager)
-        context.update(files)
-    except PathSecurityError as e:
-        # Let security errors propagate without wrapping
-        logger.debug(
-            "[create_template_context] Caught PathSecurityError, propagating: %s (logged=%s)",
-            str(e),
-            getattr(e, "has_been_logged", False),
-        )
+        context: Dict[str, Any] = {}
+
+        # Only collect files if there are file mappings
+        if any([args.file, args.files, args.dir]):
+            files = collect_files(
+                file_mappings=args.file,
+                pattern_mappings=args.files,
+                dir_mappings=args.dir,
+                recursive=args.recursive,
+                extensions=args.ext.split(",") if args.ext else None,
+                security_manager=security_manager,
+            )
+            context.update(files)
+
+        # Add simple variables
+        try:
+            variables = collect_simple_variables(args)
+            context.update(variables)
+        except VariableNameError as e:
+            raise VariableError(str(e))
+
+        # Add JSON variables
+        if args.json_var:
+            for mapping in args.json_var:
+                try:
+                    name, value = mapping.split("=", 1)
+                    if not name.isidentifier():
+                        raise VariableNameError(
+                            f"Invalid variable name: {name}"
+                        )
+                    try:
+                        json_value = json.loads(value)
+                    except json.JSONDecodeError as e:
+                        raise InvalidJSONError(
+                            f"Invalid JSON value for {name} ({value!r}): {str(e)}"
+                        )
+                    if name in context:
+                        raise VariableNameError(
+                            f"Duplicate variable name: {name}"
+                        )
+                    context[name] = json_value
+                except ValueError:
+                    raise VariableNameError(
+                        f"Invalid JSON variable mapping format: {mapping}. Expected name=json"
+                    )
+
+        # Add stdin if available and readable
+        try:
+            if not sys.stdin.isatty():
+                context["stdin"] = sys.stdin.read()
+        except (OSError, IOError):
+            # Skip stdin if it can't be read (e.g. in pytest environment)
+            pass
+
+        return context
+
+    except PathSecurityError:
+        # Let PathSecurityError propagate without wrapping
         raise
-    except ValueError as e:
+    except (FileNotFoundError, DirectoryNotFoundError) as e:
+        # Wrap file-related errors
+        raise ValueError(f"File access error: {e}")
+    except Exception as e:
         # Check if this is a wrapped security error
         if isinstance(e.__cause__, PathSecurityError):
-            logger.debug(
-                "[create_template_context] Caught wrapped PathSecurityError in ValueError, propagating: %s (logged=%s)",
-                str(e.__cause__),
-                getattr(e.__cause__, "has_been_logged", False),
-            )
-            # Let wrapped security errors propagate
             raise e.__cause__
-        # Otherwise wrap in a more specific error
-        logger.debug(
-            "[create_template_context] Caught ValueError, wrapping: %s",
-            str(e),
-        )
+        # Wrap unexpected errors
         raise ValueError(f"Error collecting files: {e}")
-
-    # Collect simple variables
-    try:
-        variables = collect_simple_variables(args)
-        context.update(variables)
-    except VariableNameError as e:
-        raise VariableError(str(e))
-
-    # Collect JSON variables
-    if args.json_var:
-        for mapping in args.json_var:
-            try:
-                name, value = mapping.split("=", 1)
-                if not name.isidentifier():
-                    raise VariableNameError(f"Invalid variable name: {name}")
-                try:
-                    json_value = json.loads(value)
-                except json.JSONDecodeError as e:
-                    raise InvalidJSONError(
-                        f"Invalid JSON value for {name} ({value!r}): {e}"
-                    )
-                context[name] = json_value
-            except ValueError:
-                raise VariableError(
-                    f"Invalid JSON variable mapping (expected name=value format): {mapping!r}"
-                )
-
-    return context
 
 
 def validate_security_manager(
@@ -1065,11 +1079,38 @@ async def _main() -> ExitCode:
     args = parser.parse_args()
 
     # Configure logging
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s:%(name)s:%(funcName)s: %(message)s",
+    log_dir = os.path.expanduser("~/.ostruct/logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "ostruct.log")
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Remove any existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # Create file handler
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
     )
+    root_logger.addHandler(file_handler)
+
+    # Create console handler
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(logging.DEBUG if args.verbose else logging.INFO)
+    console_handler.setFormatter(
+        logging.Formatter("%(levelname)s:%(name)s:%(funcName)s: %(message)s")
+    )
+    root_logger.addHandler(console_handler)
+
     logger = logging.getLogger("ostruct")
+    logger.debug("Starting ostruct CLI with log file: %s", log_file)
 
     # Initialize security manager with current directory as base
     security_manager = SecurityManager(str(Path.cwd()))
@@ -1297,7 +1338,17 @@ async def _main() -> ExitCode:
             presence_penalty=args.presence_penalty,
         ):
             # Each chunk is already a structured response
+            logger.debug("Received chunk: %s", chunk)
             response = chunk
+            # Print each chunk as it arrives
+            if not args.output_file:
+                # Convert Pydantic model to dict before JSON serialization
+                chunk_dict = (
+                    chunk.model_dump()
+                    if hasattr(chunk, "model_dump")
+                    else chunk
+                )
+                print(json.dumps(chunk_dict, indent=2))
 
         if response is None:
             raise EmptyResponseError("No response received from API")
@@ -1305,8 +1356,14 @@ async def _main() -> ExitCode:
         # Write response to file if requested
         if args.output_file:
             try:
+                # Convert Pydantic model to dict before JSON serialization
+                response_dict = (
+                    response.model_dump()
+                    if hasattr(response, "model_dump")
+                    else response
+                )
                 with open(args.output_file, "w") as f:
-                    json.dump(response, f, indent=2)
+                    json.dump(response_dict, f, indent=2)
             except OSError:
                 raise ValueError("Could not write to output file")
 

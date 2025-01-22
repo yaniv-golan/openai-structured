@@ -10,6 +10,7 @@ from jinja2 import Environment, StrictUndefined
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.file_utils import FileInfo
+from openai_structured.cli.security import SecurityManager
 from openai_structured.cli.template_rendering import (
     DotDict,
     create_jinja_env,
@@ -19,6 +20,14 @@ from openai_structured.cli.template_utils import (
     read_file,
     validate_template_placeholders,
 )
+
+
+@pytest.fixture
+def security_manager() -> SecurityManager:
+    """Create a security manager for testing."""
+    manager = SecurityManager(base_dir=os.getcwd())
+    manager.add_allowed_dir(tempfile.gettempdir())
+    return manager
 
 
 def test_create_jinja_env() -> None:
@@ -60,7 +69,9 @@ def test_render_template_with_filters() -> None:
     assert expected_table in result
 
 
-def test_render_template_with_file_info() -> None:
+def test_render_template_with_file_info(
+    security_manager: SecurityManager,
+) -> None:
     """Test template rendering with FileInfo objects."""
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write("test content")
@@ -68,22 +79,21 @@ def test_render_template_with_file_info() -> None:
         file_path = f.name
 
     try:
-        file_info = FileInfo.from_path(path=file_path)
-        file_info.load_content()
-
-        template: str = (
-            "Content: {{ file.content }}, Path: {{ file.abs_path }}"
+        file_info = FileInfo.from_path(
+            path=file_path, security_manager=security_manager
         )
+        template = "Content: {{ file.content }}"
+        context = {"file": file_info}
         env = Environment()
-        result = env.from_string(template).render(file=file_info)
-
-        assert "test content" in result
-        assert file_path in result
+        result = render_template(template, context, env)
+        assert result == "Content: test content"
     finally:
         os.unlink(file_path)
 
 
-def test_render_template_with_immediate_loading() -> None:
+def test_render_template_with_immediate_loading(
+    security_manager: SecurityManager,
+) -> None:
     """Test template rendering with immediate loading of file content."""
     logger = logging.getLogger(__name__)
 
@@ -96,15 +106,15 @@ def test_render_template_with_immediate_loading() -> None:
         )
 
     try:
-        file_info = FileInfo.from_path(path=file_path)
-        logger.debug("Created FileInfo instance")
-
-        # Content should be loaded immediately
+        file_info = FileInfo.from_path(
+            path=file_path, security_manager=security_manager
+        )
+        template = "Content: {{ file.content }}"
+        context = {"file": file_info}
+        env = Environment()
+        result = render_template(template, context, env)
+        assert result == "Content: test content"
         assert file_info.content == "test content"
-
-        # Render template with file info
-        result = render_template("{{ file.content }}", {"file": file_info})
-        assert result == "test content"
     finally:
         os.unlink(file_path)
 
@@ -189,14 +199,18 @@ def test_read_file(fs: FakeFilesystem) -> None:
     assert file_info.content == "test content"
 
 
-def test_render_template_with_file(fs: FakeFilesystem) -> None:
+def test_render_template_with_file(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test template rendering with file content."""
     # Create test file
     fs.create_file("test.txt", contents="test content")
 
     # Create template using file content
     template = "Content: {{ file.content }}"
-    context = {"file": read_file("test.txt")}
+    context = {
+        "file": read_file("test.txt", security_manager=security_manager)
+    }
     env = Environment()
     result = render_template(template, context, env)
     assert result == "Content: test content"

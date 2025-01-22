@@ -108,28 +108,51 @@ Configure streaming behavior:
 Error Handling
 ------------
 
-The library provides comprehensive error handling:
+The `openai-structured` library provides robust error handling to help you build resilient applications. Here's a realistic example analyzing sentiment from customer reviews:
 
 .. code-block:: python
 
-    from openai_structured.errors import (
-        StreamBufferError,
-        StreamInterruptedError,
-        ValidationError,
-        TokenLimitError
-    )
-
     try:
-        async for chunk in async_openai_structured_stream(...):
-            process_chunk(chunk)
+        async for chunk in async_openai_structured_stream(
+            client=client,
+            model="gpt-4o-2024-08-06",
+            output_schema=SentimentAnalysis,  # Pydantic model defining the structure
+            system_prompt="You are a sentiment analysis expert. You analyze customer reviews to extract sentiment, key phrases, and emotional tone.",
+            user_prompt="""Analyze the sentiment in the following customer review. Map the results as follows:
+                - Extract the overall sentiment (positive/negative/neutral) into the 'sentiment' field
+                - Place the confidence score (0-1) into the 'confidence' field
+                - List the key positive phrases in 'positive_phrases'
+                - List the key negative phrases in 'negative_phrases'
+                - Summarize the emotional tone in 'tone'
+                
+                Review: {{ review.content }}""",
+            file_vars={"review": "customer_review.txt"}
+        ):
+            process_sentiment_results(chunk)
+    except ValueError as e:
+        if "token limit" in str(e).lower():
+            print(f"Token limit exceeded: {e}")
+            print("Consider reducing input size or using a model with larger context")
+        else:
+            raise
     except StreamBufferError as e:
         print(f"Buffer overflow: {e}")
     except StreamInterruptedError as e:
         print(f"Stream interrupted: {e}")
     except ValidationError as e:
         print(f"Validation error: {e}")
-    except TokenLimitError as e:
-        print(f"Token limit exceeded: {e}")
+    except APIError as e:
+        print(f"API error: {e}")
+    finally:
+        await client.close()
+
+**Key Error Types:**
+
+*   **ValueError:**  Can indicate a token limit issue. If you encounter this, check the total token count using the `--verbose` flag in the CLI or by logging the prompt length in your code. Reduce the input size or use a model with a larger context window.
+*   **StreamBufferError:** Occurs if the internal buffer for streaming is exceeded. Adjust `StreamConfig` parameters if necessary.
+*   **StreamInterruptedError:** Indicates that the stream was interrupted before completion. Implement retries if needed.
+*   **ValidationError:**  Signals that the generated output doesn't conform to the provided schema. Review your schema and prompt.
+*   **APIError:** Represents an error from the OpenAI API. Check the error message for details and consult the OpenAI documentation.
 
 File Processing
 ~~~~~~~~~~~~~

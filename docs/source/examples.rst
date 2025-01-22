@@ -11,6 +11,22 @@ Basic Examples
 CLI Examples
 ~~~~~~~~~~
 
+These examples demonstrate various `ostruct` CLI use cases, including handling different file sizes and prompt engineering techniques.
+
+**Handling Large Files:**
+
+When working with large files, structure your prompt to place the file content at the end, delimited by clear markers. This example demonstrates how to distill claims from a large document:
+
+.. code-block:: bash
+
+    ostruct \
+      --task "Distill all claims from the document in the <doc> element into the JSON response. Place the claim itself in the 'claim' element, and the source (if available) in the 'source' element. <doc>{{ input.content }}</doc>" \
+      --file input=large_document.txt \
+      --schema claims_schema.json \
+      --allowed-dir .
+
+**Note:** Replace `large_document.txt` and `claims_schema.json` with your actual file paths.
+
 Testing with Dry Run
 ^^^^^^^^^^^^^^^^^
 
@@ -383,5 +399,4 @@ Use different models with version validation:
 
         finally:
             await client.close()
-```
 ```

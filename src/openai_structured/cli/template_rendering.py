@@ -199,14 +199,16 @@ def render_template(
             # Load file content for FileInfo objects
             for key, value in context.items():
                 if isinstance(value, FileInfo):
-                    value.load_content()
+                    # Access content property to trigger loading
+                    _ = value.content
                 elif (
                     isinstance(value, list)
                     and value
                     and isinstance(value[0], FileInfo)
                 ):
                     for file_info in value:
-                        file_info.load_content()
+                        # Access content property to trigger loading
+                        _ = file_info.content
 
             if progress:
                 progress.update(1)  # Update progress for template creation

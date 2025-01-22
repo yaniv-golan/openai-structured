@@ -103,7 +103,8 @@ Optional:
 Model Configuration:
 
 ```bash
---model TEXT          # Model to use (default: gpt-4o-2024-08-06)
+--model TEXT          # Model to use (default: gpt-4o-2024-08-06). 
+                      # Use dated model versions for stability (e.g., gpt-4o-2024-08-06).
 --temperature FLOAT   # Temperature (default: 0.0)
 --max-tokens INT      # Max tokens (default: model-specific)
 --top-p FLOAT        # Top-p sampling (default: 1.0)

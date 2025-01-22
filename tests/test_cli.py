@@ -1,5 +1,6 @@
 """Tests for the CLI module."""
 
+import argparse
 import json
 from io import StringIO
 from typing import Any, AsyncIterator, Dict, Union
@@ -8,7 +9,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from openai_structured.cli.cli import ExitCode, _main
+from openai_structured.cli.cli import ExitCode, _main, create_template_context
+from openai_structured.cli.file_list import FileInfoList
+from openai_structured.cli.security import SecurityManager
 
 
 # Core CLI Tests
@@ -519,3 +522,83 @@ Template with {{ var2 }} and {{ input[0].content }}""",
 
             result = await _main()
             assert result == ExitCode.SUCCESS
+
+    def test_template_context_single_file(self, fs: FakeFilesystem) -> None:
+        """Test template context creation with single file."""
+        fs.create_file("test.txt", contents="hello")
+        args = argparse.Namespace(
+            file=["doc=test.txt"],
+            files=None,
+            dir=None,
+            recursive=False,
+            ext=None,
+            var=None,
+            json_var=None,
+        )
+
+        context = create_template_context(args, SecurityManager())
+        assert "doc" in context
+        assert isinstance(context["doc"], FileInfoList)
+        assert context["doc"].content == "hello"  # Test direct access
+        assert (
+            context["doc"][0].content == "hello"
+        )  # Test backward compatibility
+        assert context["doc"].path == "test.txt"
+
+    def test_template_context_multiple_files(self, fs: FakeFilesystem) -> None:
+        """Test template context creation with multiple files."""
+        fs.create_file("test1.txt", contents="hello")
+        fs.create_file("test2.txt", contents="world")
+        args = argparse.Namespace(
+            file=None,
+            files=["docs=*.txt"],
+            dir=None,
+            recursive=False,
+            ext=None,
+            var=None,
+            json_var=None,
+        )
+
+        context = create_template_context(args, SecurityManager())
+        assert "docs" in context
+        assert isinstance(context["docs"], FileInfoList)
+        assert context["docs"].content == ["hello", "world"]
+        assert context["docs"].path == ["test1.txt", "test2.txt"]
+        assert context["docs"][0].content == "hello"
+        assert context["docs"][1].content == "world"
+
+    def test_template_context_mixed_sources(self, fs: FakeFilesystem) -> None:
+        """Test template context creation with mixed file sources."""
+        # Create test files
+        fs.create_file("single.txt", contents="single")
+        fs.create_file("test1.py", contents="test1")
+        fs.create_file("test2.py", contents="test2")
+        fs.create_file("dir/test3.txt", contents="test3")
+
+        args = argparse.Namespace(
+            file=["doc=single.txt"],
+            files=["py_files=*.py"],
+            dir=["txt_files=dir"],
+            recursive=True,
+            ext=".txt",
+            var=["name=value"],
+            json_var=['data={"key":"value"}'],
+        )
+
+        context = create_template_context(args, SecurityManager())
+
+        # Check single file
+        assert isinstance(context["doc"], FileInfoList)
+        assert context["doc"].content == "single"
+
+        # Check pattern-matched files
+        assert isinstance(context["py_files"], FileInfoList)
+        assert context["py_files"].content == ["test1", "test2"]
+
+        # Check directory files
+        assert isinstance(context["txt_files"], FileInfoList)
+        assert context["txt_files"].content == ["test3"]
+
+        # Check other variables
+        assert context["name"] == "value"
+        assert context["data"] == {"key": "value"}

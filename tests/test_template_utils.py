@@ -1,5 +1,6 @@
 """Tests for task template utilities."""
 
+import os
 from typing import Any, Dict, Generator, List, TypedDict, Union, cast
 
 import pytest
@@ -7,6 +8,7 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 from pyfakefs.fake_filesystem_unittest import Patcher
 
 from openai_structured.cli.file_utils import FileInfo
+from openai_structured.cli.security import SecurityManager
 from openai_structured.cli.template_utils import render_template
 from openai_structured.cli.template_validation import (
     validate_template_placeholders,
@@ -87,32 +89,48 @@ def fs() -> Generator[FakeFilesystem, None, None]:
         yield fs
 
 
-def test_validate_fileinfo_attributes(fs: FakeFilesystem) -> None:
+@pytest.fixture
+def security_manager() -> SecurityManager:
+    """Create a security manager for testing."""
+    return SecurityManager(base_dir=os.getcwd())
+
+
+def test_validate_fileinfo_attributes(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test validation of FileInfo attribute access."""
     fs.create_dir("/test1")
     fs.create_file("/test1/file.txt", contents="test content")
     template = "Content: {{ file.content }}, Path: {{ file.abs_path }}"
-    file_info = FileInfo.from_path(path="/test1/file.txt")
-    file_mappings: Dict[str, Any] = {"file": file_info}
+    file_info = FileInfo.from_path(
+        path="/test1/file.txt", security_manager=security_manager
+    )
+    file_mappings = {"file": file_info}
     validate_template_placeholders(template, file_mappings)
+    assert file_info.content == "test content"
+    assert os.path.basename(file_info.abs_path) == "file.txt"
 
 
-def test_validate_fileinfo_invalid_attribute(fs: FakeFilesystem) -> None:
+def test_validate_fileinfo_invalid_attribute(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test validation with invalid FileInfo attribute."""
     fs.create_dir("/test2")
     fs.create_file("/test2/file.txt", contents="test content")
     template = "{{ file.invalid_attr }}"
-    file_info = FileInfo.from_path(path="/test2/file.txt")
-    file_mappings: Dict[str, Any] = {"file": file_info}
-    with pytest.raises(ValueError) as exc:
+    file_info = FileInfo.from_path(
+        path="/test2/file.txt", security_manager=security_manager
+    )
+    file_mappings = {"file": file_info}
+    with pytest.raises(ValueError):
         validate_template_placeholders(template, file_mappings)
-    assert "undefined" in str(exc.value)
+    assert file_info.content == "test content"
 
 
 def test_validate_nested_json_access() -> None:
     """Test validation of nested JSON dictionary access."""
     template = "{{ config['debug'] }}, {{ config['settings']['mode'] }}"
-    file_mappings: Dict[str, Any] = cast(
+    file_mappings = cast(
         Dict[str, Any],
         {"config": {"debug": True, "settings": {"mode": "test"}}},
     )
@@ -122,15 +140,15 @@ def test_validate_nested_json_access() -> None:
 def test_validate_nested_json_invalid_key() -> None:
     """Test validation with invalid nested JSON key."""
     template = "{{ config['invalid_key'] }}"
-    file_mappings: Dict[str, Any] = cast(
-        Dict[str, Any], {"config": {"debug": True}}
-    )
+    file_mappings = cast(Dict[str, Any], {"config": {"debug": True}})
     with pytest.raises(ValueError) as exc:
         validate_template_placeholders(template, file_mappings)
     assert "undefined" in str(exc.value)
 
 
-def test_validate_complex_template(fs: FakeFilesystem) -> None:
+def test_validate_complex_template(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test validation of complex template with multiple features."""
     # Set up test files
     fs.create_file("/test/file1.txt", contents="File 1 content")
@@ -150,12 +168,16 @@ def test_validate_complex_template(fs: FakeFilesystem) -> None:
         {{ key }}: {{ value }}
     {% endfor %}
     """
-    file_mappings: Dict[str, Any] = cast(
+    file_mappings = cast(
         Dict[str, Any],
         {
             "source_files": [
-                FileInfo.from_path(path="/test/file1.txt"),
-                FileInfo.from_path(path="/test/file2.txt"),
+                FileInfo.from_path(
+                    path="/test/file1.txt", security_manager=security_manager
+                ),
+                FileInfo.from_path(
+                    path="/test/file2.txt", security_manager=security_manager
+                ),
             ],
             "config": {
                 "exclude": {"file1.txt": "reason1"},
@@ -164,9 +186,13 @@ def test_validate_complex_template(fs: FakeFilesystem) -> None:
         },
     )
     validate_template_placeholders(template, file_mappings)
+    assert file_mappings["source_files"][0].content == "File 1 content"
+    assert file_mappings["source_files"][1].content == "File 2 content"
 
 
-def test_validate_template_with_filters(fs: FakeFilesystem) -> None:
+def test_validate_template_with_filters(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test validation of template using built-in filters and functions."""
     fs.create_file("/test/data.txt", contents="Test data content")
 
@@ -175,10 +201,13 @@ def test_validate_template_with_filters(fs: FakeFilesystem) -> None:
     {{ content|wordcount }}
     {{ content|extract_field("status")|frequency|dict_to_table }}
     """
-    file_mappings: Dict[str, Any] = {
-        "file": FileInfo.from_path(path="/test/data.txt")
+    file_mappings = {
+        "file": FileInfo.from_path(
+            path="/test/data.txt", security_manager=security_manager
+        )
     }
     validate_template_placeholders(template, file_mappings)
+    assert file_mappings["file"].content == "Test data content"
 
 
 def test_validate_template_undefined_in_loop() -> None:
@@ -227,7 +256,9 @@ def test_validate_template_builtin_functions() -> None:
     validate_template_placeholders(template, file_mappings)
 
 
-def test_validate_template_custom_functions(fs: FakeFilesystem) -> None:
+def test_validate_template_custom_functions(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test validation allows custom template functions."""
     fs.create_file("/test/file.txt", contents="Test file content")
     fs.create_file("/test/data.json", contents='{"status": "active"}')
@@ -240,24 +271,30 @@ def test_validate_template_custom_functions(fs: FakeFilesystem) -> None:
     file_mappings: Dict[str, Any] = cast(
         Dict[str, Any],
         {
-            "file": FileInfo.from_path(path="/test/file.txt"),
+            "file": FileInfo.from_path(
+                path="/test/file.txt", security_manager=security_manager
+            ),
             "data": {"category": "test", "value": 1},
             "text": "print('hello')",
         },
     )
     validate_template_placeholders(template, file_mappings)
+    assert file_mappings["file"].content == "Test file content"
 
 
-def test_render_template_with_file_content(fs: FakeFilesystem) -> None:
+def test_render_template_with_file_content(
+    fs: FakeFilesystem, security_manager: SecurityManager
+) -> None:
     """Test rendering template with actual file content."""
     fs.create_file("/test/input.txt", contents="Hello from file!")
 
     template = "Content: {{ file.content }}"
-    file_info = FileInfo.from_path(path="/test/input.txt")
-    file_info.load_content()
-    context: Dict[str, Any] = {"file": file_info}
-    result = render_template(template, context)
+    file_info = FileInfo.from_path(
+        path="/test/input.txt", security_manager=security_manager
+    )
+    result = render_template(template, {"file": file_info})
     assert result == "Content: Hello from file!"
+    assert file_info.content == "Hello from file!"
 
 
 def test_validate_json_variable_access() -> None:

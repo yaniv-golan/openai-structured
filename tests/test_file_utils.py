@@ -7,8 +7,9 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.errors import FileNotFoundError, PathSecurityError
+from openai_structured.cli.file_info import FileInfo
+from openai_structured.cli.file_list import FileInfoList
 from openai_structured.cli.file_utils import (
-    FileInfo,
     collect_files,
     collect_files_from_directory,
     collect_files_from_pattern,
@@ -81,12 +82,15 @@ def test_file_info_property_protection(fs: FakeFilesystem) -> None:
 
     # Attempt to modify private fields should raise AttributeError
     with pytest.raises(AttributeError):
-        file_info._content = (
-            "new content"  # pyright: ignore[reportPrivateUsage]
-        )
+        file_info.__path = "modified.txt"
 
     with pytest.raises(AttributeError):
-        file_info._hash = "new hash"  # pyright: ignore[reportPrivateUsage]
+        file_info.__content = "modified content"
+
+    with pytest.raises(AttributeError):
+        file_info.__security_manager = SecurityManager(
+            base_dir=os.getcwd()
+        )  # Fix type error by providing valid SecurityManager
 
 
 def test_file_info_directory_traversal(fs: FakeFilesystem) -> None:
@@ -178,7 +182,7 @@ def test_collect_files_from_directory(fs: FakeFilesystem) -> None:
 
     # Test non-recursive collection
     files = collect_files_from_directory(
-        "dir", os.getcwd(), security_manager=security_manager
+        directory="dir", security_manager=security_manager
     )
     assert len(files) == 3
     assert {f.path for f in files} == {
@@ -189,7 +193,7 @@ def test_collect_files_from_directory(fs: FakeFilesystem) -> None:
 
     # Test recursive collection
     files = collect_files_from_directory(
-        "dir", os.getcwd(), recursive=True, security_manager=security_manager
+        directory="dir", security_manager=security_manager, recursive=True
     )
     assert len(files) == 4
     assert {f.path for f in files} == {
@@ -201,11 +205,10 @@ def test_collect_files_from_directory(fs: FakeFilesystem) -> None:
 
     # Test with extension filter
     files = collect_files_from_directory(
-        "dir",
-        os.getcwd(),
-        recursive=True,
-        allowed_extensions=[".py"],
+        directory="dir",
         security_manager=security_manager,
+        recursive=True,
+        allowed_extensions=["py"],
     )
     assert len(files) == 3
     assert {f.path for f in files} == {
@@ -232,43 +235,45 @@ def test_collect_files(fs: FakeFilesystem) -> None:
         file_mappings=["single=single.txt"], security_manager=security_manager
     )
     assert len(result) == 1
-    assert isinstance(result["single"], list)
-    assert len(result["single"]) == 1
-    assert result["single"][0].path == "single.txt"
+    assert "single" in result
+    assert isinstance(result["single"], FileInfoList)
+    assert result["single"].content == "single"  # Test direct content access
+    assert (
+        result["single"][0].content == "single"
+    )  # Test backward compatibility
+    assert result["single"].path == "single.txt"
 
     # Test collecting from pattern
     result = collect_files(
-        file_pattern_mappings=["tests=*.py"], security_manager=security_manager
+        pattern_mappings=["tests=*.py"], security_manager=security_manager
     )
     assert len(result) == 1
-    assert isinstance(result["tests"], list)
-    file_list = result["tests"]
-    assert len(file_list) == 2
-    assert {f.path for f in file_list} == {"test1.py", "test2.py"}
+    assert "tests" in result
+    assert isinstance(result["tests"], FileInfoList)
+    assert len(result["tests"]) == 2
+    assert {f.path for f in result["tests"]} == {"test1.py", "test2.py"}
 
     # Test collecting from directory
     result = collect_files(
+        dir_mappings=["dir=dir"], security_manager=security_manager
+    )
+    assert len(result) == 1
+    assert "dir" in result
+    assert isinstance(result["dir"], FileInfoList)
+    assert len(result["dir"]) == 2
+    assert {f.path for f in result["dir"]} == {"dir/test3.py", "dir/test4.py"}
+
+    # Test collecting from directory with extension filter
+    result = collect_files(
         dir_mappings=["dir=dir"],
-        recursive=True,
+        extensions=["py"],
         security_manager=security_manager,
     )
     assert len(result) == 1
-    assert isinstance(result["dir"], list)
-    dir_list = result["dir"]
-    assert len(dir_list) == 2
-    assert {f.path for f in dir_list} == {"dir/test3.py", "dir/test4.py"}
-
-    # Test collecting from all sources
-    result = collect_files(
-        file_mappings=["single=single.txt"],
-        file_pattern_mappings=["tests=*.py"],
-        dir_mappings=["dir=dir"],
-        security_manager=security_manager,
-    )
-    assert len(result) == 3
-    assert isinstance(result["single"], list)
-    assert isinstance(result["tests"], list)
-    assert isinstance(result["dir"], list)
+    assert "dir" in result
+    assert isinstance(result["dir"], FileInfoList)
+    assert len(result["dir"]) == 2
+    assert {f.path for f in result["dir"]} == {"dir/test3.py", "dir/test4.py"}
 
 
 def test_collect_files_errors(fs: FakeFilesystem) -> None:
@@ -283,7 +288,9 @@ def test_collect_files_errors(fs: FakeFilesystem) -> None:
     security_manager = SecurityManager(base_dir=os.getcwd())
 
     # Test invalid file mapping
-    with pytest.raises(ValueError, match="Invalid mapping format"):
+    with pytest.raises(
+        ValueError, match="Invalid file mapping format.*missing '=' separator"
+    ):
         collect_files(
             file_mappings=["test"], security_manager=security_manager
         )
@@ -298,7 +305,7 @@ def test_collect_files_errors(fs: FakeFilesystem) -> None:
     # Test directory traversal
     with pytest.raises(
         PathSecurityError,
-        match="Directory mapping .* error: Access denied: .* is outside base directory and not in allowed directories",
+        match="Directory mapping error: Access denied: .* is outside base directory and not in allowed directories",
     ):
         collect_files(
             dir_mappings=["test=../outside"], security_manager=security_manager
@@ -486,3 +493,29 @@ def test_security_error_wrapping() -> None:
     assert wrapped.has_been_logged  # Should preserve logged state
     assert wrapped.wrapped  # Should be marked as wrapped
     assert str(wrapped) == "File collection failed: Access denied"
+
+
+def test_file_info_immutability(fs: FakeFilesystem) -> None:
+    """Test that FileInfo attributes are immutable."""
+    # Create test file
+    fs.create_file("test.txt", contents="test")
+
+    # Create security manager
+    security_manager = SecurityManager(base_dir=os.getcwd())
+
+    # Create FileInfo instance
+    file_info = FileInfo.from_path(
+        "test.txt", security_manager=security_manager
+    )
+
+    # Attempt to modify private fields should raise AttributeError
+    with pytest.raises(AttributeError):
+        file_info.__path = "modified.txt"
+
+    with pytest.raises(AttributeError):
+        file_info.__content = "modified content"
+
+    with pytest.raises(AttributeError):
+        file_info.__security_manager = SecurityManager(
+            base_dir=os.getcwd()
+        )  # Fix type error by providing valid SecurityManager

@@ -43,8 +43,6 @@ Security Notes:
 """
 
 import glob
-import hashlib
-import inspect
 import logging
 import os
 from typing import Any, Dict, List, Optional, Type, Union
@@ -56,13 +54,27 @@ from .errors import (
     FileNotFoundError,
     PathSecurityError,
 )
-from .path_utils import validate_path_mapping
-from .security import SecurityManager, is_temp_file
+from .file_info import FileInfo
+from .file_list import FileInfoList
+from .security import SecurityManager
 from .security_types import SecurityManagerProtocol
-from .utils import parse_mapping
+
+__all__ = [
+    "FileInfo",  # Re-exported from file_info
+    "SecurityManager",  # Re-exported from security
+    "FileInfoList",  # Re-exported from file_list
+    "collect_files",
+    "collect_files_from_pattern",
+    "collect_files_from_directory",
+    "detect_encoding",
+    "expand_path",
+    "read_allowed_dirs_from_file",
+]
+
+logger = logging.getLogger(__name__)
 
 # Type for values in template context
-TemplateValue = Union[str, "FileInfo", List["FileInfo"]]
+TemplateValue = Union[str, List[str], Dict[str, str]]
 
 
 def _get_security_manager() -> Type[SecurityManagerProtocol]:
@@ -96,739 +108,251 @@ def expand_path(path: str, force_absolute: bool = False) -> str:
     return os.path.abspath(expanded)
 
 
-class FileInfo:
-    """File information class that includes file path and content."""
-
-    def __init__(
-        self, path: str, security_manager: Optional[SecurityManager] = None
-    ) -> None:
-        """Initialize FileInfo instance.
-
-        Args:
-            path: Path to the file
-            security_manager: Optional security manager for path validation
-
-        Raises:
-            FileNotFoundError: If file does not exist
-            PathSecurityError: If file is outside allowed directories
-            OSError: If file cannot be read
-        """
-        self._initialized = False  # Add initialization flag
-        self.logger = logging.getLogger("ostruct")
-        self.logger.debug("Creating FileInfo instance for %s", path)
-        self._path = path
-        self._abs_path = os.path.abspath(path)
-        self._content = None
-        self._encoding = None
-        self._hash = None
-        self._security_checked = False
-        self._security_manager = security_manager
-        self._stats_loaded = False
-        self._size: Optional[int] = None
-        self._mtime: Optional[float] = None
-
-        # Load stats immediately
-        self._load_stats()
-
-        # Detect encoding immediately
-        try:
-            self._encoding = detect_encoding(self._abs_path)
-        except Exception:
-            self.logger.warning("Error detecting encoding")
-            self._encoding = "utf-8"  # Fallback to UTF-8
-
-        # Load content and compute hash
-        try:
-            with open(self._abs_path, "r", encoding=self._encoding) as f:
-                content = f.read()
-                self._content = content
-                self._hash = hashlib.sha256(content.encode()).hexdigest()
-        except Exception:
-            self.logger.warning("Error loading content")
-            raise RuntimeError("Failed to load content")
-
-        self._initialized = True  # Mark initialization as complete
-
-    @property
-    def path(self) -> str:
-        """Get the file path.
-
-        Returns:
-            The file path as a string
-        """
-        return self._path
-
-    @classmethod
-    def from_path(
-        cls, path: str, security_manager: Optional[SecurityManager] = None
-    ) -> "FileInfo":
-        """Create a FileInfo instance from a file path.
-
-        Args:
-            path: The path to the file
-            security_manager: Optional security manager for path validation
-
-        Returns:
-            A new FileInfo instance
-
-        Raises:
-            FileNotFoundError: If file does not exist
-            PathSecurityError: If file is outside allowed directories
-            OSError: If file cannot be read
-        """
-        logger = logging.getLogger("ostruct")
-        logger.debug("Creating FileInfo from path: %s", path)
-
-        expanded_path = expand_path(path)
-        logger.debug("Expanded path: %s", expanded_path)
-
-        # For security checks, we need the absolute path
-        abs_path = os.path.abspath(expanded_path)
-
-        # Check file exists before creating instance
-        if not os.path.exists(abs_path):
-            msg = (
-                f"File not found: {path}\n"
-                f"Expanded path: {expanded_path}\n"
-                "Note: Use --allowed-dir to allow access to directories outside the current path"
-            )
-            raise FileNotFoundError(msg)
-
-        if security_manager:
-            logger.debug("Checking security for path: %s", expanded_path)
-            security_manager.validate_path(expanded_path)
-            logger.debug("Security check passed for path: %s", expanded_path)
-
-        return cls(path=expanded_path, security_manager=security_manager)
-
-    @property
-    def name(self) -> str:
-        """Get variable name for the file."""
-        return self.path.split("/")[-1]
-
-    @property
-    def abs_path(self) -> str:
-        """Get absolute path to file with symlinks resolved."""
-        return os.path.realpath(self.path)
-
-    @property
-    def content(self) -> str:
-        """Get file content.
-
-        Returns:
-            File content as string
-
-        Raises:
-            FileNotFoundError: If file does not exist
-            OSError: If file cannot be read
-            PathSecurityError: If file access is denied
-        """
-        if self._content is None:
-            try:
-                self.load_content()
-            except (
-                OSError,
-                IOError,
-                FileNotFoundError,
-                PathSecurityError,
-            ) as e:
-                self.logger.error(
-                    "Failed to load content for %s: %s", self.path, e
-                )
-                raise
-            except Exception:
-                self.logger.error(
-                    "Unexpected error loading content for %s",
-                    self.path,
-                )
-                raise RuntimeError("Failed to load content")
-        return self._content if self._content is not None else ""
-
-    @property
-    def size(self) -> Optional[int]:
-        """Get file size in bytes."""
-        if not self._stats_loaded:
-            try:
-                self._load_stats()
-            except (FileNotFoundError, PathSecurityError) as e:
-                self.logger.error(str(e))
-                raise
-            except Exception:
-                self.logger.warning("Failed to load stats for %s", self.path)
-                return None
-        return self._size
-
-    @property
-    def mtime(self) -> Optional[float]:
-        """Get file modification time."""
-        if not self._stats_loaded:
-            try:
-                self._load_stats()
-            except (FileNotFoundError, PathSecurityError) as e:
-                self.logger.error(str(e))
-                raise
-            except Exception:
-                self.logger.warning("Failed to load stats for %s", self.path)
-                return None
-        return self._mtime
-
-    @property
-    def encoding(self) -> Optional[str]:
-        """Get file encoding."""
-        return self._encoding
-
-    @property
-    def hash(self) -> Optional[str]:
-        """Get file content hash."""
-        return self._hash
-
-    @property
-    def extension(self) -> str:
-        """Get file extension without the leading dot."""
-        return os.path.splitext(self.path)[1].lstrip(".")
-
-    @property
-    def basename(self) -> str:
-        """Get file basename."""
-        return os.path.basename(self.path)
-
-    @property
-    def dirname(self) -> str:
-        """Get directory name."""
-        return os.path.dirname(self.path)
-
-    @property
-    def parent(self) -> str:
-        """Get parent directory."""
-        return os.path.dirname(self.path)
-
-    @property
-    def stem(self) -> str:
-        """Get file stem (name without extension)."""
-        return os.path.splitext(self.basename)[0]
-
-    @property
-    def suffix(self) -> str:
-        """Get file extension (alias for extension)."""
-        return self.extension
-
-    @property
-    def exists(self) -> bool:
-        """Check if file exists."""
-        return os.path.exists(self.path)
-
-    @property
-    def is_file(self) -> bool:
-        """Check if path is a file."""
-        return os.path.isfile(self.path)
-
-    @property
-    def is_dir(self) -> bool:
-        """Check if path is a directory."""
-        return os.path.isdir(self.path)
-
-    @property
-    def lazy(self) -> bool:
-        """Get whether this instance uses lazy loading."""
-        return False  # Always return False since lazy loading is removed
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        """Override attribute setting to prevent modification of private fields after initialization.
-
-        Args:
-            name: Attribute name
-            value: Value to set
-
-        Raises:
-            AttributeError: If attempting to modify a private field after initialization
-        """
-        # Allow all modifications during initialization
-        if not hasattr(self, "_initialized") or not self._initialized:
-            super().__setattr__(name, value)
-            return
-
-        # Allow updates from specific methods
-        frame = inspect.currentframe()
-        if frame is not None:
-            caller = frame.f_back
-            if caller is not None and caller.f_code.co_name in [
-                "_check_security",
-                "_load_stats",
-                "load_content",
-                "update_cache",
-            ]:
-                super().__setattr__(name, value)
-                return
-
-        # Prevent modification of private attributes after initialization
-        if name.startswith("_") and hasattr(self, name):
-            raise AttributeError(f"Cannot modify private attribute {name}")
-        super().__setattr__(name, value)
-
-    def _check_security(
-        self, allowed_dirs: Optional[List[str]] = None
-    ) -> None:
-        """Perform security checks without loading stats.
-
-        Args:
-            allowed_dirs: Optional list of allowed directories
-
-        Raises:
-            PathSecurityError: If file access is denied
-        """
-        if self._security_checked:
-            return
-
-        # If we have a security manager, use it for validation
-        if self._security_manager:
-            try:
-                self._security_manager.validate_path(self.path)
-                self._security_checked = True
-                return
-            except PathSecurityError as e:
-                self.logger.error(str(e))
-                raise
-
-        # Otherwise fall back to basic security checks
-        abs_path = os.path.realpath(os.path.abspath(self.path))
-        base_dir = os.path.realpath(os.getcwd())
-
-        # Expand any allowed directories (force absolute for security checks)
-        expanded_allowed_dirs = [
-            expand_path(d, force_absolute=True) for d in (allowed_dirs or [])
-        ]
-
-        # Check if path is in base directory, temp directory, or allowed directory
-        is_allowed = (
-            os.path.commonpath([abs_path, base_dir]) == base_dir
-            or is_temp_file(abs_path)
-            or any(
-                os.path.commonpath([abs_path, os.path.realpath(allowed_dir)])
-                == os.path.realpath(allowed_dir)
-                for allowed_dir in expanded_allowed_dirs
-                if os.path.exists(allowed_dir)
-            )
-        )
-
-        if not is_allowed:
-            # Use enhanced PathSecurityError with expanded paths
-            error = PathSecurityError.from_expanded_paths(
-                original_path=str(self.path),
-                expanded_path=abs_path,
-                base_dir=base_dir,
-                allowed_dirs=expanded_allowed_dirs if allowed_dirs else None,
-                error_logged=False,  # Set to False to ensure error is logged
-            )
-            self.logger.error(str(error))
-            error.error_logged = True  # Mark as logged after logging
-            raise error
-
-        self._security_checked = True
-
-    def _load_stats(self) -> None:
-        """Load file statistics and perform security checks.
-
-        This method:
-        1. Performs security checks (always)
-        2. Loads basic file stats (size, mtime)
-
-        Stats are loaded when first accessed via properties.
-
-        Raises:
-            FileNotFoundError: If file does not exist
-            ValueError: If path is not a file
-            OSError: If file cannot be read
-            PathSecurityError: If file access is denied
-        """
-        # Always perform security check
-        try:
-            self._check_security()
-        except PathSecurityError:
-            raise  # Don't log again, already logged in _check_security
-
-        if self._stats_loaded:
-            self.logger.debug("Stats already loaded for %s", self.path)
-            return
-
-        self.logger.debug("Loading stats for %s", self.path)
-
-        # Check file exists and is readable
-        abs_path = os.path.realpath(self.path)
-        if not os.path.exists(abs_path):
-            msg = f"File not found: {self.path}"
-            self.logger.error(msg)
-            raise FileNotFoundError(msg)  # Using our custom FileNotFoundError
-        if not os.path.isfile(abs_path):
-            msg = f"Path is not a file: {self.path}"
-            self.logger.error(msg)
-            raise ValueError(msg)
-
-        try:
-            stats = os.stat(abs_path)
-            self._stats = stats
-            self._size = stats.st_size
-            self._mtime = stats.st_mtime
-            self._stats_loaded = True
-            self.logger.debug("Successfully loaded stats for %s", self.path)
-        except (OSError, IOError) as e:
-            self.logger.error("Error reading file stats: %s", e)
-            raise
-
-    def load_content(self, encoding: Optional[str] = None) -> None:
-        """Load file content if not already loaded.
-
-        This method performs security checks and loads the file content.
-        It is called automatically by the content property in lazy mode,
-        or during initialization in non-lazy mode.
-
-        The method uses a multi-step approach:
-        1. Check if content is already loaded
-        2. Perform security checks via _load_stats
-        3. Detect or use provided encoding
-        4. Load and decode file content
-        5. Update instance state with loaded content
-
-        Args:
-            encoding: Optional encoding to use for reading the file.
-                     If not provided, encoding will be detected.
-
-        Raises:
-            OSError: If file cannot be read or accessed
-            UnicodeDecodeError: If file content cannot be decoded with detected/specified encoding
-            PathSecurityError: If file access is not allowed
-            RuntimeError: For unexpected errors during content loading
-        """
-        if self._content is not None:
-            self.logger.debug("Content already loaded for %s", self.path)
-            return
-
-        self.logger.debug(
-            "Loading content for %s (encoding=%s)", self.path, encoding
-        )
-
-        # Load stats first to perform security checks
-        try:
-            self._load_stats()
-        except (FileNotFoundError, PathSecurityError) as e:
-            self.logger.error("Security check failed for %s: %s", self.path, e)
-            raise
-        except Exception:
-            self.logger.error(
-                "Unexpected error in security check for %s",
-                self.path,
-            )
-            raise RuntimeError("Security check failed")
-
-        try:
-            # Detect or use provided encoding
-            file_encoding = encoding
-            if file_encoding is None:
-                try:
-                    file_encoding = detect_encoding(self.path)
-                    self.logger.debug(
-                        "Using detected encoding %s for %s",
-                        file_encoding,
-                        self.path,
-                    )
-                except (OSError, ValueError):
-                    self.logger.error(
-                        "Error detecting encoding for %s", self.path
-                    )
-                    raise RuntimeError("Failed to detect encoding")
-
-            # Attempt to read and decode file content
-            try:
-                with open(self.path, "r", encoding=file_encoding) as f:
-                    content = f.read()
-            except UnicodeDecodeError:
-                self.logger.error(
-                    "Failed to decode %s with encoding %s",
-                    self.path,
-                    file_encoding,
-                )
-                # Try fallback to UTF-8 if a different encoding was attempted
-                if file_encoding != "utf-8":
-                    self.logger.debug(
-                        "Attempting UTF-8 fallback for %s", self.path
-                    )
-                    try:
-                        with open(self.path, "r", encoding="utf-8") as f:
-                            content = f.read()
-                        file_encoding = "utf-8"
-                        self.logger.debug(
-                            "UTF-8 fallback successful for %s", self.path
-                        )
-                    except UnicodeDecodeError:
-                        self.logger.error(
-                            "UTF-8 fallback failed for %s",
-                            self.path,
-                        )
-                        raise
-                else:
-                    raise
-            except OSError:
-                self.logger.error("Failed to read %s", self.path)
-                raise
-
-            # Update instance state
-            self._content = content
-            self._encoding = file_encoding
-            self._hash = hashlib.sha256(content.encode()).hexdigest()
-
-            self.logger.debug(
-                "Successfully loaded %d bytes from %s using encoding %s",
-                len(content),
-                self.path,
-                file_encoding,
-            )
-
-        except (OSError, UnicodeDecodeError):
-            # Let these exceptions propagate with their original type
-            raise
-        except Exception:
-            self.logger.error(
-                "Unexpected error loading content for %s",
-                self.path,
-            )
-            raise RuntimeError("Failed to load content")
-
-    def update_cache(
-        self,
-        content: str,
-        encoding: Optional[str],
-        hash_value: Optional[str] = None,
-    ) -> None:
-        """Update private fields from external cache logic."""
-        self._content = content
-        self._encoding = encoding
-        self._hash = hash_value or hashlib.sha256(content.encode()).hexdigest()
-        self.logger.debug("Updated cache for %s", self.path)
-
-    def dir(self) -> str:
-        """Get directory containing the file."""
-        return os.path.dirname(self.abs_path)
-
-
 def collect_files_from_pattern(
     pattern: str,
-    security_manager: Optional[SecurityManager] = None,
+    security_manager: SecurityManager,
 ) -> List[FileInfo]:
     """Collect files matching a glob pattern.
 
     Args:
         pattern: Glob pattern to match files
-        security_manager: Optional security manager for path validation
+        security_manager: Security manager for path validation
 
     Returns:
-        List of FileInfo objects for matching files
+        List of FileInfo objects for matched files
 
     Raises:
-        PathSecurityError: If any matched file is outside base directory and not in allowed directories
-        ValueError: If no files match pattern
+        PathSecurityError: If any matched file is outside base directory
     """
-    # Expand glob pattern
-    try:
-        matches = glob.glob(pattern, recursive=True)
-        matches.sort()  # Sort for consistent ordering
-    except Exception as e:
-        raise ValueError(f"Invalid glob pattern '{pattern}': {e}")
+    # Expand pattern
+    matched_paths = glob.glob(pattern, recursive=True)
+    if not matched_paths:
+        logger.debug("No files matched pattern: %s", pattern)
+        return []
 
-    # Filter and convert matches to FileInfo objects
-    result: List[FileInfo] = []
-    seen_paths = set()  # Track unique paths
-
-    for path in matches:
-        # Skip if already processed (handles case-insensitive duplicates)
-        norm_path = os.path.normcase(path)
-        if norm_path in seen_paths:
-            continue
-        seen_paths.add(norm_path)
-
-        # Skip if not a file
-        if not os.path.isfile(path):
-            continue
-
-        try:
-            file_info = FileInfo.from_path(
-                path=path, security_manager=security_manager
-            )
-            result.append(file_info)
-        except PathSecurityError:
-            # Propagate security errors
-            raise
-        except (OSError, ValueError):
-            # Skip other errors but continue processing
-            continue
-
-    if not result:
-        raise ValueError(f"No files found matching pattern: {pattern}")
-
-    return result
-
-
-def collect_files_from_directory(
-    directory: str,
-    base_dir: str,
-    recursive: bool = False,
-    allowed_extensions: Optional[List[str]] = None,
-    allowed_dirs: Optional[List[str]] = None,
-    security_manager: Optional[SecurityManager] = None,
-) -> List[FileInfo]:
-    """Collect files from a directory.
-
-    Args:
-        directory: Directory path relative to current directory
-        recursive: Whether to traverse subdirectories
-        allowed_extensions: Optional set of allowed file extensions (e.g. {'.py', '.js'})
-        allowed_dirs: Optional list of allowed directories
-        security_manager: Optional security manager for path validation
-
-    Returns:
-        List of FileInfo objects for files in directory
-
-    Raises:
-        DirectoryNotFoundError: If directory does not exist
-        PathSecurityError: If directory is outside base directory and not in allowed directories
-        ValueError: If no files are found in directory
-    """
-    # Resolve paths and check security first
-    abs_dir = os.path.abspath(os.path.join(base_dir, directory))
-
-    # Security check - prevent directory traversal
-    if not abs_dir.startswith(base_dir) and not any(
-        abs_dir.startswith(allowed_dir) for allowed_dir in (allowed_dirs or [])
-    ):
-        raise PathSecurityError.from_expanded_paths(
-            original_path=directory,
-            expanded_path=abs_dir,
-            base_dir=base_dir,
-            allowed_dirs=allowed_dirs,
-            error_logged=True,
-        )
-
-    # Verify directory exists
-    if not os.path.isdir(abs_dir):
-        raise DirectoryNotFoundError(f"Directory not found: {directory}")
-
-    # Collect files
+    # Create FileInfo objects
     files = []
-
-    for root, _, filenames in os.walk(abs_dir):
-        # Skip subdirectories if not recursive
-        if not recursive and root != abs_dir:
-            continue
-
-        for filename in filenames:
-            abs_path = os.path.join(root, filename)
-
-            # Check file extension if specified
-            if (
-                allowed_extensions
-                and os.path.splitext(filename)[1] not in allowed_extensions
-            ):
-                continue
-
-            # Create relative path from current directory
-            rel_path = os.path.relpath(abs_path, base_dir)
-
-            try:
-                # Use the base name for all files in the collection
-                files.append(
-                    FileInfo.from_path(
-                        path=rel_path, security_manager=security_manager
-                    )
-                )
-            except PathSecurityError:
-                # Propagate security errors
-                raise
-            except (OSError, ValueError):
-                # Skip other errors but continue processing
-                continue
-
-    if not files:
-        raise ValueError(f"No files found in directory: {directory}")
+    for path in matched_paths:
+        try:
+            file_info = FileInfo.from_path(path, security_manager)
+            files.append(file_info)
+        except PathSecurityError:
+            # Let security errors propagate
+            raise
+        except Exception:
+            logger.warning("Could not process file %s", path)
 
     return files
 
 
+def collect_files_from_directory(
+    directory: str,
+    security_manager: SecurityManager,
+    recursive: bool = False,
+    allowed_extensions: Optional[List[str]] = None,
+    **kwargs: Any,
+) -> List[FileInfo]:
+    """Collect files from directory.
+
+    Args:
+        directory: Directory to collect files from
+        security_manager: Security manager for path validation
+        recursive: Whether to collect files recursively
+        allowed_extensions: List of allowed file extensions without dots
+        **kwargs: Additional arguments passed to FileInfo.from_path
+
+    Returns:
+        List of FileInfo instances
+
+    Raises:
+        DirectoryNotFoundError: If directory does not exist
+        PathSecurityError: If directory is not allowed
+    """
+    # Validate directory exists and is allowed
+    try:
+        abs_dir = str(security_manager.resolve_path(directory))
+    except PathSecurityError:
+        # Let the original error propagate
+        raise
+
+    if not os.path.exists(abs_dir):
+        raise DirectoryNotFoundError(f"Directory not found: {directory}")
+    if not os.path.isdir(abs_dir):
+        raise DirectoryNotFoundError(f"Path is not a directory: {directory}")
+
+    # Collect files
+    files = []
+    for root, _, filenames in os.walk(abs_dir):
+        if not recursive and root != abs_dir:
+            continue
+
+        for filename in filenames:
+            # Get relative path from base directory
+            abs_path = os.path.join(root, filename)
+            try:
+                rel_path = os.path.relpath(abs_path, security_manager.base_dir)
+            except ValueError:
+                # Skip files that can't be made relative
+                continue
+
+            # Check extension if filter is specified
+            if allowed_extensions is not None:
+                ext = os.path.splitext(filename)[1].lstrip(".")
+                if ext not in allowed_extensions:
+                    continue
+
+            try:
+                file_info = FileInfo.from_path(
+                    rel_path, security_manager=security_manager, **kwargs
+                )
+                files.append(file_info)
+            except (FileNotFoundError, PathSecurityError):
+                # Skip files that can't be accessed
+                continue
+
+    return files
+
+
+def _validate_and_split_mapping(
+    mapping: str, mapping_type: str
+) -> tuple[str, str]:
+    """Validate and split a name=value mapping.
+
+    Args:
+        mapping: The mapping string to validate (e.g. "name=value")
+        mapping_type: Type of mapping for error messages ("file", "pattern", or "directory")
+
+    Returns:
+        Tuple of (name, value)
+
+    Raises:
+        ValueError: If mapping format is invalid
+    """
+    try:
+        name, value = mapping.split("=", 1)
+    except ValueError:
+        raise ValueError(
+            f"Invalid {mapping_type} mapping format: {mapping!r} (missing '=' separator)"
+        )
+
+    if not name:
+        raise ValueError(f"Empty name in {mapping_type} mapping: {mapping!r}")
+    if not value:
+        raise ValueError(f"Empty value in {mapping_type} mapping: {mapping!r}")
+
+    return name, value
+
+
 def collect_files(
     file_mappings: Optional[List[str]] = None,
-    file_pattern_mappings: Optional[List[str]] = None,
+    pattern_mappings: Optional[List[str]] = None,
     dir_mappings: Optional[List[str]] = None,
     recursive: bool = False,
     extensions: Optional[List[str]] = None,
     security_manager: Optional[SecurityManager] = None,
-) -> Dict[str, List[FileInfo]]:
-    """Collect files from various mapping types.
+    **kwargs: Any,
+) -> Dict[str, FileInfoList]:
+    """Collect files from various mappings.
 
     Args:
         file_mappings: List of name=path mappings for single files
-        file_pattern_mappings: List of name=pattern mappings for file patterns
-        dir_mappings: List of name=path mappings for directories
-        recursive: Whether to process directories recursively
-        extensions: Optional list of file extensions to include
-        security_manager: Optional security manager for path validation
+        pattern_mappings: List of name=pattern mappings for multiple files
+        dir_mappings: List of name=dir mappings for directories
+        recursive: Whether to collect files recursively from directories
+        extensions: Optional list of allowed file extensions (with or without dots)
+        security_manager: Security manager for path validation
+        **kwargs: Additional arguments passed to FileInfo.from_path
 
     Returns:
-        Dictionary mapping names to lists of FileInfo objects
+        Dict mapping names to FileInfoList objects
 
     Raises:
-        PathSecurityError: If any paths violate security constraints
-        ValueError: If mappings are invalid or no files are found
+        ValueError: If no files are found or if mapping format is invalid
+        FileNotFoundError: If a file does not exist
+        PathSecurityError: If a path is not allowed
     """
-    result: Dict[str, List[FileInfo]] = {}
+    if not any([file_mappings, pattern_mappings, dir_mappings]):
+        raise ValueError("No file mappings provided")
 
-    # Process single file mappings
+    if security_manager is None:
+        security_manager = SecurityManager(base_dir=os.getcwd())
+
+    # Normalize extensions by removing leading dots
+    if extensions:
+        extensions = [ext.lstrip(".") for ext in extensions]
+
+    files: Dict[str, FileInfoList] = {}
+
+    # Process file mappings
     if file_mappings:
         for mapping in file_mappings:
-            try:
-                name, path = validate_path_mapping(
-                    mapping, security_manager=security_manager
-                )
-                result[name] = [
-                    FileInfo.from_path(path, security_manager=security_manager)
-                ]
-            except (OSError, ValueError) as e:
-                raise ValueError(f"Invalid file mapping {mapping!r}: {e}")
+            name, path = _validate_and_split_mapping(mapping, "file")
+            if name in files:
+                raise ValueError(f"Duplicate file mapping: {name}")
 
-    # Process file pattern mappings
-    if file_pattern_mappings:
-        for mapping in file_pattern_mappings:
+            file_info = FileInfo.from_path(
+                path, security_manager=security_manager, **kwargs
+            )
+            files[name] = FileInfoList([file_info], from_dir=False)
+
+    # Process pattern mappings
+    if pattern_mappings:
+        for mapping in pattern_mappings:
+            name, pattern = _validate_and_split_mapping(mapping, "pattern")
+            if name in files:
+                raise ValueError(f"Duplicate pattern mapping: {name}")
+
             try:
-                name, pattern = parse_mapping(mapping)
-                result[name] = collect_files_from_pattern(
-                    pattern, security_manager=security_manager
+                matched_files = collect_files_from_pattern(
+                    pattern, security_manager=security_manager, **kwargs
                 )
-            except (OSError, ValueError) as e:
-                raise ValueError(f"Invalid pattern mapping {mapping!r}: {e}")
+            except PathSecurityError as e:
+                raise PathSecurityError(
+                    "Pattern mapping error: Access denied: "
+                    f"{pattern} is outside base directory and not in allowed directories"
+                ) from e
+
+            if not matched_files:
+                logger.warning("No files matched pattern: %s", pattern)
+                continue
+
+            files[name] = FileInfoList(matched_files, from_dir=False)
 
     # Process directory mappings
     if dir_mappings:
         for mapping in dir_mappings:
+            name, directory = _validate_and_split_mapping(mapping, "directory")
+            if name in files:
+                raise ValueError(f"Duplicate directory mapping: {name}")
+
             try:
-                name, directory = validate_path_mapping(
-                    mapping, is_dir=True, security_manager=security_manager
-                )
-                result[name] = collect_files_from_directory(
-                    directory,
-                    os.path.abspath(os.getcwd()),
-                    recursive=recursive,
-                    allowed_extensions=(
-                        list(extensions) if extensions else None
-                    ),
+                dir_files = collect_files_from_directory(
+                    directory=directory,
                     security_manager=security_manager,
+                    recursive=recursive,
+                    allowed_extensions=extensions,
+                    **kwargs,
                 )
             except PathSecurityError as e:
-                # Create a new error with the directory mapping prefix
-                new_error = PathSecurityError(
-                    f"Directory mapping {mapping} error: {str(e)}",
-                    error_logged=True,
+                raise PathSecurityError(
+                    "Directory mapping error: Access denied: "
+                    f"{directory} is outside base directory and not in allowed directories"
+                ) from e
+            except DirectoryNotFoundError:
+                raise DirectoryNotFoundError(
+                    f"Directory not found: {directory}"
                 )
-                raise new_error
-            except (OSError, ValueError) as e:
-                raise ValueError(f"Invalid directory mapping {mapping!r}: {e}")
 
-    return result
+            if not dir_files:
+                logger.warning("No files found in directory: %s", directory)
+                files[name] = FileInfoList([], from_dir=True)
+            else:
+                files[name] = FileInfoList(dir_files, from_dir=True)
+
+    if not files:
+        raise ValueError("No files found")
+
+    return files
 
 
 def detect_encoding(file_path: str) -> str:
@@ -851,7 +375,6 @@ def detect_encoding(file_path: str) -> str:
         OSError: If file cannot be read or accessed
         ValueError: If file path is invalid
     """
-    logger = logging.getLogger(__name__)
     logger.debug("Detecting encoding for file: %s", file_path)
 
     try:

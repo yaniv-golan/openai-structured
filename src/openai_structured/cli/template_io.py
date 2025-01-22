@@ -62,6 +62,7 @@ from jinja2 import Environment
 
 from .file_utils import FileInfo
 from .progress import ProgressContext
+from .security import SecurityManager
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +78,33 @@ _cache_size: int = 0
 
 def read_file(
     file_path: str,
+    security_manager: Optional["SecurityManager"] = None,
     encoding: Optional[str] = None,
     progress_enabled: bool = True,
     chunk_size: int = 1024 * 1024,  # 1MB chunks
 ) -> FileInfo:
-    """Read a file and return its contents."""
+    """Read a file and return its contents.
+
+    Args:
+        file_path: Path to the file to read
+        security_manager: Security manager for path validation. If None, creates one with current directory
+        encoding: Optional encoding to use for reading the file
+        progress_enabled: Whether to show progress updates
+        chunk_size: Size of chunks to read at a time
+
+    Returns:
+        FileInfo: Object containing file content and metadata
+
+    Raises:
+        ValueError: If file cannot be read or found
+    """
     logger = logging.getLogger(__name__)
     logger.debug("\n=== read_file called ===")
     logger.debug("Args: file_path=%s, encoding=%s", file_path, encoding)
+
+    # Create security manager if not provided
+    if security_manager is None:
+        security_manager = SecurityManager(base_dir=os.getcwd())
 
     with ProgressContext(
         "Reading file", show_progress=progress_enabled
@@ -115,7 +135,9 @@ def read_file(
                     if progress:
                         progress.update(1)  # Update progress for cache hit
                     # Create FileInfo and update from cache
-                    file_info = FileInfo.from_path(path=file_path)
+                    file_info = FileInfo.from_path(
+                        path=file_path, security_manager=security_manager
+                    )
                     file_info.update_cache(
                         content=_file_cache[abs_path],
                         encoding=_file_encodings.get(abs_path),
@@ -124,7 +146,9 @@ def read_file(
                     return file_info
 
             # Create new FileInfo - content will be loaded immediately
-            file_info = FileInfo.from_path(path=file_path)
+            file_info = FileInfo.from_path(
+                path=file_path, security_manager=security_manager
+            )
 
             # Update cache with loaded content
             with _cache_lock:
@@ -179,10 +203,13 @@ def extract_metadata(file_info: FileInfo) -> Dict[str, Any]:
         "mtime": file_info.mtime,
     }
 
-    # Only include content-related fields if content is already loaded
-    if not file_info.lazy or file_info._content is not None:
+    # Only include content-related fields if content has been explicitly accessed
+    if (
+        hasattr(file_info, "_FileInfo__content")
+        and file_info.content is not None
+    ):
         metadata["content"] = file_info.content
-        metadata["size"] = len(file_info.content) if file_info.content else 0
+        metadata["size"] = file_info.size
 
     return metadata
 

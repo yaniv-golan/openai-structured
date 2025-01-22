@@ -271,3 +271,19 @@ class SecurityManager(SecurityManagerProtocol):
             return self.is_path_allowed(path_str)
         except (ValueError, OSError):
             return False
+
+    def resolve_path(self, path: str) -> Path:
+        """Resolve and validate a path.
+
+        This is an alias for validate_path() for backward compatibility.
+
+        Args:
+            path: Path to resolve and validate
+
+        Returns:
+            Path: Normalized path if valid
+
+        Raises:
+            PathSecurityError: If path is not allowed
+        """
+        return self.validate_path(path)
