@@ -48,6 +48,7 @@ import os
 from typing import Any, Dict, List, Optional, Type, Union
 
 import chardet
+import codecs
 
 from .errors import (
     DirectoryNotFoundError,
@@ -356,56 +357,49 @@ def collect_files(
 
 
 def detect_encoding(file_path: str) -> str:
-    """Detect file encoding using chardet, with a fallback to UTF-8.
-
-    This function uses a multi-step approach to detect file encoding:
-    1. Check for BOM markers to identify UTF encodings
-    2. Try chardet for content-based detection
-    3. Attempt UTF-8 decode as a validation step
-    4. Fall back to UTF-8 if all else fails
+    """Detect the encoding of a file.
 
     Args:
-        file_path: Path to file to check
+        file_path: Path to the file to check
 
     Returns:
-        Detected encoding or 'utf-8' if detection fails. Note that ASCII detection
-        is automatically converted to UTF-8 since UTF-8 is a superset of ASCII.
+        str: The detected encoding (e.g. 'utf-8', 'utf-16', etc.)
 
     Raises:
-        OSError: If file cannot be read or accessed
-        ValueError: If file path is invalid
+        OSError: If there is an error reading the file
+        ValueError: If the encoding cannot be detected
     """
+    logger = logging.getLogger(__name__)
     logger.debug("Detecting encoding for file: %s", file_path)
 
     try:
-        # Read a sample of the file
         with open(file_path, "rb") as f:
-            # First check for BOM markers (4 bytes)
+            # Check for BOM markers first
             raw_data = f.read(4)
-            if not raw_data:  # Empty file
-                logger.debug("Empty file detected, using UTF-8")
+            if not raw_data:
+                logger.debug("Empty file")
                 return "utf-8"
 
-            # Check for BOM markers
-            if raw_data.startswith(b"\xef\xbb\xbf"):
+            # Check for common BOMs
+            if raw_data.startswith(codecs.BOM_UTF8):
                 logger.debug("UTF-8 BOM detected")
-                return "utf-8-sig"
-            elif raw_data.startswith(b"\xff\xfe") or raw_data.startswith(
-                b"\xfe\xff"
-            ):
-                logger.debug("UTF-16 BOM detected")
-                return "utf-16"
-            elif raw_data.startswith(
-                b"\xff\xfe\x00\x00"
-            ) or raw_data.startswith(b"\x00\x00\xfe\xff"):
-                logger.debug("UTF-32 BOM detected")
-                return "utf-32"
+                return "utf-8"
+            elif raw_data.startswith(codecs.BOM_UTF16_LE):
+                logger.debug("UTF-16 LE BOM detected")
+                return "utf-16-le"
+            elif raw_data.startswith(codecs.BOM_UTF16_BE):
+                logger.debug("UTF-16 BE BOM detected")
+                return "utf-16-be"
+            elif raw_data.startswith(codecs.BOM_UTF32_LE):
+                logger.debug("UTF-32 LE BOM detected")
+                return "utf-32-le"
+            elif raw_data.startswith(codecs.BOM_UTF32_BE):
+                logger.debug("UTF-32 BE BOM detected")
+                return "utf-32-be"
 
             # Read more data for chardet (up to 1MB)
             f.seek(0)
-            raw_data = f.read(
-                1024 * 1024
-            )  # Read up to 1MB for better detection
+            raw_data = f.read(1024 * 1024)  # Read up to 1MB for better detection
 
             # Try chardet detection
             result = chardet.detect(raw_data)
@@ -453,17 +447,16 @@ def detect_encoding(file_path: str) -> str:
             # Low confidence or no detection - try UTF-8
             try:
                 raw_data.decode("utf-8")
-                logger.debug(
-                    "No confident detection, but UTF-8 decode successful"
-                )
+                logger.debug("No confident detection, but UTF-8 decode successful")
                 return "utf-8"
             except UnicodeDecodeError:
                 if result["encoding"]:
+                    detected_encoding = result["encoding"].lower()
                     logger.debug(
                         "Falling back to detected encoding with low confidence: %s",
-                        result["encoding"].lower(),
+                        detected_encoding,
                     )
-                    return result["encoding"].lower()
+                    return detected_encoding
 
                 logger.warning(
                     "Could not confidently detect encoding for %s, defaulting to UTF-8",
@@ -471,15 +464,16 @@ def detect_encoding(file_path: str) -> str:
                 )
                 return "utf-8"
 
-    except OSError:
-        logger.error("Error reading file %s", file_path)
+    except OSError as e:
+        logger.error("Error reading file %s: %s", file_path, e)
         raise
-    except Exception:
+    except Exception as e:
         logger.error(
-            "Unexpected error detecting encoding for %s",
+            "Unexpected error detecting encoding for %s: %s",
             file_path,
+            e,
         )
-        raise ValueError("Failed to detect encoding")
+        raise ValueError(f"Failed to detect encoding: {e}")
 
 
 def read_allowed_dirs_from_file(filepath: str) -> List[str]:

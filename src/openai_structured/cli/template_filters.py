@@ -540,15 +540,15 @@ def format_code(
     lang: str = "python",
     output_format: str = "terminal",
 ) -> str:
-    """Format and syntax highlight code.
+    """Format code with syntax highlighting.
 
     Args:
-        text: Code text to format
-        lang: Programming language for syntax highlighting
-        output_format: Output format ('terminal', 'html', or 'plain')
+        text: The code text to format
+        lang: The language of the code
+        output_format: The output format (terminal, html, etc)
 
     Returns:
-        Formatted code string
+        str: Formatted code string
 
     Raises:
         ValueError: If output_format is not one of 'terminal', 'html', or 'plain'
@@ -565,26 +565,24 @@ def format_code(
     # Get lexer
     try:
         lexer = get_lexer_by_name(lang)
-    except Exception as e:
-        logger.debug(f"Using generic lexer for language '{lang}': {e}")
+    except ClassNotFound:
+        logger.warning(f"No lexer found for language {lang}")
         lexer = TextLexer()
 
-    # Get formatter
-    formatter: Union[
-        HtmlFormatter[str], TerminalFormatter[str], NullFormatter[str]
-    ]
+    # Get formatter based on output format
     if output_format == "html":
-        formatter = HtmlFormatter[str]()
+        formatter = HtmlFormatter()
     elif output_format == "terminal":
-        formatter = TerminalFormatter[str]()
+        formatter = TerminalFormatter()
     else:
-        formatter = NullFormatter[str]()
+        formatter = NullFormatter()
 
     # Format code with error handling
     try:
         formatted = pygments.highlight(text, lexer, formatter)
+        if isinstance(formatted, str):
+            return formatted
+        return str(formatted)
     except Exception as e:
         logger.error(f"Failed to format code: {e}")
         return text
-
-    return formatted
