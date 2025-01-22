@@ -1195,7 +1195,7 @@ async def _main() -> ExitCode:
         line_statement_prefix="#",
         line_comment_prefix="##",
         undefined=jinja2.StrictUndefined,
-        extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
+        extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols", "openai_structured.cli.template_extensions.CommentExtension"],
     )
 
     # Load and validate task template

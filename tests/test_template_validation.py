@@ -15,6 +15,7 @@ from openai_structured.cli.template_validation import (
     SafeUndefined,
     validate_template_placeholders,
 )
+from openai_structured.cli.template_rendering import render_template
 
 
 @pytest.fixture
@@ -233,3 +234,61 @@ def test_validate_template_placeholders_invalid_json() -> None:
     with pytest.raises(ValueError) as exc:
         validate_template_placeholders(template, {})
     assert "undefined variable" in str(exc.value)
+
+
+def test_comment_block_variables_ignored():
+    """Test that variables inside comment blocks are ignored during validation and rendering."""
+    # Template with variables inside a comment block
+    template = """
+    {% comment %}
+    This template uses these variables:
+    - {{ undefined_var }}
+    - {{ another_missing_var.attribute }}
+    {% endcomment %}
+    
+    Actual content: {{ real_var }}
+    """
+
+    # Context only has the variables used outside comments
+    context = {
+        'real_var': 'Hello World'
+    }
+
+    # Should not raise any validation errors for undefined variables in comments
+    validate_template_placeholders(template, context)
+
+    # Should render without errors, stripping the comment
+    result = render_template(template, context)
+    
+    # Check that the comment is removed and only real content remains
+    assert 'undefined_var' not in result
+    assert 'another_missing_var' not in result
+    assert 'Actual content: Hello World' in result.strip()
+
+
+def test_comment_block_with_real_undefined_vars():
+    """Test that we catch undefined variables outside comments while ignoring those inside comments."""
+    # Template with variables both inside comments and outside
+    template = """
+    {% comment %}
+    This template uses these variables:
+    - {{ commented_undefined_var }}
+    - {{ another_commented_var.attribute }}
+    {% endcomment %}
+    
+    Real content with {{ real_var }} and {{ undefined_real_var }}
+    """
+
+    # Context only has some of the real variables
+    context = {
+        'real_var': 'Hello World'
+    }
+
+    # Should raise validation error only for undefined_real_var
+    with pytest.raises(ValueError) as exc:
+        validate_template_placeholders(template, context)
+    
+    # Error should mention the real undefined variable but not the commented ones
+    assert 'undefined_real_var' in str(exc.value)
+    assert 'commented_undefined_var' not in str(exc.value)
+    assert 'another_commented_var' not in str(exc.value)

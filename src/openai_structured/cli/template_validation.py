@@ -67,6 +67,7 @@ from jinja2 import Environment, meta
 from jinja2.nodes import For, Name, Node
 
 from . import template_filters
+from .template_extensions import CommentExtension
 from .template_schema import (
     DictProxy,
     FileInfoProxy,
@@ -167,7 +168,7 @@ def validate_template_placeholders(
         # 1) Create Jinja2 environment with meta extension and safe undefined
         if env is None:
             env = jinja2.Environment(
-                extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
+                extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols", CommentExtension],
                 undefined=SafeUndefined,
             )
 

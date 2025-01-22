@@ -64,6 +64,7 @@ from jinja2 import Environment
 
 from . import template_filters
 from .file_utils import FileInfo
+from .template_extensions import CommentExtension
 from .template_schema import DotDict, StdinProxy
 
 __all__ = ["render_template", "DotDict", "create_jinja_env"]
@@ -87,7 +88,11 @@ TemplateContextValue = Union[
 def create_jinja_env(env: Optional[Environment] = None) -> Environment:
     """Create and configure a Jinja2 environment with custom filters and globals."""
     if env is None:
-        env = Environment(undefined=jinja2.StrictUndefined, autoescape=True)
+        env = Environment(
+            undefined=jinja2.StrictUndefined,
+            autoescape=True,
+            extensions=['jinja2.ext.do', 'jinja2.ext.loopcontrols', CommentExtension]
+        )
 
     # Add template filters
     env.filters.update(
