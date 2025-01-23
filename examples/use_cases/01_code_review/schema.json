@@ -1,0 +1,82 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": [
+        "reviews",
+        "overall_summary"
+    ],
+    "properties": {
+        "reviews": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "file",
+                    "issues",
+                    "summary"
+                ],
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "description": "Path to the reviewed file"
+                    },
+                    "issues": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "severity",
+                                "category",
+                                "description",
+                                "recommendation"
+                            ],
+                            "properties": {
+                                "severity": {
+                                    "type": "string",
+                                    "enum": [
+                                        "critical",
+                                        "major",
+                                        "minor",
+                                        "suggestion"
+                                    ],
+                                    "description": "Severity level of the issue"
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "enum": [
+                                        "security",
+                                        "performance",
+                                        "style",
+                                        "documentation"
+                                    ],
+                                    "description": "Category of the issue"
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "Detailed description of the issue"
+                                },
+                                "line_number": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "description": "Line number where the issue was found (optional)"
+                                },
+                                "recommendation": {
+                                    "type": "string",
+                                    "description": "Suggested fix or improvement"
+                                }
+                            }
+                        }
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Overall assessment of the file"
+                    }
+                }
+            }
+        },
+        "overall_summary": {
+            "type": "string",
+            "description": "Summary of all reviewed files"
+        }
+    }
+}

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Jinja2 comment block handling
+  - Added CommentExtension to ignore variables in comment blocks
+  - Improved template documentation capabilities
+  - Enhanced validation to skip commented variables
+  - Proper error handling for unclosed comment blocks
+
 ## [0.8.0] - 2025-01-22
 
 ### Added

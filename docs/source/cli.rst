@@ -448,6 +448,21 @@ Utility Functions
     
         {{ text | escape_special }}
 
+HTML Escaping
+^^^^^^^^^^
+
+By default, HTML escaping is disabled in templates. However, you can explicitly escape HTML when needed:
+
+- ``escape`` or ``e``: Escape HTML special characters
+    .. code-block:: jinja
+    
+        {{ user_input | escape }}  # Full name
+        {{ user_input | e }}       # Short alias
+
+    This converts characters like ``<``, ``>``, ``&``, ``"``, and ``'`` to their HTML entities
+    (e.g., ``&lt;``, ``&gt;``, ``&amp;``, ``&quot;``, ``&#39;``).
+    Use this when you need to safely display untrusted user input in HTML context.
+
 Examples
 -------
 
@@ -628,4 +643,3 @@ Examples
     # Mixed usage
     ostruct --task "Single: {{ doc.content }}, Multiple: {{ files.content }}" \
         --file doc=input.txt --files files=*.txt
-
