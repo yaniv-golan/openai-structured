@@ -74,6 +74,7 @@ from .template_schema import (
     ValidationProxy,
     create_validation_context,
 )
+from .template_env import create_jinja_env
 
 T = TypeVar("T")
 FilterFunc = Callable[..., Any]
@@ -167,10 +168,7 @@ def validate_template_placeholders(
     try:
         # 1) Create Jinja2 environment with meta extension and safe undefined
         if env is None:
-            env = jinja2.Environment(
-                extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols", CommentExtension],
-                undefined=SafeUndefined,
-            )
+            env = create_jinja_env(validation_mode=True)
 
         # Register custom filters with None-safe wrappers
         env.filters.update(

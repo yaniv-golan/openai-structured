@@ -66,6 +66,7 @@ from .file_utils import TemplateValue, collect_files
 from .path_utils import validate_path_mapping
 from .progress import ProgressContext
 from .security import SecurityManager
+from .template_env import create_jinja_env
 from .template_utils import (
     SystemPromptError,
     TemplateMetadataError,
@@ -1186,16 +1187,8 @@ async def _main() -> ExitCode:
         return ExitCode.DATA_ERROR
 
     # Create Jinja2 environment
-    env = jinja2.Environment(
+    env = create_jinja_env(
         loader=jinja2.FileSystemLoader("."),
-        autoescape=True,
-        trim_blocks=True,
-        lstrip_blocks=True,
-        keep_trailing_newline=True,
-        line_statement_prefix="#",
-        line_comment_prefix="##",
-        undefined=jinja2.StrictUndefined,
-        extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols", "openai_structured.cli.template_extensions.CommentExtension"],
     )
 
     # Load and validate task template

@@ -37,7 +37,7 @@ def test_create_jinja_env() -> None:
     # Test that environment is properly configured
     assert isinstance(env, Environment)
     assert env.undefined == StrictUndefined
-    assert env.autoescape
+    assert not env.autoescape  # HTML escaping should be disabled by default
 
     # Test that custom filters are registered
     assert "format_code" in env.filters

@@ -7,12 +7,14 @@ import re
 import textwrap
 from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence, TypeVar, Union
+import datetime
 
 import tiktoken
 from pygments import highlight
 from pygments.formatters import HtmlFormatter, NullFormatter, TerminalFormatter
 from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer
 from pygments.util import ClassNotFound
+from jinja2 import Environment
 
 logger = logging.getLogger(__name__)
 
@@ -582,3 +584,70 @@ def format_code(
     except Exception as e:
         logger.error(f"Error formatting code: {e}")
         return text
+
+
+def register_template_filters(env: Environment) -> None:
+    """Register all template filters with the Jinja2 environment.
+    
+    Args:
+        env: The Jinja2 environment to register filters with.
+    """
+    filters = {
+        # Text processing
+        "extract_keywords": extract_keywords,
+        "word_count": word_count,
+        "char_count": char_count,
+        "to_json": to_json,
+        "from_json": from_json,
+        "remove_comments": remove_comments,
+        "wrap": wrap_text,
+        "indent": indent_text,
+        "dedent": dedent_text,
+        "normalize": normalize_text,
+        "strip_markdown": strip_markdown,
+        
+        # Data processing
+        "sort_by": sort_by,
+        "group_by": group_by,
+        "filter_by": filter_by,
+        "extract_field": extract_field,
+        "unique": unique,
+        "frequency": frequency,
+        "aggregate": aggregate,
+        
+        # Table formatting
+        "table": format_table,
+        "align_table": align_table,
+        "dict_to_table": dict_to_table,
+        "list_to_table": list_to_table,
+        
+        # Code processing
+        "format_code": format_code,
+        "strip_comments": strip_comments,
+        
+        # Special character handling
+        "escape_special": escape_special,
+        
+        # Table utilities
+        "auto_table": auto_table,
+    }
+    
+    env.filters.update(filters)
+
+    # Add template globals
+    env.globals.update({
+        "estimate_tokens": estimate_tokens,
+        "format_json": format_json,
+        "now": datetime.datetime.now,
+        "debug": debug_print,
+        "type_of": type_of,
+        "dir_of": dir_of,
+        "len_of": len_of,
+        "validate_json": validate_json,
+        "format_error": format_error,
+        # Data analysis globals
+        "summarize": summarize,
+        "pivot_table": pivot_table,
+        # Table utilities
+        "auto_table": auto_table,
+    })
