@@ -8,10 +8,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
+from pydantic import BaseModel
 
 from openai_structured.cli.cli import ExitCode, _main, create_template_context
 from openai_structured.cli.file_list import FileInfoList
 from openai_structured.cli.security import SecurityManager
+
+
+class MockResponse(BaseModel):
+    """Mock response model."""
+    result: str
 
 
 # Core CLI Tests
@@ -38,8 +44,8 @@ class TestCLICore:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Dict[str, str]]:
-            yield {"result": "test response"}
+        ) -> AsyncIterator[MockResponse]:
+            yield MockResponse(result="test response")
 
         with (
             patch(
@@ -140,8 +146,8 @@ class TestCLIVariables:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Dict[str, str]]:
-            yield {"result": "test value processed"}
+        ) -> AsyncIterator[MockResponse]:
+            yield MockResponse(result="test value processed")
 
         with (
             patch(
@@ -190,8 +196,8 @@ class TestCLIVariables:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Dict[str, str]]:
-            yield {"result": "config value processed"}
+        ) -> AsyncIterator[MockResponse]:
+            yield MockResponse(result="config value processed")
 
         with (
             patch(
@@ -333,8 +339,8 @@ class TestCLIIO:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Dict[str, str]]:
-            yield {"result": "file content processed"}
+        ) -> AsyncIterator[MockResponse]:
+            yield MockResponse(result="file content processed")
 
         with (
             patch(
@@ -383,8 +389,8 @@ class TestCLIIO:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Dict[str, str]]:
-            yield {"result": "stdin content processed"}
+        ) -> AsyncIterator[MockResponse]:
+            yield MockResponse(result="stdin content processed")
 
         with (
             patch(
@@ -436,8 +442,8 @@ class TestCLIIO:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Dict[str, str]]:
-            yield {"result": "directory content processed"}
+        ) -> AsyncIterator[MockResponse]:
+            yield MockResponse(result="directory content processed")
 
         with (
             patch(
@@ -500,8 +506,8 @@ Template with {{ var2 }} and {{ input[0].content }}""",
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Dict[str, str]]:
-            yield {"result": "template and variables processed"}
+        ) -> AsyncIterator[MockResponse]:
+            yield MockResponse(result="template and variables processed")
 
         with (
             patch(
@@ -552,14 +558,19 @@ Template with {{ var2 }} and {{ input[0].content }}""",
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
-        fs.create_file("task.txt", contents="Analyze: {{ input }}")
+        fs.create_file("task.txt", contents="Analyze: {{ input.content }}")
         fs.create_file("input.txt", contents="test content")
+
+        # Create response model matching schema
+        class AnalysisResponse(BaseModel):
+            analysis: str
+            score: float
 
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Dict[str, Union[str, float]]]:
-            yield {"analysis": "Test analysis", "score": 0.95}
+        ) -> AsyncIterator[AnalysisResponse]:
+            yield AnalysisResponse(analysis="Test analysis", score=0.95)
 
         with (
             patch(

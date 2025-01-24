@@ -20,6 +20,8 @@ class ProgressContext:
         output_file: Optional[str] = None,
     ):
         self._output_file = output_file
+        self._level = level
+        self.enabled = level != "none"
 
     def __enter__(self) -> "ProgressContext":
         return self
