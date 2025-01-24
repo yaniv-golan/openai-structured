@@ -1,15 +1,11 @@
 """Integration tests for the openai_structured client module."""
 
-# Standard library imports
 import os
 from typing import Any
 
-# Third-party imports
 import pytest
 from openai import AsyncOpenAI, OpenAI
-from pydantic import BaseModel, Field
 
-# Local imports
 from openai_structured import (
     StreamConfig,
     async_openai_structured_call,
@@ -17,7 +13,7 @@ from openai_structured import (
     openai_structured_call,
     openai_structured_stream,
 )
-from tests.support.models import SentimentMessage, BasicMessage
+from tests.support.models import SentimentMessage
 
 
 class LogCapture:

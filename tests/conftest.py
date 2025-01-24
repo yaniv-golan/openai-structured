@@ -1,15 +1,11 @@
 """Test configuration and fixtures."""
 
-# Standard library imports
 import json
-import warnings
-from typing import Any, Callable, Dict, Generator
+from typing import Dict, Generator
 
-# Third-party imports
 import pytest
 from dotenv import load_dotenv
 from openai import OpenAI
-from pydantic import BaseModel
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 pytest_plugins = ["pytest_asyncio"]

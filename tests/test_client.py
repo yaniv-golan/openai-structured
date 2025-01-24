@@ -6,14 +6,13 @@ from typing import AsyncGenerator
 import pytest
 import pytest_asyncio
 from openai import AsyncOpenAI
-from pydantic import BaseModel
 
 from openai_structured.client import (
     InvalidResponseFormatError,
     async_openai_structured_call,
     async_openai_structured_stream,
 )
-from tests.support.models import SimpleMessage, BasicMessage
+from tests.support.models import SimpleMessage
 
 
 @pytest_asyncio.fixture  # type: ignore[misc]

@@ -1,27 +1,21 @@
-"""Tests for template rendering functionality."""
+"""Test template rendering functionality."""
 
 import logging
 import os
 import tempfile
-from typing import Any, Dict, Generator, List, TypedDict, Union, cast
+from typing import Any, Dict
 
 import pytest
 from jinja2 import Environment, StrictUndefined
 from pyfakefs.fake_filesystem import FakeFilesystem
-from pyfakefs.fake_filesystem_unittest import Patcher
 
 from openai_structured.cli.errors import TemplateValidationError
 from openai_structured.cli.file_utils import FileInfo
 from openai_structured.cli.security import SecurityManager
-from openai_structured.cli.template_rendering import (
-    DotDict,
-    create_jinja_env,
-    render_template,
-)
-from openai_structured.cli.template_utils import (
-    read_file,
-    validate_template_placeholders,
-)
+from openai_structured.cli.template_env import create_jinja_env
+from openai_structured.cli.template_io import read_file
+from openai_structured.cli.template_rendering import render_template
+from openai_structured.cli.template_schema import DotDict
 from openai_structured.cli.template_validation import (
     validate_template_placeholders,
 )

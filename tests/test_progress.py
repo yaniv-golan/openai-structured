@@ -1,9 +1,8 @@
-"""Tests for output handling utilities."""
+"""Test progress reporting functionality."""
 
-import io
+from io import StringIO
 from unittest.mock import patch
 
-import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.progress import ProgressContext
@@ -11,7 +10,7 @@ from openai_structured.cli.progress import ProgressContext
 
 def test_stdout_output() -> None:
     """Test direct output to stdout."""
-    with patch("sys.stdout", new=io.StringIO()) as fake_out:
+    with patch("sys.stdout", new=StringIO()) as fake_out:
         with ProgressContext() as progress:
             progress.print_output("test message")
         assert fake_out.getvalue() == "test message\n"

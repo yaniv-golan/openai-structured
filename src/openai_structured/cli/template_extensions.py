@@ -4,12 +4,8 @@ This module provides extensions that modify Jinja2's default behavior:
 - CommentExtension: Ignores variables inside comment blocks during validation and rendering
 """
 
-import logging
-from typing import Any, List, Optional
-
 from jinja2 import nodes
 from jinja2.ext import Extension
-from jinja2.lexer import Token, TokenStream
 from jinja2.parser import Parser
 
 
@@ -36,8 +32,6 @@ class CommentExtension(Extension):  # type: ignore[misc]
         Raises:
             TemplateSyntaxError: If the comment block is not properly closed
         """
-        logger = logging.getLogger(__name__)
-
         # Get the line number for error reporting
         lineno = parser.stream.current.lineno
 

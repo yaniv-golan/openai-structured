@@ -1,8 +1,7 @@
 """Progress reporting utilities for CLI operations."""
 
-import sys
 from contextlib import contextmanager
-from typing import Any, Iterator, Optional, Type, Union
+from typing import Any, Iterator, Optional, Type
 
 
 class ProgressContext:

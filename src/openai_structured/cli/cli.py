@@ -11,25 +11,25 @@ from enum import Enum, IntEnum
 if sys.version_info >= (3, 11):
     from enum import StrEnum
 
-import re
 from datetime import date, datetime, time
 from importlib.metadata import version
 from pathlib import Path
-from typing import Annotated, Any, Callable, Dict, List, Literal, Optional
-from typing import Pattern as PatternType
 from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
     Set,
     Tuple,
     Type,
     TypeVar,
     Union,
     cast,
-    get_args,
     get_origin,
     overload,
 )
 
-import annotated_types
 import jinja2
 import tiktoken
 import yaml
@@ -47,15 +47,12 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
-    TypeAdapter,
     ValidationError,
     create_model,
 )
 from pydantic.fields import FieldInfo as FieldInfoType
 from pydantic.functional_validators import BeforeValidator
-from pydantic.json_schema import JsonSchemaMode
 from pydantic.types import constr
-from pydantic_core.core_schema import ValidationInfo
 from typing_extensions import TypeAlias
 
 from ..client import async_openai_structured_stream, supports_structured_output
@@ -63,7 +60,6 @@ from ..errors import (
     APIResponseError,
     EmptyResponseError,
     InvalidResponseFormatError,
-    JSONParseError,
     ModelNotSupportedError,
     ModelVersionError,
     OpenAIClientError,
@@ -93,13 +89,7 @@ from .path_utils import validate_path_mapping
 from .progress import ProgressContext
 from .security import SecurityManager
 from .template_env import create_jinja_env
-from .template_utils import (
-    SystemPromptError,
-    TemplateMetadataError,
-    render_template,
-    validate_json_schema,
-    validate_template_placeholders,
-)
+from .template_utils import SystemPromptError, render_template
 
 # Set up logging
 logger = logging.getLogger("ostruct")

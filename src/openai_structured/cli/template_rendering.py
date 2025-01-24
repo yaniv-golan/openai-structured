@@ -54,7 +54,6 @@ Notes:
     - Provides detailed error messages for rendering failures
 """
 
-import datetime
 import logging
 import os
 from typing import Any, Dict, List, Optional, Union
@@ -62,11 +61,9 @@ from typing import Any, Dict, List, Optional, Union
 import jinja2
 from jinja2 import Environment
 
-from . import template_filters
 from .errors import TemplateValidationError
 from .file_utils import FileInfo
 from .template_env import create_jinja_env
-from .template_extensions import CommentExtension
 from .template_schema import DotDict, StdinProxy
 
 __all__ = [
@@ -78,17 +75,17 @@ __all__ = [
 
 logger = logging.getLogger("ostruct")
 
-# Type alias for values that can appear in the template context
+# Type alias for template context values
 TemplateContextValue = Union[
-    DotDict,
-    StdinProxy,
-    FileInfo,
-    List[Union[FileInfo, Any]],  # For file lists
     str,
     int,
     float,
     bool,
-    None,
+    Dict[str, Any],
+    List[Any],
+    FileInfo,
+    DotDict,
+    StdinProxy,
 ]
 
 
@@ -323,3 +320,28 @@ def render_template(
         except ValueError as e:
             # Re-raise with original context
             raise e
+
+
+def render_template_file(
+    template_path: str,
+    context: Dict[str, Any],
+    jinja_env: Optional[Environment] = None,
+    progress_enabled: bool = True,
+) -> str:
+    """Render a template file with the given context.
+
+    Args:
+        template_path: Path to the template file
+        context: Dictionary containing template variables
+        jinja_env: Optional Jinja2 environment to use
+        progress_enabled: Whether to show progress indicators
+
+    Returns:
+        The rendered template string
+
+    Raises:
+        TemplateValidationError: If template rendering fails
+    """
+    with open(template_path, "r", encoding="utf-8") as f:
+        template_str = f.read()
+    return render_template(template_str, context, jinja_env, progress_enabled)

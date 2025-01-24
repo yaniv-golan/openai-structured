@@ -1,9 +1,9 @@
-"""Tests for the CLI module."""
+"""Test CLI functionality."""
 
 import argparse
 import json
 from io import StringIO
-from typing import Any, AsyncIterator, Dict, Union
+from typing import Any, AsyncIterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,10 +13,11 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 from openai_structured.cli.cli import ExitCode, _main, create_template_context
 from openai_structured.cli.file_list import FileInfoList
 from openai_structured.cli.security import SecurityManager
-from tests.support.models import SimpleMessage, BasicMessage, ResponseMessage
-
+from tests.support.models import ResponseMessage
 
 # Core CLI Tests
+
+
 class TestCLICore:
     """Test core CLI functionality."""
 
@@ -39,7 +40,9 @@ class TestCLICore:
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
         ) -> AsyncIterator[ResponseMessage]:
-            yield ResponseMessage(message="test response", sentiment="positive")
+            yield ResponseMessage(
+                message="test response", sentiment="positive"
+            )
 
         with (
             patch(

@@ -63,13 +63,12 @@ from typing import (
 )
 
 import jinja2
-from jinja2 import Environment, meta
+from jinja2 import meta
 from jinja2.nodes import For, Name, Node
 
 from . import template_filters
 from .errors import TemplateValidationError
 from .template_env import create_jinja_env
-from .template_extensions import CommentExtension
 from .template_schema import (
     DictProxy,
     FileInfoProxy,
@@ -356,3 +355,21 @@ def validate_template_placeholders(
     except Exception as e:
         logger.error("Unexpected error during template validation: %s", str(e))
         raise
+
+
+def validate_template_file(
+    template_path: str,
+    template_context: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Validate a template file with the given context.
+
+    Args:
+        template_path: Path to the template file
+        template_context: Optional dictionary containing template variables
+
+    Raises:
+        TemplateValidationError: If template validation fails
+    """
+    with open(template_path, "r", encoding="utf-8") as f:
+        template_str = f.read()
+    validate_template_placeholders(template_str, template_context)
