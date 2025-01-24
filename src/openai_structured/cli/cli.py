@@ -1597,6 +1597,16 @@ async def _main() -> ExitCode:
 
 def main() -> None:
     """CLI entry point that handles all errors."""
+    import warnings
+
+    warnings.warn(
+        "The CLI functionality in openai-structured will be moved to a separate package 'ostruct-cli' "
+        "in version 1.0.0. Please install 'ostruct-cli' to continue using the CLI features. "
+        "See https://github.com/yaniv-golan/ostruct for more information.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     try:
         logger.debug("[main] Starting main execution")
         exit_code = asyncio.run(_main())

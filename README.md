@@ -56,6 +56,9 @@ poetry shell
 
 ## Command-Line Interface
 
+> **⚠️ Deprecation Notice:** The CLI functionality will be moved to a separate package `ostruct-cli` in version 1.0.0.
+> Please install `ostruct-cli` to continue using the CLI features. See <https://github.com/yaniv-golan/ostruct> for more information.
+
 The CLI provides a powerful way to make structured API calls from the command line:
 
 ```bash

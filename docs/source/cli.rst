@@ -1,5 +1,10 @@
 .. Copyright (c) 2025 Yaniv Golan. All rights reserved.
 
+.. warning::
+   **Deprecation Notice:** The CLI functionality will be moved to a separate package ``ostruct-cli`` in version 1.0.0.
+   Please install ``ostruct-cli`` to continue using the CLI features.
+   See https://github.com/yaniv-golan/ostruct for more information.
+
 Command Line Interface
 ====================
 

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2025-01-25
+
+### Added
+
+- Added deprecation warning for CLI functionality, which will be moved to `ostruct-cli` package in version 1.0.0
+- Added deprecation notices in CLI documentation (README.md, cli.rst, cli_quickstart.rst)
+
+### Changed
+
+- Updated documentation to point users to the future `ostruct` repository for CLI features
+
 ## [0.9.1] - 2025-01-25
 
 ### Changed
