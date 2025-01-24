@@ -38,7 +38,8 @@ jobs:
         poetry run mypy --follow-imports=skip src/ tests/
     - name: Run tests with pytest
       run: |
-        poetry run pytest -m "not live"
+        # Run all tests except live tests, with verbose output and logging
+        poetry run pytest -m "not live" -vv -s --log-cli-level=DEBUG
     - name: Build documentation
       run: |
         cd docs

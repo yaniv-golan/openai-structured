@@ -1,7 +1,9 @@
 """Tests for template I/O operations."""
 
+import logging
 import os
 import tempfile
+import time
 from typing import Dict, List, Union
 
 import pytest
@@ -14,6 +16,20 @@ from openai_structured.cli.template_io import (
     extract_template_metadata,
     read_file,
 )
+
+# Set up logging for tests
+logger = logging.getLogger("openai_structured.cli")
+logger.setLevel(logging.DEBUG)
+
+# Add console handler if not already present
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 
 @pytest.fixture  # type: ignore[misc]
@@ -88,29 +104,77 @@ def test_read_file_not_found(security_manager: SecurityManager) -> None:
 
 def test_read_file_caching(security_manager: SecurityManager) -> None:
     """Test file content caching."""
+    logger.info("Starting file caching test")
+    
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write("test content")
         f.flush()
+        os.fsync(f.fileno())  # Force flush to disk
         file_path = f.name
+        logger.debug("Created test file: %s", file_path)
 
     try:
         # First read should cache the file
+        initial_stats = os.stat(file_path)
+        logger.debug(
+            "Initial file stats: size=%d, mtime_ns=%d",
+            initial_stats.st_size, initial_stats.st_mtime_ns
+        )
+        
         file_info1 = read_file(file_path, security_manager=security_manager)
         initial_content = file_info1.content
+        logger.debug("First read complete: content=%r", initial_content)
 
         # Second read should use cached content
         file_info2 = read_file(file_path, security_manager=security_manager)
         assert file_info2.content == initial_content
+        logger.debug("Second read verified from cache")
 
         # Modify file
+        logger.debug("Modifying file content")
         with open(file_path, "w") as f:
             f.write("new content")
+            f.flush()
+            os.fsync(f.fileno())  # Force flush to disk
+        
+        # Wait until file stats actually change
+        max_retries = 20  # Increased for CI environments
+        for retry in range(max_retries):
+            current_stats = os.stat(file_path)
+            logger.debug(
+                "Retry %d/%d - Current stats: mtime_ns=%d, size=%d",
+                retry + 1, max_retries,
+                current_stats.st_mtime_ns, current_stats.st_size
+            )
+            
+            if (current_stats.st_mtime_ns != initial_stats.st_mtime_ns or 
+                current_stats.st_size != initial_stats.st_size):
+                logger.info(
+                    "File stats changed after %d retries: mtime_ns_diff=%d, size_diff=%d",
+                    retry + 1,
+                    current_stats.st_mtime_ns - initial_stats.st_mtime_ns,
+                    current_stats.st_size - initial_stats.st_size
+                )
+                break
+            time.sleep(0.1)
+            if retry == max_retries - 1:
+                raise RuntimeError(
+                    f"File stats did not update after {max_retries} retries. "
+                    f"Initial: mtime_ns={initial_stats.st_mtime_ns}, size={initial_stats.st_size}. "
+                    f"Current: mtime_ns={current_stats.st_mtime_ns}, size={current_stats.st_size}"
+                )
 
         # Third read should detect file change and update cache
+        logger.debug("Attempting third read after modification")
         file_info3 = read_file(file_path, security_manager=security_manager)
-        assert file_info3.content == "new content"
+        assert file_info3.content == "new content", \
+            f"File content not updated. Stats: initial_mtime_ns={initial_stats.st_mtime_ns}, " \
+            f"current_mtime_ns={current_stats.st_mtime_ns}, " \
+            f"size_diff={current_stats.st_size - initial_stats.st_size}"
+        logger.info("Cache test completed successfully")
     finally:
         os.unlink(file_path)
+        logger.debug("Test file cleaned up: %s", file_path)
 
 
 def test_extract_metadata(security_manager: SecurityManager) -> None:

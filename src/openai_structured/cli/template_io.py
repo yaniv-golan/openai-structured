@@ -96,8 +96,8 @@ def read_file(
     # Create security manager if not provided
     if security_manager is None:
         from .security import SecurityManager
-
         security_manager = SecurityManager()
+        logger.debug("Created default SecurityManager")
 
     # Create progress context
     with ProgressContext(
@@ -106,16 +106,34 @@ def read_file(
         try:
             # Get absolute path and check file exists
             abs_path = os.path.abspath(file_path)
-            logger.debug("Absolute path: %s", abs_path)
+            logger.debug("Reading file: path=%s, abs_path=%s", file_path, abs_path)
+            
             if not os.path.isfile(abs_path):
+                logger.error("File not found: %s", abs_path)
                 raise ValueError(f"File not found: {file_path}")
 
+            # Get file stats for cache validation
+            try:
+                stats = os.stat(abs_path)
+                logger.debug(
+                    "File stats: size=%d, mtime=%d, mtime_ns=%d, mode=%o",
+                    stats.st_size, stats.st_mtime, stats.st_mtime_ns, stats.st_mode
+                )
+            except OSError as e:
+                logger.error("Failed to get file stats: %s", e)
+                raise ValueError(f"Cannot read file stats: {e}")
+
+            mtime_ns = stats.st_mtime_ns
+            size = stats.st_size
+
             # Check if file is in cache and up to date
-            mtime = os.path.getmtime(abs_path)
-            cache_entry = _file_cache.get(abs_path, mtime)
+            cache_entry = _file_cache.get(abs_path, mtime_ns, size)
 
             if cache_entry is not None:
-                logger.debug("Cache hit for %s", abs_path)
+                logger.debug(
+                    "Using cached content for %s: encoding=%s, hash=%s",
+                    abs_path, cache_entry.encoding, cache_entry.hash_value
+                )
                 if progress.enabled:
                     progress.update(1)
                 # Create FileInfo and update from cache
@@ -130,18 +148,23 @@ def read_file(
                 return file_info
 
             # Create new FileInfo - content will be loaded immediately
+            logger.debug("Reading fresh content for %s", abs_path)
             file_info = FileInfo.from_path(
                 path=file_path, security_manager=security_manager
             )
 
             # Update cache with loaded content
-            logger.debug("Updating cache for %s", abs_path)
+            logger.debug(
+                "Caching new content: path=%s, size=%d, encoding=%s, hash=%s",
+                abs_path, size, file_info.encoding, file_info.hash
+            )
             _file_cache.put(
                 abs_path,
                 file_info.content,
                 file_info.encoding,
                 file_info.hash,
-                mtime,
+                mtime_ns,
+                size,
             )
 
             if progress.enabled:
@@ -150,7 +173,11 @@ def read_file(
             return file_info
 
         except Exception as e:
-            logger.error("Error reading file %s: %s", file_path, e)
+            logger.error(
+                "Error reading file %s: %s (%s)",
+                file_path, str(e), type(e).__name__,
+                exc_info=True
+            )
             raise
 
 
