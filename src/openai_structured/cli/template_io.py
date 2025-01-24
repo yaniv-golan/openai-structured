@@ -55,25 +55,19 @@ Notes:
 
 import logging
 import os
-import threading
 from typing import Any, Dict, Optional
 
 from jinja2 import Environment
 
+from .cache_manager import FileCache
 from .file_utils import FileInfo
 from .progress import ProgressContext
 from .security import SecurityManager
 
 logger = logging.getLogger(__name__)
 
-# Cache settings
-MAX_CACHE_SIZE = 50 * 1024 * 1024  # 50MB total cache size
-_cache_lock = threading.Lock()
-_file_mtimes: Dict[str, float] = {}
-_file_cache: Dict[str, str] = {}
-_file_encodings: Dict[str, str] = {}
-_file_hashes: Dict[str, str] = {}
-_cache_size: int = 0
+# Global cache instance
+_file_cache = FileCache()
 
 
 def read_file(
@@ -83,37 +77,33 @@ def read_file(
     progress_enabled: bool = True,
     chunk_size: int = 1024 * 1024,  # 1MB chunks
 ) -> FileInfo:
-    """Read a file and return its contents.
+    """Read file with caching and progress tracking.
 
     Args:
-        file_path: Path to the file to read
-        security_manager: Security manager for path validation. If None, creates one with current directory
-        encoding: Optional encoding to use for reading the file
-        progress_enabled: Whether to show progress updates
-        chunk_size: Size of chunks to read at a time
+        file_path: Path to file to read
+        security_manager: Optional security manager for path validation
+        encoding: Optional encoding to use for reading file
+        progress_enabled: Whether to show progress bar
+        chunk_size: Size of chunks to read in bytes
 
     Returns:
-        FileInfo: Object containing file content and metadata
+        FileInfo object with file metadata and content
 
     Raises:
-        ValueError: If file cannot be read or found
+        ValueError: If file not found or cannot be read
+        PathSecurityError: If path is not allowed
     """
-    logger = logging.getLogger(__name__)
-    logger.debug("\n=== read_file called ===")
-    logger.debug("Args: file_path=%s, encoding=%s", file_path, encoding)
-
     # Create security manager if not provided
     if security_manager is None:
-        security_manager = SecurityManager(base_dir=os.getcwd())
+        from .security import SecurityManager
 
+        security_manager = SecurityManager()
+
+    # Create progress context
     with ProgressContext(
-        description="Reading file",
-        level="basic" if progress_enabled else "none",
+        level="basic" if progress_enabled else "none"
     ) as progress:
         try:
-            if progress:
-                progress.update(1)  # Update progress for setup
-
             # Get absolute path and check file exists
             abs_path = os.path.abspath(file_path)
             logger.debug("Absolute path: %s", abs_path)
@@ -122,29 +112,22 @@ def read_file(
 
             # Check if file is in cache and up to date
             mtime = os.path.getmtime(abs_path)
-            with _cache_lock:
-                logger.debug(
-                    "Cache state - mtimes: %s, cache: %s",
-                    _file_mtimes,
-                    _file_cache,
+            cache_entry = _file_cache.get(abs_path, mtime)
+
+            if cache_entry is not None:
+                logger.debug("Cache hit for %s", abs_path)
+                if progress.enabled:
+                    progress.update(1)
+                # Create FileInfo and update from cache
+                file_info = FileInfo.from_path(
+                    path=file_path, security_manager=security_manager
                 )
-                if (
-                    abs_path in _file_mtimes
-                    and _file_mtimes[abs_path] == mtime
-                ):
-                    logger.debug("Cache hit for %s", abs_path)
-                    if progress:
-                        progress.update(1)  # Update progress for cache hit
-                    # Create FileInfo and update from cache
-                    file_info = FileInfo.from_path(
-                        path=file_path, security_manager=security_manager
-                    )
-                    file_info.update_cache(
-                        content=_file_cache[abs_path],
-                        encoding=_file_encodings.get(abs_path),
-                        hash_value=_file_hashes.get(abs_path),
-                    )
-                    return file_info
+                file_info.update_cache(
+                    content=cache_entry.content,
+                    encoding=cache_entry.encoding,
+                    hash_value=cache_entry.hash_value,
+                )
+                return file_info
 
             # Create new FileInfo - content will be loaded immediately
             file_info = FileInfo.from_path(
@@ -152,43 +135,23 @@ def read_file(
             )
 
             # Update cache with loaded content
-            with _cache_lock:
-                logger.debug("Updating cache for %s", abs_path)
-                _file_mtimes[abs_path] = mtime
-                _file_cache[abs_path] = file_info.content
-                if file_info.encoding is not None:
-                    _file_encodings[abs_path] = file_info.encoding
-                if file_info.hash is not None:
-                    _file_hashes[abs_path] = file_info.hash
+            logger.debug("Updating cache for %s", abs_path)
+            _file_cache.put(
+                abs_path,
+                file_info.content,
+                file_info.encoding,
+                file_info.hash,
+                mtime,
+            )
 
-                global _cache_size
-                _cache_size = sum(
-                    len(content) for content in _file_cache.values()
-                )
-                logger.debug("Cache updated - size: %d", _cache_size)
-
-                # Remove old entries if cache is too large
-                while _cache_size > MAX_CACHE_SIZE:
-                    oldest = min(_file_mtimes.items(), key=lambda x: x[1])
-                    old_path = oldest[0]
-                    if old_path in _file_cache:
-                        _cache_size -= len(_file_cache[old_path])
-                        del _file_cache[old_path]
-                        del _file_encodings[old_path]
-                        del _file_hashes[old_path]
-                    del _file_mtimes[old_path]
-                    logger.debug("Removed old cache entry: %s", old_path)
-
-            if progress:
-                progress.update(1)  # Update progress for successful read
+            if progress.enabled:
+                progress.update(1)
 
             return file_info
 
         except Exception as e:
-            logger.error("Error reading file: %s", str(e))
-            if isinstance(e, ValueError):
-                raise
-            raise ValueError(f"Failed to read file: {str(e)}")
+            logger.error("Error reading file %s: %s", file_path, e)
+            raise
 
 
 def extract_metadata(file_info: FileInfo) -> Dict[str, Any]:
