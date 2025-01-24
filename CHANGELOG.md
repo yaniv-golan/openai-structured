@@ -5,15 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2025-01-24
 
 ### Added
 
-- Jinja2 comment block handling
-  - Added CommentExtension to ignore variables in comment blocks
-  - Improved template documentation capabilities
-  - Enhanced validation to skip commented variables
-  - Proper error handling for unclosed comment blocks
+- New Code Review Use Case Example
+  - Added complete code review automation example
+  - Includes security, style, and performance analysis
+  - CI/CD integration examples for GitHub Actions and GitLab
+  - Structured output schema for review results
+- Enhanced Template Engine
+  - Added new `CommentExtension` for ignoring variables in comment blocks
+  - Introduced dedicated template environment configuration
+  - Added validation mode for template processing
+  - Enhanced template filters and utilities
+- Security Improvements
+  - Added `--allowed-dir` option for explicit directory access control
+  - Support for loading allowed directories from file with `@file` syntax
+  - Multiple allowed directories support
+  - Enhanced path traversal prevention
+- New Dependencies
+  - Added `ijson` ^3.2.3 for efficient JSON streaming
+  - Added `chardet` ^5.0.0 for character encoding detection
+  - Added `typing-extensions` ^4.9.0 for enhanced type support
+  - Added example dependencies: `tenacity` and `asyncio-throttle`
+
+### Changed
+
+- Template Processing Architecture
+  - Split template functionality into specialized modules:
+    - `template_env.py` for environment configuration
+    - `template_extensions.py` for custom extensions
+    - `template_validation.py` for validation logic
+  - Improved template error handling with dedicated exceptions
+  - Enhanced template validation with SafeUndefined support
+- Code Organization
+  - Moved test models to dedicated support package
+  - Improved modularity of CLI components
+  - Enhanced test organization and coverage
+- Documentation
+  - Updated CLI documentation with new security features
+  - Added comprehensive use case examples
+  - Improved integration guides
+
+### Fixed
+
+- Template Validation
+  - Fixed handling of undefined variables in templates
+  - Improved error messages for validation failures
+  - Enhanced handling of edge cases in template rendering
+- Security
+  - Fixed potential path traversal vulnerabilities
+  - Improved file access validation
+  - Enhanced security manager checks
+- Type Safety
+  - Added missing type annotations
+  - Fixed type checking issues with pytest decorators
+  - Improved overall type safety across the codebase
 
 ## [0.8.0] - 2025-01-22
 
@@ -242,7 +290,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling
 - Documentation framework
 
-[Unreleased]: https://github.com/yaniv-golan/openai-structured/compare/v0.8.0...HEAD
 [0.8.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yaniv-golan/openai-structured/compare/v0.5.0...v0.6.0
