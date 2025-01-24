@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Generator, List
 from unittest.mock import AsyncMock, patch
+import json
 
 import pytest
 import pytest_asyncio
@@ -50,12 +51,13 @@ async def mock_openai_client() -> AsyncOpenAI:
         *args: Any, **kwargs: Any
     ) -> AsyncGenerator[ChatCompletionChunk, None]:
         """Mock streaming response."""
+        # First chunk with the content
         yield ChatCompletionChunk(
             id="test",
             choices=[
                 Choice(
                     delta=ChoiceDelta(
-                        content='{"result": "test", "status": "success"}'
+                        content='{"result": "test response", "status": "success"}'
                     ),
                     finish_reason=None,
                     index=0,
@@ -66,6 +68,7 @@ async def mock_openai_client() -> AsyncOpenAI:
             object="chat.completion.chunk",
         )
 
+        # Final chunk indicating completion
         yield ChatCompletionChunk(
             id="test",
             choices=[
@@ -101,7 +104,10 @@ def test_files(tmp_path: Path) -> Dict[str, str]:
     input_file.write_text("test input")
 
     template_file = test_dir / "template.txt"
-    template_file.write_text("test template {{ input }}")
+    template_file.write_text("""---
+system_prompt: You are a helpful assistant
+---
+test template {{ input }}""")
 
     schema_file = test_dir / "schema.json"
     schema_file.write_text(
@@ -281,7 +287,7 @@ async def test_cli_with_output_file(
                 f'input={test_files["input_file"]}',
                 "--schema",
                 test_files["schema_file"],
-                "--output",
+                "--output-file",
                 output_file,
             ],
         ),
@@ -289,12 +295,16 @@ async def test_cli_with_output_file(
             "openai_structured.cli.cli.AsyncOpenAI",
             return_value=mock_openai_client,
         ),
-        patch("json.dump", return_value=None) as mock_dump,
     ):
         result = await _main()
         assert result == ExitCode.SUCCESS
         assert os.path.exists(output_file)
-        mock_dump.assert_called_once()
+        
+        # Verify file contents
+        with open(output_file, 'r') as f:
+            content = f.read().strip()
+            expected = json.dumps({"result": "test response", "status": "success"}, indent=2)
+            assert content == expected
 
 
 @pytest.mark.asyncio

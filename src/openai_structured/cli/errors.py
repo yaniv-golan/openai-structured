@@ -281,3 +281,32 @@ class SchemaValidationError(SchemaError):
     """Raised when a schema fails validation."""
 
     pass
+
+
+class ModelCreationError(SchemaError):
+    """Base class for model creation errors."""
+    pass
+
+
+class FieldDefinitionError(ModelCreationError):
+    """Raised when field definition fails."""
+    def __init__(self, field_name: str, field_type: str, error: str):
+        self.field_name = field_name
+        self.field_type = field_type
+        super().__init__(f"Failed to define field '{field_name}' of type '{field_type}': {error}")
+
+
+class NestedModelError(ModelCreationError):
+    """Raised when nested model creation fails."""
+    def __init__(self, model_name: str, parent_field: str, error: str):
+        self.model_name = model_name
+        self.parent_field = parent_field
+        super().__init__(f"Failed to create nested model '{model_name}' for field '{parent_field}': {error}")
+
+
+class ModelValidationError(ModelCreationError):
+    """Raised when model validation fails."""
+    def __init__(self, model_name: str, validation_errors: List[str]):
+        self.model_name = model_name
+        self.validation_errors = validation_errors
+        super().__init__(f"Model '{model_name}' validation failed:\n" + "\n".join(validation_errors))

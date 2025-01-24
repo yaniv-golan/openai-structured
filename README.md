@@ -74,7 +74,7 @@ ostruct \
 * **File Input:** Process multiple input files with template placeholders using Jinja2
 * **Schema Validation:** Automatic JSON schema validation
 * **Token Management:** Automatic token counting and limit validation
-* **Flexible Output:** Write to file or stdout with progress indication
+* **Simple Output:** Write to file or stdout with direct streaming
 
 ### CLI Arguments
 

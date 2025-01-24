@@ -70,7 +70,7 @@ from .template_env import create_jinja_env
 
 __all__ = ["render_template", "DotDict"]
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ostruct")
 
 # Type alias for values that can appear in the template context
 TemplateContextValue = Union[
@@ -111,7 +111,8 @@ def render_template(
     )
 
     with ProgressContext(
-        "Rendering task template", show_progress=progress_enabled
+        description="Rendering task template",
+        level="basic" if progress_enabled else "none"
     ) as progress:
         try:
             if progress:
@@ -119,6 +120,21 @@ def render_template(
 
             if jinja_env is None:
                 jinja_env = create_jinja_env(loader=jinja2.FileSystemLoader("."))
+
+            logger.debug("=== Raw Input ===")
+            logger.debug("Template string type: %s", type(template_str).__name__)
+            logger.debug("Template string length: %d", len(template_str))
+            logger.debug("Template string first 500 chars: %r", template_str[:500])
+            logger.debug("Raw context keys: %r", list(context.keys()))
+
+            logger.debug("=== Template Details ===")
+            logger.debug("Raw template string:\n%s", template_str)
+            logger.debug("Context keys and types:")
+            for key, value in context.items():
+                if isinstance(value, list):
+                    logger.debug("  %s (list[%d]): %s", key, len(value), [type(x).__name__ for x in value])
+                else:
+                    logger.debug("  %s: %s", key, type(value).__name__)
 
             # Wrap JSON variables in DotDict and handle special cases
             wrapped_context: Dict[str, TemplateContextValue] = {}
@@ -163,8 +179,11 @@ def render_template(
                         f"Task template file not found: {e.name}"
                     ) from e
             else:
+                logger.debug("Creating template from string. Template string: %r", template_str)
                 try:
                     template = jinja_env.from_string(template_str)
+                    # Add debug log for loop rendering
+                    template.globals['debug_file_render'] = lambda f: logger.info("Rendering file: %s", f.path) or ''
                 except jinja2.TemplateSyntaxError as e:
                     raise ValueError(
                         f"Task template syntax error: {str(e)}"
@@ -181,15 +200,50 @@ def render_template(
             template.globals["template_path"] = getattr(
                 template, "filename", None
             )
+            logger.debug("Template globals: %r", template.globals)
 
             try:
                 # Attempt to render the template
+                logger.debug("=== Starting template render ===")
+                logger.info("=== Template Context ===")
+                for key, value in wrapped_context.items():
+                    if isinstance(value, list):
+                        logger.info("  %s: list with %d items", key, len(value))
+                        if value and isinstance(value[0], FileInfo):
+                            logger.info("    First file: %s (content length: %d)", 
+                                value[0].path, 
+                                len(value[0].content) if hasattr(value[0], 'content') else -1)
+                    elif isinstance(value, FileInfo):
+                        logger.info("  %s: FileInfo(%s) content length: %d", 
+                            key, value.path, 
+                            len(value.content) if hasattr(value, 'content') else -1)
+                    else:
+                        logger.info("  %s: %s", key, type(value).__name__)
+                logger.debug("Template source: %r", template.source if hasattr(template, 'source') else '<no source>')
+                logger.debug("Wrapped context before render:")
+                for key, value in wrapped_context.items():
+                    if isinstance(value, list):
+                        logger.debug("  %s is a list with %d items", key, len(value))
+                        for i, item in enumerate(value):
+                            if isinstance(item, FileInfo):
+                                logger.debug("    [%d] FileInfo details:", i)
+                                logger.debug("      path: %r", item.path)
+                                logger.debug("      exists: %r", os.path.exists(item.path))
+                                logger.debug("      content length: %d", len(item.content) if hasattr(item, 'content') else -1)
+                    else:
+                        logger.debug("  %s: %s (%r)", key, type(value).__name__, value)
                 result = template.render(**wrapped_context)
+                logger.info("Template render result (first 100 chars): %r", result[:100])
+                logger.debug("=== Rendered result (first 1000 chars) ===\n%s", result[:1000])
+                if "## File:" not in result:
+                    logger.error("WARNING: File headers missing from rendered output!")
+                    logger.error("Template string excerpt: %r", template_str[:200])
+                    logger.error("Result excerpt: %r", result[:200])
                 if progress:
-                    progress.update(1)  # Update progress for successful render
+                    progress.update(1)
                 return result
             except (jinja2.TemplateError, Exception) as e:
-                # Convert all errors to ValueError with proper context
+                logger.error("Template rendering failed: %s", str(e))
                 raise ValueError(f"Template rendering failed: {str(e)}") from e
 
         except ValueError as e:

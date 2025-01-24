@@ -40,8 +40,6 @@ def create_jinja_env(
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=True,
-        line_statement_prefix="#",
-        line_comment_prefix="##",
         extensions=[
             "jinja2.ext.do",
             "jinja2.ext.loopcontrols",
