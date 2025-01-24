@@ -29,7 +29,7 @@ class CacheEntry:
     encoding: Optional[str]
     hash_value: Optional[str]
     mtime_ns: int  # Nanosecond precision mtime
-    size: int      # Actual file size from stat
+    size: int  # Actual file size from stat
 
 
 class FileCache:
@@ -46,7 +46,8 @@ class FileCache:
         self._cache: LRUCache[CacheKey, CacheEntry] = LRUCache(maxsize=1024)
         logger.debug(
             "Initialized FileCache with max_size=%d bytes, maxsize=%d entries",
-            max_size_bytes, 1024
+            max_size_bytes,
+            1024,
         )
 
     def _remove_entry(self, key: CacheKey) -> None:
@@ -60,11 +61,15 @@ class FileCache:
             self._current_size -= entry.size
             logger.debug(
                 "Removed cache entry: key=%s, size=%d, new_total_size=%d",
-                key, entry.size, self._current_size
+                key,
+                entry.size,
+                self._current_size,
             )
         self._cache.pop(key, None)
 
-    def get(self, path: str, current_mtime_ns: int, current_size: int) -> Optional[CacheEntry]:
+    def get(
+        self, path: str, current_mtime_ns: int, current_size: int
+    ) -> Optional[CacheEntry]:
         """Get cache entry if it exists and is valid.
 
         Args:
@@ -86,18 +91,22 @@ class FileCache:
         if entry.mtime_ns != current_mtime_ns or entry.size != current_size:
             logger.info(
                 "Cache invalidated for %s: mtime_ns=%d->%d (%s), size=%d->%d (%s)",
-                path, 
-                entry.mtime_ns, current_mtime_ns, 
+                path,
+                entry.mtime_ns,
+                current_mtime_ns,
                 "changed" if entry.mtime_ns != current_mtime_ns else "same",
-                entry.size, current_size,
-                "changed" if entry.size != current_size else "same"
+                entry.size,
+                current_size,
+                "changed" if entry.size != current_size else "same",
             )
             self._remove_entry(key)
             return None
 
         logger.debug(
             "Cache hit for %s: mtime_ns=%d, size=%d",
-            path, entry.mtime_ns, entry.size
+            path,
+            entry.mtime_ns,
+            entry.size,
         )
         return entry
 
@@ -142,18 +151,25 @@ class FileCache:
             evicted_count += 1
             logger.debug(
                 "Evicted cache entry: key=%s, size=%d, new_total_size=%d",
-                evicted_key, evicted.size, self._current_size
+                evicted_key,
+                evicted.size,
+                self._current_size,
             )
 
         if evicted_count > 0:
             logger.info(
                 "Evicted %d entries to make room for %s (size=%d)",
-                evicted_count, path, size
+                evicted_count,
+                path,
+                size,
             )
 
         self._cache[key] = entry
         self._current_size += size
         logger.debug(
             "Added cache entry: path=%s, size=%d, total_size=%d/%d",
-            path, size, self._current_size, self._max_size
+            path,
+            size,
+            self._current_size,
+            self._max_size,
         )

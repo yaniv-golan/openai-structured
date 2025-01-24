@@ -96,6 +96,7 @@ def read_file(
     # Create security manager if not provided
     if security_manager is None:
         from .security import SecurityManager
+
         security_manager = SecurityManager()
         logger.debug("Created default SecurityManager")
 
@@ -106,8 +107,10 @@ def read_file(
         try:
             # Get absolute path and check file exists
             abs_path = os.path.abspath(file_path)
-            logger.debug("Reading file: path=%s, abs_path=%s", file_path, abs_path)
-            
+            logger.debug(
+                "Reading file: path=%s, abs_path=%s", file_path, abs_path
+            )
+
             if not os.path.isfile(abs_path):
                 logger.error("File not found: %s", abs_path)
                 raise ValueError(f"File not found: {file_path}")
@@ -117,7 +120,10 @@ def read_file(
                 stats = os.stat(abs_path)
                 logger.debug(
                     "File stats: size=%d, mtime=%d, mtime_ns=%d, mode=%o",
-                    stats.st_size, stats.st_mtime, stats.st_mtime_ns, stats.st_mode
+                    stats.st_size,
+                    stats.st_mtime,
+                    stats.st_mtime_ns,
+                    stats.st_mode,
                 )
             except OSError as e:
                 logger.error("Failed to get file stats: %s", e)
@@ -132,7 +138,9 @@ def read_file(
             if cache_entry is not None:
                 logger.debug(
                     "Using cached content for %s: encoding=%s, hash=%s",
-                    abs_path, cache_entry.encoding, cache_entry.hash_value
+                    abs_path,
+                    cache_entry.encoding,
+                    cache_entry.hash_value,
                 )
                 if progress.enabled:
                     progress.update(1)
@@ -156,7 +164,10 @@ def read_file(
             # Update cache with loaded content
             logger.debug(
                 "Caching new content: path=%s, size=%d, encoding=%s, hash=%s",
-                abs_path, size, file_info.encoding, file_info.hash
+                abs_path,
+                size,
+                file_info.encoding,
+                file_info.hash,
             )
             _file_cache.put(
                 abs_path,
@@ -175,8 +186,10 @@ def read_file(
         except Exception as e:
             logger.error(
                 "Error reading file %s: %s (%s)",
-                file_path, str(e), type(e).__name__,
-                exc_info=True
+                file_path,
+                str(e),
+                type(e).__name__,
+                exc_info=True,
             )
             raise
 

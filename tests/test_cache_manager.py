@@ -31,7 +31,7 @@ def test_cache_entry_immutability() -> None:
         content="test",
         encoding="utf-8",
         hash_value="hash",
-        mtime=123.0,
+        mtime_ns=123_000_000_000,  # nanoseconds
         size=4,
     )
 
@@ -49,20 +49,24 @@ def test_cache_basic_operations(fs: FakeFilesystem) -> None:
     cache = FileCache(max_size_bytes=1024)  # Small cache for testing
 
     # Create test file
-    fs.create_file("/test.txt", contents="test content")
-    mtime = os.path.getmtime("/test.txt")
+    content = "test content"
+    fs.create_file("/test.txt", contents=content)
+    stats = os.stat("/test.txt")
 
     # Test cache miss
-    assert cache.get("/test.txt", mtime) is None
+    assert cache.get("/test.txt", stats.st_mtime_ns, stats.st_size) is None
 
     # Test cache put and hit
-    cache.put("/test.txt", "test content", "utf-8", "hash", mtime)
-    entry = cache.get("/test.txt", mtime)
+    cache.put(
+        "/test.txt", content, "utf-8", "hash", stats.st_mtime_ns, stats.st_size
+    )
+    entry = cache.get("/test.txt", stats.st_mtime_ns, stats.st_size)
     assert entry is not None
-    assert entry.content == "test content"
+    assert entry.content == content
     assert entry.encoding == "utf-8"
     assert entry.hash_value == "hash"
-    assert entry.mtime == mtime
+    assert entry.mtime_ns == stats.st_mtime_ns
+    assert entry.size == stats.st_size
 
 
 def test_cache_size_limit(fs: FakeFilesystem) -> None:
@@ -74,16 +78,37 @@ def test_cache_size_limit(fs: FakeFilesystem) -> None:
     fs.create_file("/small.txt", contents="small")
     fs.create_file("/large.txt", contents="x" * 200)  # Exceeds cache size
 
-    small_mtime = os.path.getmtime("/small.txt")
-    large_mtime = os.path.getmtime("/large.txt")
+    small_stats = os.stat("/small.txt")
+    large_stats = os.stat("/large.txt")
 
     # Small file should be cached
-    cache.put("/small.txt", "small", "utf-8", "hash", small_mtime)
-    assert cache.get("/small.txt", small_mtime) is not None
+    cache.put(
+        "/small.txt",
+        "small",
+        "utf-8",
+        "hash",
+        small_stats.st_mtime_ns,
+        small_stats.st_size,
+    )
+    assert (
+        cache.get("/small.txt", small_stats.st_mtime_ns, small_stats.st_size)
+        is not None
+    )
 
     # Large file should be rejected
-    cache.put("/large.txt", "x" * 200, "utf-8", "hash", large_mtime)
-    assert cache.get("/large.txt", large_mtime) is None
+    large_content = "x" * 200
+    cache.put(
+        "/large.txt",
+        large_content,
+        "utf-8",
+        "hash",
+        large_stats.st_mtime_ns,
+        large_stats.st_size,
+    )
+    assert (
+        cache.get("/large.txt", large_stats.st_mtime_ns, large_stats.st_size)
+        is None
+    )
 
 
 def test_cache_lru_eviction(fs: FakeFilesystem) -> None:
@@ -94,19 +119,37 @@ def test_cache_lru_eviction(fs: FakeFilesystem) -> None:
 
     # Create test files
     files = ["/file1.txt", "/file2.txt", "/file3.txt"]
-    mtimes = []
+    stats_list = []
 
     for i, path in enumerate(files, 1):
-        fs.create_file(path, contents=f"content{i}")
-        mtimes.append(os.path.getmtime(path))
-        cache.put(path, f"content{i}", "utf-8", f"hash{i}", mtimes[-1])
+        content = f"content{i}"
+        fs.create_file(path, contents=content)
+        stats = os.stat(path)
+        stats_list.append(stats)
+        cache.put(
+            path,
+            content,
+            "utf-8",
+            f"hash{i}",
+            stats.st_mtime_ns,
+            stats.st_size,
+        )
         time.sleep(0.01)  # Ensure different mtimes
 
     # First file should be evicted due to size limit
-    assert cache.get(files[0], mtimes[0]) is None
+    assert (
+        cache.get(files[0], stats_list[0].st_mtime_ns, stats_list[0].st_size)
+        is None
+    )
     # Later files should still be cached
-    assert cache.get(files[1], mtimes[1]) is not None
-    assert cache.get(files[2], mtimes[2]) is not None
+    assert (
+        cache.get(files[1], stats_list[1].st_mtime_ns, stats_list[1].st_size)
+        is not None
+    )
+    assert (
+        cache.get(files[2], stats_list[2].st_mtime_ns, stats_list[2].st_size)
+        is not None
+    )
 
 
 def test_cache_modification_detection(fs: FakeFilesystem) -> None:
@@ -114,19 +157,31 @@ def test_cache_modification_detection(fs: FakeFilesystem) -> None:
     cache = FileCache()
 
     # Create and cache file
-    fs.create_file("/test.txt", contents="original")
-    original_mtime = os.path.getmtime("/test.txt")
-    cache.put("/test.txt", "original", "utf-8", "hash1", original_mtime)
+    original_content = "original"
+    fs.create_file("/test.txt", contents=original_content)
+    original_stats = os.stat("/test.txt")
+    cache.put(
+        "/test.txt",
+        original_content,
+        "utf-8",
+        "hash1",
+        original_stats.st_mtime_ns,
+        original_stats.st_size,
+    )
 
     # Modify file
     time.sleep(0.01)  # Ensure different mtime
     fs.remove("/test.txt")  # Remove first
-    fs.create_file("/test.txt", contents="modified")  # Then create new
-    new_mtime = os.path.getmtime("/test.txt")
+    modified_content = "modified"
+    fs.create_file("/test.txt", contents=modified_content)  # Then create new
+    new_stats = os.stat("/test.txt")
 
     # Cache should detect modification
-    assert original_mtime != new_mtime
-    assert cache.get("/test.txt", new_mtime) is None
+    assert original_stats.st_mtime_ns != new_stats.st_mtime_ns
+    assert (
+        cache.get("/test.txt", new_stats.st_mtime_ns, new_stats.st_size)
+        is None
+    )
 
 
 def test_cache_concurrent_access() -> None:
@@ -142,19 +197,24 @@ def test_cache_concurrent_access() -> None:
         try:
             for _ in range(100):
                 path = f"/file{random.randint(1, 5)}.txt"
-                mtime = float(random.randint(1, 1000))
+                mtime_ns = (
+                    random.randint(1, 1000) * 1_000_000_000
+                )  # Convert to ns
+                size = random.randint(10, 100)  # Random file size
 
                 if random.random() < 0.5:
                     # Read operation
-                    cache.get(path, mtime)
+                    cache.get(path, mtime_ns, size)
                 else:
                     # Write operation
+                    content = f"content{thread_id}"
                     cache.put(
                         path,
-                        f"content{thread_id}",
+                        content,
                         "utf-8",
                         f"hash{thread_id}",
-                        mtime,
+                        mtime_ns,
+                        len(content.encode("utf-8")),  # Actual content size
                     )
         except Exception as e:
             errors.append(e)
@@ -175,7 +235,7 @@ def test_cache_concurrent_access() -> None:
 def test_cache_key_collisions() -> None:
     """Test handling of potential key collisions."""
     cache = FileCache()
-    mtime = time.time()
+    mtime_ns = int(time.time() * 1_000_000_000)  # Convert to nanoseconds
 
     # Test paths that might hash similarly
     paths = [
@@ -189,10 +249,14 @@ def test_cache_key_collisions() -> None:
 
     # Add each path to cache
     for i, path in enumerate(paths):
-        cache.put(path, f"content{i}", "utf-8", f"hash{i}", mtime)
+        content = f"content{i}"
+        size = len(content.encode("utf-8"))
+        cache.put(path, content, "utf-8", f"hash{i}", mtime_ns, size)
 
     # Verify each path has correct content
     for i, path in enumerate(paths):
-        entry = cache.get(path, mtime)
+        content = f"content{i}"
+        size = len(content.encode("utf-8"))
+        entry = cache.get(path, mtime_ns, size)
         assert entry is not None
-        assert entry.content == f"content{i}"
+        assert entry.content == content
