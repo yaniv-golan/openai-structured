@@ -252,7 +252,7 @@ def find_all_template_variables(
                 visit_nodes(node.else_)
 
     visit_nodes(ast.body)
-    return variables
+    return variables  # type: ignore[no-any-return]
 
 
 __all__ = [

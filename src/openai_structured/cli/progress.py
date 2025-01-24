@@ -2,7 +2,7 @@
 
 import sys
 from contextlib import contextmanager
-from typing import Iterator, Optional, Any, Type, Union
+from typing import Any, Iterator, Optional, Type, Union
 
 
 class ProgressContext:
@@ -41,7 +41,7 @@ class ProgressContext:
 
     def print_output(self, text: str) -> None:
         """Print output to stdout or file.
-        
+
         Args:
             text: Text to print
         """

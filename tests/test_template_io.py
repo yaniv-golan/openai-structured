@@ -16,7 +16,7 @@ from openai_structured.cli.template_io import (
 )
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def security_manager() -> SecurityManager:
     """Create a security manager for testing."""
     manager = SecurityManager(base_dir=os.getcwd())

@@ -7,34 +7,28 @@ from typing import Any, AsyncIterator, Dict, Union
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pyfakefs.fake_filesystem import FakeFilesystem
 from pydantic import BaseModel
+from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.cli import ExitCode, _main, create_template_context
 from openai_structured.cli.file_list import FileInfoList
 from openai_structured.cli.security import SecurityManager
-
-
-class MockResponse(BaseModel):
-    """Mock response model."""
-    result: str
+from tests.support.models import SimpleMessage, BasicMessage, ResponseMessage
 
 
 # Core CLI Tests
 class TestCLICore:
     """Test core CLI functionality."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_basic_execution(self, fs: FakeFilesystem) -> None:
         """Test basic CLI execution with minimal arguments."""
         # Create test files
         schema_content = {
             "schema": {
                 "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                },
-                "required": ["result"]
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
@@ -44,8 +38,8 @@ class TestCLICore:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[MockResponse]:
-            yield MockResponse(result="test response")
+        ) -> AsyncIterator[ResponseMessage]:
+            yield ResponseMessage(message="test response", sentiment="positive")
 
         with (
             patch(
@@ -79,7 +73,7 @@ class TestCLICore:
             result = await _main()
             assert result == ExitCode.SUCCESS
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_help_text(self) -> None:
         """Test help text display."""
         with (
@@ -93,7 +87,7 @@ class TestCLICore:
             assert "usage:" in output
             assert "--help" in output
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_version_info(self) -> None:
         """Test version information display."""
         with (
@@ -110,7 +104,7 @@ class TestCLICore:
                 len(output.strip().split()) == 2
             )  # program name + version number
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_missing_required_args(self) -> None:
         """Test error handling for missing required arguments."""
         with (
@@ -128,16 +122,14 @@ class TestCLICore:
 class TestCLIVariables:
     """Test variable handling in CLI."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_basic_variable(self, fs: FakeFilesystem) -> None:
         """Test basic variable assignment."""
         schema_content = {
             "schema": {
                 "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                },
-                "required": ["result"]
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
@@ -146,8 +138,10 @@ class TestCLIVariables:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[MockResponse]:
-            yield MockResponse(result="test value processed")
+        ) -> AsyncIterator[ResponseMessage]:
+            yield ResponseMessage(
+                message="test value processed", sentiment="positive"
+            )
 
         with (
             patch(
@@ -178,16 +172,14 @@ class TestCLIVariables:
             result = await _main()
             assert result == ExitCode.SUCCESS
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_json_variable(self, fs: FakeFilesystem) -> None:
         """Test JSON variable assignment."""
         schema_content = {
             "schema": {
                 "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                },
-                "required": ["result"]
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
@@ -196,8 +188,10 @@ class TestCLIVariables:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[MockResponse]:
-            yield MockResponse(result="config value processed")
+        ) -> AsyncIterator[ResponseMessage]:
+            yield ResponseMessage(
+                message="config value processed", sentiment="positive"
+            )
 
         with (
             patch(
@@ -228,14 +222,10 @@ class TestCLIVariables:
             result = await _main()
             assert result == ExitCode.SUCCESS
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_invalid_variable_name(self, fs: FakeFilesystem) -> None:
         """Test error handling for invalid variable names."""
-        schema_content = {
-            "schema": {
-                "type": "string"
-            }
-        }
+        schema_content = {"schema": {"type": "string"}}
         fs.create_file("schema.json", contents=json.dumps(schema_content))
         fs.create_file("task.txt", contents="Test")
 
@@ -254,7 +244,9 @@ class TestCLIVariables:
                     "test-key",
                 ],
             ),
-            patch("openai_structured.cli.cli.logger") as mock_logger,  # Patch the actual logger instance
+            patch(
+                "openai_structured.cli.cli.logger"
+            ) as mock_logger,  # Patch the actual logger instance
             patch("tiktoken.get_encoding") as mock_get_encoding,
         ):
             # Setup tiktoken mock
@@ -271,14 +263,10 @@ class TestCLIVariables:
             assert "invalid variable name" in error_msg
             assert "123invalid" in error_msg
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_invalid_json_variable(self, fs: FakeFilesystem) -> None:
         """Test error handling for invalid JSON variables."""
-        schema_content = {
-            "schema": {
-                "type": "string"
-            }
-        }
+        schema_content = {"schema": {"type": "string"}}
         fs.create_file("schema.json", contents=json.dumps(schema_content))
         fs.create_file("task.txt", contents="Test")
 
@@ -297,7 +285,9 @@ class TestCLIVariables:
                     "test-key",
                 ],
             ),
-            patch("openai_structured.cli.cli.logger") as mock_logger,  # Patch the actual logger instance
+            patch(
+                "openai_structured.cli.cli.logger"
+            ) as mock_logger,  # Patch the actual logger instance
             patch("tiktoken.get_encoding") as mock_get_encoding,
         ):
             # Setup tiktoken mock
@@ -320,16 +310,14 @@ class TestCLIVariables:
 class TestCLIIO:
     """Test I/O handling in CLI."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_file_input(self, fs: FakeFilesystem) -> None:
         """Test file input handling."""
         schema_content = {
             "schema": {
                 "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                },
-                "required": ["result"]
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
@@ -339,8 +327,10 @@ class TestCLIIO:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[MockResponse]:
-            yield MockResponse(result="file content processed")
+        ) -> AsyncIterator[ResponseMessage]:
+            yield ResponseMessage(
+                message="file content processed", sentiment="positive"
+            )
 
         with (
             patch(
@@ -371,16 +361,14 @@ class TestCLIIO:
             result = await _main()
             assert result == ExitCode.SUCCESS
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_stdin_input(self, fs: FakeFilesystem) -> None:
         """Test stdin input handling."""
         schema_content = {
             "schema": {
                 "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                },
-                "required": ["result"]
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
@@ -389,8 +377,10 @@ class TestCLIIO:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[MockResponse]:
-            yield MockResponse(result="stdin content processed")
+        ) -> AsyncIterator[ResponseMessage]:
+            yield ResponseMessage(
+                message="stdin content processed", sentiment="positive"
+            )
 
         with (
             patch(
@@ -420,17 +410,15 @@ class TestCLIIO:
             result = await _main()
             assert result == ExitCode.SUCCESS
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_directory_input(self, fs: FakeFilesystem) -> None:
         """Test directory input handling."""
         # Create test directory structure
         schema_content = {
             "schema": {
                 "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                },
-                "required": ["result"]
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
@@ -442,8 +430,10 @@ class TestCLIIO:
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[MockResponse]:
-            yield MockResponse(result="directory content processed")
+        ) -> AsyncIterator[ResponseMessage]:
+            yield ResponseMessage(
+                message="directory content processed", sentiment="positive"
+            )
 
         with (
             patch(
@@ -479,7 +469,7 @@ class TestCLIIO:
 class TestCLIIntegration:
     """Test integration between different CLI features."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_template_variable_integration(
         self, fs: FakeFilesystem
     ) -> None:
@@ -487,10 +477,8 @@ class TestCLIIntegration:
         schema_content = {
             "schema": {
                 "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                },
-                "required": ["result"]
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
@@ -506,8 +494,11 @@ Template with {{ var2 }} and {{ input[0].content }}""",
         # Create mock structured stream
         async def mock_structured_stream(
             *args: Any, **kwargs: Any
-        ) -> AsyncIterator[MockResponse]:
-            yield MockResponse(result="template and variables processed")
+        ) -> AsyncIterator[ResponseMessage]:
+            yield ResponseMessage(
+                message="template and variables processed",
+                sentiment="positive",
+            )
 
         with (
             patch(
@@ -542,7 +533,7 @@ Template with {{ var2 }} and {{ input[0].content }}""",
             result = await _main()
             assert result == ExitCode.SUCCESS
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_schema_validation_integration(
         self, fs: FakeFilesystem
     ) -> None:
@@ -552,9 +543,9 @@ Template with {{ var2 }} and {{ input[0].content }}""",
                 "type": "object",
                 "properties": {
                     "analysis": {"type": "string"},
-                    "score": {"type": "number"}
+                    "score": {"type": "number"},
                 },
-                "required": ["analysis", "score"]
+                "required": ["analysis", "score"],
             }
         }
         fs.create_file("schema.json", contents=json.dumps(schema_content))
@@ -562,7 +553,7 @@ Template with {{ var2 }} and {{ input[0].content }}""",
         fs.create_file("input.txt", contents="test content")
 
         # Create response model matching schema
-        class AnalysisResponse(BaseModel):
+        class AnalysisResponse(BaseModel):  # type: ignore[misc]
             analysis: str
             score: float
 

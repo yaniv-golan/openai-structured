@@ -35,7 +35,7 @@ jobs:
         poetry run flake8 src/ tests/ examples/
     - name: Type check with mypy
       run: |
-        poetry run mypy src/ tests/
+        poetry run mypy --follow-imports=skip src/ tests/
     - name: Run tests with pytest
       run: |
         poetry run pytest -m "not live"

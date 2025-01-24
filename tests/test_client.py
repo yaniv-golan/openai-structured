@@ -13,15 +13,10 @@ from openai_structured.client import (
     async_openai_structured_call,
     async_openai_structured_stream,
 )
+from tests.support.models import SimpleMessage, BasicMessage
 
 
-class SimpleResponse(BaseModel):
-    """Simple schema for testing basic responses."""
-
-    message: str
-
-
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture  # type: ignore[misc]
 async def openai_client() -> AsyncGenerator[AsyncOpenAI, None]:
     """Create OpenAI client for testing."""
     client = AsyncOpenAI()
@@ -33,7 +28,7 @@ async def openai_client() -> AsyncGenerator[AsyncOpenAI, None]:
 class TestBasicFunctionality:
     """Test basic functionality using live API."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_create_chat_completion(
         self, openai_client: AsyncOpenAI
     ) -> None:
@@ -41,16 +36,16 @@ class TestBasicFunctionality:
         result = await async_openai_structured_call(
             client=openai_client,
             user_prompt="Return a simple greeting as JSON with message field",
-            output_schema=SimpleResponse,
+            output_schema=SimpleMessage,
             model="gpt-4o-2024-08-06",
             system_prompt="You are a helpful assistant that returns JSON responses.",
         )
 
-        assert isinstance(result, SimpleResponse)
+        assert isinstance(result, SimpleMessage)
         assert isinstance(result.message, str)
         assert len(result.message) > 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_create_chat_completion_stream(
         self, openai_client: AsyncOpenAI
     ) -> None:
@@ -60,7 +55,7 @@ class TestBasicFunctionality:
             client=openai_client,
             user_prompt="Return a simple greeting as JSON with message field",
             model="gpt-4o-2024-08-06",
-            output_schema=SimpleResponse,
+            output_schema=SimpleMessage,
             system_prompt="You are a helpful assistant that returns JSON responses.",
         ):
             responses.append(response)
@@ -70,7 +65,7 @@ class TestBasicFunctionality:
 
         # Verify each response is valid
         for response in responses:
-            assert isinstance(response, SimpleResponse)
+            assert isinstance(response, SimpleMessage)
             assert isinstance(response.message, str)
             assert len(response.message) > 0
 
@@ -79,14 +74,14 @@ class TestBasicFunctionality:
 class TestErrorHandling:
     """Test error handling with live API."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_validation_error(self, openai_client: AsyncOpenAI) -> None:
         """Test handling of validation errors."""
         with pytest.raises(InvalidResponseFormatError):
             await async_openai_structured_call(
                 client=openai_client,
                 user_prompt="Return JSON without a message field",
-                output_schema=SimpleResponse,
+                output_schema=SimpleMessage,
                 model="gpt-4o-2024-08-06",
                 system_prompt="You are a helpful assistant. Return JSON with an 'invalid' field instead of 'message'.",
             )
@@ -96,7 +91,7 @@ class TestErrorHandling:
 class TestLogging:
     """Test logging with live API."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_basic_logging(
         self, openai_client: AsyncOpenAI, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -106,7 +101,7 @@ class TestLogging:
         await async_openai_structured_call(
             client=openai_client,
             user_prompt="Return a simple greeting as JSON with message field",
-            output_schema=SimpleResponse,
+            output_schema=SimpleMessage,
             model="gpt-4o-2024-08-06",
             system_prompt="You are a helpful assistant that returns JSON responses.",
         )
@@ -118,7 +113,7 @@ class TestLogging:
         )
         assert "HTTP/1.1 200 OK" in caplog.text
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio  # type: ignore[misc]
     async def test_stream_logging(
         self, openai_client: AsyncOpenAI, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -128,7 +123,7 @@ class TestLogging:
         async for _ in async_openai_structured_stream(
             client=openai_client,
             user_prompt="Return a simple greeting as JSON with message field",
-            output_schema=SimpleResponse,
+            output_schema=SimpleMessage,
             model="gpt-4o-2024-08-06",
             system_prompt="You are a helpful assistant that returns JSON responses.",
         ):

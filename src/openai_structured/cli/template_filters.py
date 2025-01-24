@@ -1,5 +1,6 @@
 """Template filters for Jinja2 environment."""
 
+import datetime
 import itertools
 import json
 import logging
@@ -7,14 +8,13 @@ import re
 import textwrap
 from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence, TypeVar, Union
-import datetime
 
 import tiktoken
+from jinja2 import Environment
 from pygments import highlight
 from pygments.formatters import HtmlFormatter, NullFormatter, TerminalFormatter
 from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer
 from pygments.util import ClassNotFound
-from jinja2 import Environment
 
 logger = logging.getLogger(__name__)
 
@@ -588,7 +588,7 @@ def format_code(
 
 def register_template_filters(env: Environment) -> None:
     """Register all template filters with the Jinja2 environment.
-    
+
     Args:
         env: The Jinja2 environment to register filters with.
     """
@@ -605,7 +605,6 @@ def register_template_filters(env: Environment) -> None:
         "dedent": dedent_text,
         "normalize": normalize_text,
         "strip_markdown": strip_markdown,
-        
         # Data processing
         "sort_by": sort_by,
         "group_by": group_by,
@@ -614,40 +613,38 @@ def register_template_filters(env: Environment) -> None:
         "unique": unique,
         "frequency": frequency,
         "aggregate": aggregate,
-        
         # Table formatting
         "table": format_table,
         "align_table": align_table,
         "dict_to_table": dict_to_table,
         "list_to_table": list_to_table,
-        
         # Code processing
         "format_code": format_code,
         "strip_comments": strip_comments,
-        
         # Special character handling
         "escape_special": escape_special,
-        
         # Table utilities
         "auto_table": auto_table,
     }
-    
+
     env.filters.update(filters)
 
     # Add template globals
-    env.globals.update({
-        "estimate_tokens": estimate_tokens,
-        "format_json": format_json,
-        "now": datetime.datetime.now,
-        "debug": debug_print,
-        "type_of": type_of,
-        "dir_of": dir_of,
-        "len_of": len_of,
-        "validate_json": validate_json,
-        "format_error": format_error,
-        # Data analysis globals
-        "summarize": summarize,
-        "pivot_table": pivot_table,
-        # Table utilities
-        "auto_table": auto_table,
-    })
+    env.globals.update(
+        {
+            "estimate_tokens": estimate_tokens,
+            "format_json": format_json,
+            "now": datetime.datetime.now,
+            "debug": debug_print,
+            "type_of": type_of,
+            "dir_of": dir_of,
+            "len_of": len_of,
+            "validate_json": validate_json,
+            "format_error": format_error,
+            # Data analysis globals
+            "summarize": summarize,
+            "pivot_table": pivot_table,
+            # Table utilities
+            "auto_table": auto_table,
+        }
+    )

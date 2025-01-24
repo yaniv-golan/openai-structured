@@ -1,12 +1,12 @@
 """Tests for CLI integration."""
 
+import json
 import logging
 import os
 import shutil
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Generator, List
 from unittest.mock import AsyncMock, patch
-import json
 
 import pytest
 import pytest_asyncio
@@ -40,7 +40,7 @@ class MockTiktoken:
         return MockEncoding()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture  # type: ignore[misc]
 async def mock_openai_client() -> AsyncOpenAI:
     """Create mock OpenAI client."""
     mock_client = AsyncMock(spec=AsyncOpenAI)
@@ -87,14 +87,14 @@ async def mock_openai_client() -> AsyncOpenAI:
     return mock_client
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True)  # type: ignore[misc]
 def mock_tiktoken() -> Generator[None, None, None]:
     """Mock tiktoken for testing."""
     with patch("openai_structured.cli.cli.tiktoken", MockTiktoken()):
         yield
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def test_files(tmp_path: Path) -> Dict[str, str]:
     # Create test files and directories
     test_dir = tmp_path / "test_dir"
@@ -104,10 +104,12 @@ def test_files(tmp_path: Path) -> Dict[str, str]:
     input_file.write_text("test input")
 
     template_file = test_dir / "template.txt"
-    template_file.write_text("""---
+    template_file.write_text(
+        """---
 system_prompt: You are a helpful assistant
 ---
-test template {{ input }}""")
+test template {{ input }}"""
+    )
 
     schema_file = test_dir / "schema.json"
     schema_file.write_text(
@@ -127,7 +129,7 @@ test template {{ input }}""")
     }
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True)  # type: ignore[misc]
 def cleanup_test_dirs(
     test_files: Dict[str, str]
 ) -> Generator[None, None, None]:
@@ -141,7 +143,7 @@ def cleanup_test_dirs(
             shutil.rmtree(ext_dir)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_basic_cli_execution(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -170,7 +172,7 @@ async def test_basic_cli_execution(
         assert result == ExitCode.SUCCESS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_with_directory_input(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -208,7 +210,7 @@ async def test_cli_with_directory_input(
         assert result == ExitCode.SUCCESS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_with_multiple_files(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -237,7 +239,7 @@ async def test_cli_with_multiple_files(
         assert result == ExitCode.SUCCESS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_dry_run(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -267,7 +269,7 @@ async def test_cli_dry_run(
         assert result == ExitCode.SUCCESS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_with_output_file(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -299,15 +301,17 @@ async def test_cli_with_output_file(
         result = await _main()
         assert result == ExitCode.SUCCESS
         assert os.path.exists(output_file)
-        
+
         # Verify file contents
-        with open(output_file, 'r') as f:
+        with open(output_file, "r") as f:
             content = f.read().strip()
-            expected = json.dumps({"result": "test response", "status": "success"}, indent=2)
+            expected = json.dumps(
+                {"result": "test response", "status": "success"}, indent=2
+            )
             assert content == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_with_recursive_directory(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -346,7 +350,7 @@ async def test_cli_with_recursive_directory(
         assert result == ExitCode.SUCCESS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_with_allowed_dir(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -385,7 +389,7 @@ async def test_cli_with_allowed_dir(
         assert result == ExitCode.SUCCESS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_with_allowed_dir_file(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -437,7 +441,7 @@ async def test_cli_with_allowed_dir_file(
         assert result == ExitCode.SUCCESS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_with_multiple_allowed_dirs(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],
@@ -485,7 +489,7 @@ async def test_cli_with_multiple_allowed_dirs(
         assert result == ExitCode.SUCCESS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_cli_with_disallowed_dir(
     mock_openai_client: AsyncOpenAI,
     test_files: Dict[str, str],

@@ -7,13 +7,13 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 from pyfakefs.fake_filesystem_unittest import Patcher
 
+from openai_structured.cli.errors import TemplateValidationError
 from openai_structured.cli.file_utils import FileInfo
 from openai_structured.cli.security import SecurityManager
 from openai_structured.cli.template_utils import render_template
 from openai_structured.cli.template_validation import (
     validate_template_placeholders,
 )
-from openai_structured.cli.errors import TemplateValidationError
 
 
 class ConfigDict(TypedDict, total=False):
@@ -76,7 +76,7 @@ def test_validate_task_template_invalid_syntax() -> None:
     assert "Invalid task template syntax" in str(exc.value)
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def fs() -> Generator[FakeFilesystem, None, None]:
     """Fixture to set up fake filesystem."""
     with Patcher() as patcher:
@@ -90,7 +90,7 @@ def fs() -> Generator[FakeFilesystem, None, None]:
         yield fs
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def security_manager() -> SecurityManager:
     """Create a security manager for testing."""
     return SecurityManager(base_dir=os.getcwd())

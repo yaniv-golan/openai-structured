@@ -2,7 +2,8 @@
 
 # Standard library imports
 import json
-from typing import Dict, Generator
+import warnings
+from typing import Any, Callable, Dict, Generator
 
 # Third-party imports
 import pytest
@@ -27,7 +28,7 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True)  # type: ignore[misc]
 def env_setup(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -40,7 +41,7 @@ def env_setup(
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def fs(fs: FakeFilesystem) -> Generator[FakeFilesystem, None, None]:
     """Create a fake filesystem for testing.
 
@@ -59,20 +60,13 @@ def fs(fs: FakeFilesystem) -> Generator[FakeFilesystem, None, None]:
     yield fs
 
 
-class MockResponse(BaseModel):
-    """Mock response for testing."""
-
-    message: str
-    sentiment: str
-
-
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def mock_openai_client() -> OpenAI:
     """Create a mock OpenAI client for testing."""
     return OpenAI(api_key="test-key", base_url="http://localhost:8000")
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def test_files(fs: FakeFilesystem) -> Dict[str, str]:
     """Create test files for testing.
 

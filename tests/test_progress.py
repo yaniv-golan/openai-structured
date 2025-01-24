@@ -21,7 +21,7 @@ def test_file_output(fs: FakeFilesystem) -> None:
     """Test output to file."""
     with ProgressContext(output_file="test.txt") as progress:
         progress.print_output("test message")
-    
+
     with open("test.txt", "r", encoding="utf-8") as f:
         content = f.read()
     assert content == "test message\n"

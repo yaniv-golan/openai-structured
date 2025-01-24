@@ -108,7 +108,7 @@ def read_file(
 
     with ProgressContext(
         description="Reading file",
-        level="basic" if progress_enabled else "none"
+        level="basic" if progress_enabled else "none",
     ) as progress:
         try:
             if progress:
@@ -235,7 +235,7 @@ def extract_template_metadata(
 
     with ProgressContext(
         description="Analyzing template",
-        level="basic" if progress_enabled else "none"
+        level="basic" if progress_enabled else "none",
     ) as progress:
         # Categorize variables by type
         for key, value in context.items():

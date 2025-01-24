@@ -10,7 +10,7 @@ from openai_structured.cli.file_list import FileInfoList
 from openai_structured.cli.security import SecurityManager
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def security_manager() -> SecurityManager:
     """Create a SecurityManager instance for testing."""
     return SecurityManager(base_dir=os.getcwd())

@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import List, Literal, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union, cast
 
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
@@ -24,6 +24,10 @@ from openai_structured.cli.errors import (
     VariableValueError,
 )
 from openai_structured.cli.security import SecurityManager
+from openai_structured.cli.template_validation import (
+    TemplateValidationError,
+    validate_template_placeholders,
+)
 
 
 # Variable mapping tests
@@ -34,7 +38,7 @@ def test_validate_variable_mapping_basic() -> None:
     assert value == "bar"
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[misc]
     "mapping,is_json,error_type",
     [
         ("=value", False, VariableNameError),  # Empty name
@@ -79,7 +83,7 @@ def test_validate_path_mapping_dir(fs: FakeFilesystem) -> None:
     assert path == "test_dir"
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[misc]
     "mapping,is_dir,error_type",
     [
         (
@@ -152,7 +156,7 @@ def test_validate_task_template_file(fs: FakeFilesystem) -> None:
     assert result == template
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[misc]
     "template,error_type",
     [
         ("Hello {{ name!", TaskTemplateSyntaxError),  # Invalid syntax
@@ -185,7 +189,7 @@ def test_validate_schema_file_basic(fs: FakeFilesystem) -> None:
     assert "age" in result["properties"]
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[misc]
     "content,error_type,error_parts",
     [
         # For JSON parsing errors, check for key error indicators
@@ -202,18 +206,51 @@ def test_validate_schema_file_errors(
     error_type: Type[Exception],
     error_parts: List[str],
 ) -> None:
-    """Test schema file validation errors.
-
-    The test checks for the presence of key parts in error messages rather than exact matches,
-    making it more resilient to minor changes in error message formatting while still
-    ensuring the essential error information is present.
-    """
-    fs.create_file("test_schema.json", contents=content)
+    """Test schema file validation errors."""
+    fs.create_file("schema.json", contents=content)
     with pytest.raises(error_type) as exc:
-        validate_schema_file("test_schema.json")
+        validate_schema_file("schema.json")
     error_msg = str(exc.value).lower()
-    # Check that all parts are present in the error message
     for part in error_parts:
         assert (
             part.lower() in error_msg
         ), f"Expected '{part}' in error message: {error_msg}"
+
+
+@pytest.mark.parametrize(  # type: ignore[misc]
+    "template,file_mappings,error_phrase",
+    [
+        (
+            "Hello {{ name }}!",
+            cast(Dict[str, Any], {}),
+            "undefined variables",
+        ),  # Missing variable
+        (
+            "Hello {{ name!",
+            cast(Dict[str, Any], {"name": "test"}),
+            "syntax",
+        ),  # Invalid syntax
+        (
+            "{% for item in items %}{{ item.undefined }}{% endfor %}",
+            cast(Dict[str, Any], {"items": [{"name": "test"}]}),
+            "items",
+        ),  # Invalid loop variable
+        (
+            "{% if condition %}{{ undefined_var }}{% endif %}",
+            cast(Dict[str, Any], {"condition": True}),
+            "undefined variable",
+        ),  # Undefined in conditional
+        (
+            "{{ undefined_var }}",
+            cast(Dict[str, Any], {}),
+            "undefined variable",
+        ),  # Simple undefined variable
+    ],
+)
+def test_validate_template_placeholders_errors(
+    template: str, file_mappings: Dict[str, Any], error_phrase: str
+) -> None:
+    """Test validation error cases for template placeholders."""
+    with pytest.raises(TemplateValidationError) as exc:
+        validate_template_placeholders(template, file_mappings)
+    assert error_phrase in str(exc.value).lower()

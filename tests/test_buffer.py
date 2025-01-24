@@ -53,13 +53,13 @@ def test_invalid_schema_type() -> None:
     with pytest.raises(
         ValueError, match="Schema must be a Pydantic model class"
     ):
-        StreamBuffer(schema=NotAPydanticModel)  # type: ignore
+        StreamBuffer(schema=NotAPydanticModel)
 
 
 def test_schema_validation_error_context() -> None:
     """Test that schema validation errors include proper context."""
 
-    class TestModel(BaseModel):
+    class TestModel(BaseModel):  # type: ignore[misc]
         value: int
 
     buffer = StreamBuffer(schema=TestModel)
@@ -104,7 +104,7 @@ def test_error_stats_consistency() -> None:
     assert "error_type" in buffer._cleanup_stats
 
     # Test validation error stats
-    class TestModel(BaseModel):
+    class TestModel(BaseModel):  # type: ignore[misc]
         value: int
 
     buffer = StreamBuffer(schema=TestModel)

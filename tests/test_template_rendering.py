@@ -10,6 +10,7 @@ from jinja2 import Environment, StrictUndefined
 from pyfakefs.fake_filesystem import FakeFilesystem
 from pyfakefs.fake_filesystem_unittest import Patcher
 
+from openai_structured.cli.errors import TemplateValidationError
 from openai_structured.cli.file_utils import FileInfo
 from openai_structured.cli.security import SecurityManager
 from openai_structured.cli.template_rendering import (
@@ -24,10 +25,9 @@ from openai_structured.cli.template_utils import (
 from openai_structured.cli.template_validation import (
     validate_template_placeholders,
 )
-from openai_structured.cli.errors import TemplateValidationError
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def security_manager() -> SecurityManager:
     """Create a security manager for testing."""
     manager = SecurityManager(base_dir=os.getcwd())

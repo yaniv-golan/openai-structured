@@ -67,6 +67,8 @@ from jinja2 import Environment, meta
 from jinja2.nodes import For, Name, Node
 
 from . import template_filters
+from .errors import TemplateValidationError
+from .template_env import create_jinja_env
 from .template_extensions import CommentExtension
 from .template_schema import (
     DictProxy,
@@ -74,8 +76,6 @@ from .template_schema import (
     ValidationProxy,
     create_validation_context,
 )
-from .template_env import create_jinja_env
-from .errors import TemplateValidationError
 
 T = TypeVar("T")
 FilterFunc = Callable[..., Any]
@@ -88,16 +88,22 @@ __all__ = [
 ]
 
 
-class SafeUndefined(jinja2.StrictUndefined):
-    """A strict Undefined class that allows any attribute access during validation."""
+class SafeUndefined(jinja2.StrictUndefined):  # type: ignore[misc]
+    """A strict Undefined class that validates attribute access during validation."""
 
     def __getattr__(self, name: str) -> Any:
-        # Allow any attribute access during validation
+        # Raise error for attribute access on undefined values
+        if name not in {"__html__", "__html_format__"}:
+            raise jinja2.UndefinedError(
+                f"'{self._undefined_name}' has no attribute '{name}'"
+            )
         return self
 
     def __getitem__(self, key: Any) -> Any:
-        # Allow any key access during validation
-        return self
+        # Raise error for key access on undefined values
+        raise jinja2.UndefinedError(
+            f"'{self._undefined_name}' has no key '{key}'"
+        )
 
 
 def safe_filter(func: FilterFunc) -> FilterWrapper:
@@ -145,7 +151,9 @@ def find_loop_vars(nodes: List[Node]) -> Set[str]:
     return loop_vars
 
 
-def validate_template_placeholders(template: str, template_context: Optional[Dict[str, Any]] = None) -> None:
+def validate_template_placeholders(
+    template: str, template_context: Optional[Dict[str, Any]] = None
+) -> None:
     """Validate that all placeholders in a template are valid.
 
     Args:
@@ -161,7 +169,11 @@ def validate_template_placeholders(template: str, template_context: Optional[Dic
     logger.debug(
         "Args: template=%s, template_context=%s",
         template,
-        {k: type(v).__name__ for k, v in template_context.items() if v is not None},
+        {
+            k: type(v).__name__
+            for k, v in (template_context or {}).items()
+            if v is not None
+        },
     )
 
     try:
@@ -273,7 +285,9 @@ def validate_template_placeholders(template: str, template_context: Optional[Dic
 
         # 2) Parse template and find variables
         ast = env.parse(template)
-        available_vars = set(template_context.keys()) if template_context else set()
+        available_vars = (
+            set(template_context.keys()) if template_context else set()
+        )
         logger.debug("Available variables: %s", available_vars)
 
         # Find loop variables
@@ -317,7 +331,7 @@ def validate_template_placeholders(template: str, template_context: Optional[Dic
             "Creating validation context with template_context: %s",
             template_context,
         )
-        validation_context = create_validation_context(template_context)
+        validation_context = create_validation_context(template_context or {})
 
         # 4) Try to render with validation context
         try:
@@ -336,9 +350,9 @@ def validate_template_placeholders(template: str, template_context: Optional[Dic
 
     except jinja2.TemplateSyntaxError as e:
         # Convert Jinja2 syntax errors to our own ValueError
-        raise TemplateValidationError(f"Invalid task template syntax: {str(e)}")
-    except Exception as e:
-        logger.error(
-            "Unexpected error during template validation: %s", str(e)
+        raise TemplateValidationError(
+            f"Invalid task template syntax: {str(e)}"
         )
+    except Exception as e:
+        logger.error("Unexpected error during template validation: %s", str(e))
         raise

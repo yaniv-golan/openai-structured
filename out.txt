@@ -1,5 +1,0 @@
-DEBUG:ostruct:_main: Starting ostruct CLI with log file: /Users/yaniv/.ostruct/logs/ostruct.log
-DEBUG:ostruct:_main: Initialized security manager with base dir: /Users/yaniv/Documents/code/openai-structured
-DEBUG:ostruct:_main: [_main] Creating template context from arguments
-DEBUG:ostruct:_main: [_main] Caught ValueError: File access error: Directory not found: examples/use_cases/01_code_review/sample_input/demo.py
-ERROR:ostruct:_main: Invalid input: File access error: Directory not found: examples/use_cases/01_code_review/sample_input/demo.py

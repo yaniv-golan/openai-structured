@@ -542,6 +542,7 @@ def create_validation_context(
         >>> # context['config'] will be DictProxy validating against {'debug': True}
         >>> # context['files'] will be ListProxy validating file attributes
     """
+    logger.debug("Creating validation context for: %s", template_context)
     validation_context: Dict[str, Any] = {}
 
     # Add stdin proxy by default - it will only read if accessed
@@ -555,6 +556,10 @@ def create_validation_context(
         elif isinstance(value, list):
             validation_context[name] = ListProxy(name, value)
         else:
-            validation_context[name] = ValidationProxy(name, value)
+            # For primitive values, create a ValidationProxy that disallows attribute access
+            validation_context[name] = ValidationProxy(
+                name, value=value, allow_nested=False
+            )
 
+    logger.debug("Created validation context: %s", validation_context)
     return validation_context

@@ -17,17 +17,7 @@ from openai_structured import (
     openai_structured_call,
     openai_structured_stream,
 )
-
-
-class SentimentResponse(BaseModel):
-    """Response model for sentiment analysis."""
-
-    message: str = Field(..., description="The analyzed message")
-    sentiment: str = Field(
-        ...,
-        pattern="(?i)^(positive|negative|neutral|mixed)$",
-        description="Sentiment of the message",
-    )
+from tests.support.models import SentimentMessage, BasicMessage
 
 
 class LogCapture:
@@ -47,10 +37,10 @@ class LogCapture:
         )
 
 
-@pytest.mark.skipif(
+@pytest.mark.skipif(  # type: ignore[misc]
     not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
 )
-@pytest.mark.live
+@pytest.mark.live  # type: ignore[misc]
 def test_live_sync_api() -> None:
     """Test synchronous API calls with real OpenAI API."""
     log_capture = LogCapture()
@@ -59,13 +49,13 @@ def test_live_sync_api() -> None:
     result = openai_structured_call(
         client=client,
         model="gpt-4o-2024-08-06",
-        output_schema=SentimentResponse,
+        output_schema=SentimentMessage,
         user_prompt="What is the sentiment of 'I love pizza'?",
         system_prompt="You analyze sentiment of text.",
         on_log=log_capture,
     )
 
-    assert isinstance(result, SentimentResponse)
+    assert isinstance(result, SentimentMessage)
     assert result.sentiment.lower() in [
         "positive",
         "negative",
@@ -75,10 +65,10 @@ def test_live_sync_api() -> None:
     assert len(log_capture.messages) > 0
 
 
-@pytest.mark.skipif(
+@pytest.mark.skipif(  # type: ignore[misc]
     not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
 )
-@pytest.mark.live
+@pytest.mark.live  # type: ignore[misc]
 def test_live_sync_streaming() -> None:
     """Test synchronous streaming with real OpenAI API."""
     log_capture = LogCapture()
@@ -93,13 +83,13 @@ def test_live_sync_streaming() -> None:
     for result in openai_structured_stream(
         client=client,
         model="gpt-4o-2024-08-06",
-        output_schema=SentimentResponse,
+        output_schema=SentimentMessage,
         user_prompt="What is the sentiment of 'I hate mondays'?",
         system_prompt="You analyze sentiment of text.",
         stream_config=config,
         on_log=log_capture,
     ):
-        assert isinstance(result, SentimentResponse)
+        assert isinstance(result, SentimentMessage)
         assert result.sentiment.lower() in [
             "positive",
             "negative",
@@ -114,11 +104,11 @@ def test_live_sync_streaming() -> None:
     assert len(log_capture.messages) > 0
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(
+@pytest.mark.skipif(  # type: ignore[misc]
     not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
 )
-@pytest.mark.live
+@pytest.mark.live  # type: ignore[misc]
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_live_async_api() -> None:
     """Test async API calls with real OpenAI API."""
     log_capture = LogCapture()
@@ -126,14 +116,14 @@ async def test_live_async_api() -> None:
         result = await async_openai_structured_call(
             client=client,
             model="gpt-4o-2024-08-06",
-            output_schema=SentimentResponse,
+            output_schema=SentimentMessage,
             user_prompt="What is the sentiment of 'I love pizza'?",
             system_prompt="You analyze sentiment of text.",
             on_log=log_capture,
             timeout=30.0,  # Test timeout parameter
         )
 
-        assert isinstance(result, SentimentResponse)
+        assert isinstance(result, SentimentMessage)
         assert result.sentiment.lower() in [
             "positive",
             "negative",
@@ -143,11 +133,11 @@ async def test_live_async_api() -> None:
         assert len(log_capture.messages) > 0
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(
+@pytest.mark.skipif(  # type: ignore[misc]
     not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
 )
-@pytest.mark.live
+@pytest.mark.live  # type: ignore[misc]
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_live_async_streaming() -> None:
     """Test async streaming with real OpenAI API."""
     log_capture = LogCapture()
@@ -162,13 +152,13 @@ async def test_live_async_streaming() -> None:
         async for result in async_openai_structured_stream(
             client=client,
             model="gpt-4o-2024-08-06",
-            output_schema=SentimentResponse,
+            output_schema=SentimentMessage,
             user_prompt="What is the sentiment of 'I hate mondays'?",
             system_prompt="You analyze sentiment of text.",
             stream_config=config,
             on_log=log_capture,
         ):
-            assert isinstance(result, SentimentResponse)
+            assert isinstance(result, SentimentMessage)
             assert result.sentiment.lower() in [
                 "positive",
                 "negative",
@@ -183,11 +173,11 @@ async def test_live_async_streaming() -> None:
         assert len(log_capture.messages) > 0
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(
+@pytest.mark.skipif(  # type: ignore[misc]
     not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
 )
-@pytest.mark.live
+@pytest.mark.live  # type: ignore[misc]
+@pytest.mark.asyncio  # type: ignore[misc]
 async def test_live_parameter_validation() -> None:
     """Test parameter validation with real API calls."""
     async with AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")) as client:
@@ -196,7 +186,7 @@ async def test_live_parameter_validation() -> None:
             await async_openai_structured_call(
                 client=client,
                 model="gpt-4o-2024-08-06",
-                output_schema=SentimentResponse,
+                output_schema=SentimentMessage,
                 user_prompt="test",
                 system_prompt="test",
                 temperature=2.5,  # Invalid temperature
@@ -207,7 +197,7 @@ async def test_live_parameter_validation() -> None:
             await async_openai_structured_call(
                 client=client,
                 model="gpt-4o-2024-08-06",
-                output_schema=SentimentResponse,
+                output_schema=SentimentMessage,
                 user_prompt="test",
                 system_prompt="test",
                 timeout=0.001,  # Very short timeout
