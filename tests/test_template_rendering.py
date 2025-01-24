@@ -3,11 +3,12 @@
 import logging
 import os
 import tempfile
-from typing import Any, Dict
+from typing import Any, Dict, Generator, List, TypedDict, Union, cast
 
 import pytest
 from jinja2 import Environment, StrictUndefined
 from pyfakefs.fake_filesystem import FakeFilesystem
+from pyfakefs.fake_filesystem_unittest import Patcher
 
 from openai_structured.cli.file_utils import FileInfo
 from openai_structured.cli.security import SecurityManager
@@ -20,6 +21,10 @@ from openai_structured.cli.template_utils import (
     read_file,
     validate_template_placeholders,
 )
+from openai_structured.cli.template_validation import (
+    validate_template_placeholders,
+)
+from openai_structured.cli.errors import TemplateValidationError
 
 
 @pytest.fixture
@@ -132,17 +137,17 @@ def test_render_template_with_dot_dict() -> None:
 def test_render_template_error_handling() -> None:
     """Test error handling in template rendering."""
     # Test undefined variable
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         render_template("{{ undefined }}", {})
-    assert "undefined" in str(exc.value)
+    assert "'undefined' is undefined" in str(exc.value)
 
     # Test syntax error
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         render_template("{% if %}", {})
-    assert "syntax error" in str(exc.value)
+    assert "Task template syntax error" in str(exc.value)
 
     # Test runtime error
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         render_template("{{ x + y }}", {"x": "string", "y": 1})
     assert "can only concatenate str" in str(exc.value)
 
@@ -220,36 +225,32 @@ def test_validate_template_placeholders_basic() -> None:
     """Test basic template placeholder validation."""
     template = "Hello {{ name }}!"
     context = {"name": "World"}
-    env = Environment()
     # Should not raise any exceptions
-    validate_template_placeholders(template, context, env)
+    validate_template_placeholders(template, context)
 
 
 def test_validate_template_placeholders_missing() -> None:
     """Test template validation with missing variables."""
     template = "Hello {{ name }}!"
     context: Dict[str, str] = {}  # Empty context
-    env = Environment()
-    with pytest.raises(ValueError):
-        validate_template_placeholders(template, context, env)
+    with pytest.raises(TemplateValidationError):
+        validate_template_placeholders(template, context)
 
 
 def test_validate_template_placeholders_undefined() -> None:
     """Test template validation with undefined variables."""
     template = "Hello {{ name }}!"
     context = {"wrong_name": "World"}
-    env = Environment()
-    with pytest.raises(ValueError):
-        validate_template_placeholders(template, context, env)
+    with pytest.raises(TemplateValidationError):
+        validate_template_placeholders(template, context)
 
 
 def test_validate_template_placeholders_nested() -> None:
     """Test template validation with nested variables."""
     template = "{{ user.name }} is {{ user.age }} years old"
     context = {"user": {"name": "Alice", "age": 30}}
-    env = Environment()
     # Should not raise any exceptions
-    validate_template_placeholders(template, context, env)
+    validate_template_placeholders(template, context)
 
 
 def test_validate_template_placeholders_complex() -> None:
@@ -265,6 +266,5 @@ def test_validate_template_placeholders_complex() -> None:
             {"name": "B", "value": 2},
         ]
     }
-    env = Environment()
     # Should not raise any exceptions
-    validate_template_placeholders(template, context, env)
+    validate_template_placeholders(template, context)

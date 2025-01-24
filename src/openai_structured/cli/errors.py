@@ -259,6 +259,12 @@ class TaskTemplateVariableError(TaskTemplateError):
     pass
 
 
+class TemplateValidationError(TaskTemplateError):
+    """Raised when template validation fails."""
+
+    pass
+
+
 class SystemPromptError(TaskTemplateError):
     """Raised when there are issues with system prompt loading or processing."""
 

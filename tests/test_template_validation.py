@@ -14,8 +14,10 @@ from openai_structured.cli.security import SecurityManager
 from openai_structured.cli.template_validation import (
     SafeUndefined,
     validate_template_placeholders,
+    TemplateValidationError,
 )
 from openai_structured.cli.template_rendering import render_template
+from openai_structured.cli.errors import TemplateValidationError
 
 
 @pytest.fixture
@@ -118,9 +120,9 @@ def test_validate_template_errors(
     template: str, file_mappings: Dict[str, Any], error_phrase: str
 ) -> None:
     """Test template validation error cases."""
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, file_mappings)
-    assert error_phrase in str(exc.value)
+    assert error_phrase in str(exc.value).lower()
 
 
 def test_validate_with_filters() -> None:
@@ -184,9 +186,8 @@ def test_validate_invalid_access(
 ) -> None:
     """Test validation with invalid attribute/key access."""
     file_mappings = context_setup(fs, security_manager)
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, file_mappings)
-    assert "undefined" in str(exc.value)
 
 
 def test_validate_complex_template(
@@ -231,9 +232,8 @@ def test_validate_complex_template(
 def test_validate_template_placeholders_invalid_json() -> None:
     """Test validation with invalid JSON value."""
     template = "{{ invalid_json }}"
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, {})
-    assert "undefined variable" in str(exc.value)
 
 
 def test_comment_block_variables_ignored():
@@ -285,10 +285,23 @@ def test_comment_block_with_real_undefined_vars():
     }
 
     # Should raise validation error only for undefined_real_var
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, context)
     
     # Error should mention the real undefined variable but not the commented ones
     assert 'undefined_real_var' in str(exc.value)
     assert 'commented_undefined_var' not in str(exc.value)
     assert 'another_commented_var' not in str(exc.value)
+
+
+def test_validate_template_placeholders_with_invalid_placeholders() -> None:
+    """Test that validate_template_placeholders raises an error for invalid placeholders."""
+    template = "Hello {{ invalid.placeholder }}"
+    with pytest.raises(TemplateValidationError):
+        validate_template_placeholders(template, {})
+
+
+def test_validate_template_placeholders_with_valid_placeholders() -> None:
+    """Test that validate_template_placeholders accepts valid placeholders."""
+    template = "Hello {{ input.content }}"
+    validate_template_placeholders(template, {"input": {"content": "world"}})

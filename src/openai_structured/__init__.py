@@ -16,15 +16,12 @@ except Exception:
 
 from .cli import (
     ExitCode,
-    ProgressContext,
-    create_dynamic_model,
     estimate_tokens_for_chat,
     get_context_window_limit,
     get_default_token_limit,
+    parse_json_var,
+    create_dynamic_model,
     main,
-    supports_structured_output,
-    validate_template_placeholders,
-    validate_token_limits,
 )
 from .client import (
     StreamConfig,
@@ -32,6 +29,7 @@ from .client import (
     async_openai_structured_stream,
     openai_structured_call,
     openai_structured_stream,
+    supports_structured_output,
 )
 from .errors import (
     APIResponseError,
@@ -65,12 +63,10 @@ __all__ = [
     "ExitCode",
     "main",
     "create_dynamic_model",
-    "validate_template_placeholders",
+    "parse_json_var",
     "estimate_tokens_for_chat",
     "get_context_window_limit",
     "get_default_token_limit",
-    "validate_token_limits",
-    "ProgressContext",
     # Exceptions
     "OpenAIClientError",
     "ModelNotSupportedError",

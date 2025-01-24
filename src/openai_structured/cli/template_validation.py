@@ -75,10 +75,17 @@ from .template_schema import (
     create_validation_context,
 )
 from .template_env import create_jinja_env
+from .errors import TemplateValidationError
 
 T = TypeVar("T")
 FilterFunc = Callable[..., Any]
 FilterWrapper = Callable[[Any, Any, Any], Optional[Union[Any, str, List[Any]]]]
+
+__all__ = [
+    "TemplateValidationError",
+    "validate_template_placeholders",
+    "validate_template_file",
+]
 
 
 class SafeUndefined(jinja2.StrictUndefined):
@@ -138,37 +145,28 @@ def find_loop_vars(nodes: List[Node]) -> Set[str]:
     return loop_vars
 
 
-def validate_template_placeholders(
-    task_template: str,
-    template_context: Dict[str, Any],
-    env: Optional[Environment] = None,
-) -> None:
-    """Validate that a task template only uses available variables.
-
-    This function checks that all variables used in the template exist in the
-    template context and that any nested attribute access is valid.
+def validate_template_placeholders(template: str, template_context: Optional[Dict[str, Any]] = None) -> None:
+    """Validate that all placeholders in a template are valid.
 
     Args:
-        task_template: The template string to validate
-        template_context: Dictionary mapping variable names to their values
-        env: Optional Jinja2 Environment to use for validation
+        template: Template string to validate
+        template_context: Optional context to validate against
 
     Raises:
-        ValueError: If the template uses undefined variables or has invalid syntax
+        TemplateValidationError: If any placeholders are invalid
     """
     logger = logging.getLogger(__name__)
 
     logger.debug("=== validate_template_placeholders called ===")
     logger.debug(
-        "Args: task_template=%s, template_context=%s",
-        task_template,
-        {k: type(v).__name__ for k, v in template_context.items()},
+        "Args: template=%s, template_context=%s",
+        template,
+        {k: type(v).__name__ for k, v in template_context.items() if v is not None},
     )
 
     try:
         # 1) Create Jinja2 environment with meta extension and safe undefined
-        if env is None:
-            env = create_jinja_env(validation_mode=True)
+        env = create_jinja_env(validation_mode=True)
 
         # Register custom filters with None-safe wrappers
         env.filters.update(
@@ -274,8 +272,8 @@ def validate_template_placeholders(
         builtin_vars.update(env.globals.keys())
 
         # 2) Parse template and find variables
-        ast = env.parse(task_template)
-        available_vars = set(template_context.keys())
+        ast = env.parse(template)
+        available_vars = set(template_context.keys()) if template_context else set()
         logger.debug("Available variables: %s", available_vars)
 
         # Find loop variables
@@ -298,7 +296,7 @@ def validate_template_placeholders(
         }
 
         if missing:
-            raise ValueError(
+            raise TemplateValidationError(
                 f"Task template uses undefined variables: {', '.join(sorted(missing))}. "
                 f"Available variables: {', '.join(sorted(available_vars))}"
             )
@@ -323,10 +321,13 @@ def validate_template_placeholders(
 
         # 4) Try to render with validation context
         try:
-            env.from_string(task_template).render(validation_context)
+            env.from_string(template).render(validation_context)
         except jinja2.UndefinedError as e:
             # Convert Jinja2 undefined errors to our own ValueError
-            raise ValueError(str(e))
+            raise TemplateValidationError(str(e))
+        except ValueError as e:
+            # Convert validation errors from template_schema to TemplateValidationError
+            raise TemplateValidationError(str(e))
         except Exception as e:
             logger.error(
                 "Unexpected error during template validation: %s", str(e)
@@ -335,7 +336,9 @@ def validate_template_placeholders(
 
     except jinja2.TemplateSyntaxError as e:
         # Convert Jinja2 syntax errors to our own ValueError
-        raise ValueError(f"Invalid task template syntax: {str(e)}")
+        raise TemplateValidationError(f"Invalid task template syntax: {str(e)}")
     except Exception as e:
-        logger.error("Unexpected error during template validation: %s", str(e))
+        logger.error(
+            "Unexpected error during template validation: %s", str(e)
+        )
         raise

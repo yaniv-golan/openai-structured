@@ -2,7 +2,7 @@
 
 import sys
 from contextlib import contextmanager
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Any, Type, Union
 
 
 class ProgressContext:
@@ -22,11 +22,17 @@ class ProgressContext:
         self._output_file = output_file
         self._level = level
         self.enabled = level != "none"
+        self.current: int = 0
 
     def __enter__(self) -> "ProgressContext":
         return self
 
-    def __exit__(self, *args) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> None:
         pass
 
     def update(self, amount: int = 1, force: bool = False) -> None:

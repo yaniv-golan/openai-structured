@@ -4,6 +4,7 @@ import io
 from unittest.mock import patch
 
 import pytest
+from pyfakefs.fake_filesystem import FakeFilesystem
 
 from openai_structured.cli.progress import ProgressContext
 
@@ -16,7 +17,7 @@ def test_stdout_output() -> None:
         assert fake_out.getvalue() == "test message\n"
 
 
-def test_file_output(fs) -> None:
+def test_file_output(fs: FakeFilesystem) -> None:
     """Test output to file."""
     with ProgressContext(output_file="test.txt") as progress:
         progress.print_output("test message")

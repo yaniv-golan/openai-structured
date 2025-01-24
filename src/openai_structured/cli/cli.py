@@ -23,7 +23,12 @@ from typing import (
     TypeVar,
     cast,
     overload,
+    Annotated,
+    Union,
+    Callable,
+    Pattern as PatternType,
 )
+from typing_extensions import TypeAlias
 
 import jinja2
 import tiktoken
@@ -47,8 +52,13 @@ from pydantic import (
     ValidationError,
 )
 from pydantic.json_schema import JsonSchemaMode
+from pydantic.fields import FieldInfo
 import annotated_types
 from datetime import datetime, date, time
+import re
+from pydantic.types import constr
+from pydantic_core.core_schema import ValidationInfo
+from pydantic.functional_validators import BeforeValidator
 
 from ..client import async_openai_structured_stream, supports_structured_output
 from ..errors import (
@@ -145,558 +155,146 @@ class ExitCode(IntEnum):
     UNKNOWN_ERROR = 91
 
 
-def create_dynamic_model(
-    schema: Dict[str, Any],
-    base_name: str = "DynamicModel",
-    show_schema: bool = False,
-    debug_validation: bool = False,
-) -> Type[BaseModel]:
-    """Create a Pydantic model from a JSON schema.
-    
+# Type aliases
+FieldType = Union[Type[Any], Type[Any]]
+FieldDefinition = tuple[FieldType, Optional[FieldInfo]]
+ModelType = TypeVar('ModelType', bound=BaseModel)
+ItemType: TypeAlias = Type[BaseModel]
+ValueType: TypeAlias = Type[Any]
+
+
+def _create_field(**kwargs: Any) -> FieldInfo:
+    """Create a Pydantic Field with the given kwargs."""
+    field: FieldInfo = Field(**kwargs)
+    return field
+
+
+def _get_type_with_constraints(field_schema: Dict[str, Any], field_name: str, base_name: str) -> FieldDefinition:
+    """Get type with constraints from field schema.
+
     Args:
-        schema: JSON schema dict, can be wrapped in {"schema": ...} format
-        base_name: Base name for the model
-        show_schema: Whether to show the generated schema
-        debug_validation: Whether to enable validation debugging
-        
+        field_schema: Field schema dict
+        field_name: Name of the field
+        base_name: Base name for nested models
+
     Returns:
-        Generated Pydantic model class
-        
-    Raises:
-        ModelCreationError: When model creation fails
-        SchemaValidationError: When schema is invalid
+        Tuple of (type, field)
     """
-    if debug_validation:
-        logger.info("Creating dynamic model from schema:")
-        logger.info(json.dumps(schema, indent=2))
-    
-    # Validate schema is a dictionary
-    if not isinstance(schema, dict):
-        if debug_validation:
-            logger.error("Schema must be a dictionary, got %s", type(schema))
-        raise SchemaValidationError("Schema must be a dictionary")
-    
-    # Handle our wrapper format if present
-    if "schema" in schema:
-        if debug_validation:
-            logger.info("Found schema wrapper, extracting inner schema")
-            logger.info("Original schema: %s", json.dumps(schema, indent=2))
-        inner_schema = schema["schema"]
-        if not isinstance(inner_schema, dict):
-            if debug_validation:
-                logger.error("Inner schema must be a dictionary, got %s", type(inner_schema))
-            raise SchemaValidationError("Inner schema must be a dictionary")
-        if debug_validation:
-            logger.info("Using inner schema:")
-            logger.info(json.dumps(inner_schema, indent=2))
-        schema = inner_schema
-    
-    # Ensure schema has type field
-    if "type" not in schema:
-        if debug_validation:
-            logger.info("Schema missing type field, assuming object type")
-        schema["type"] = "object"
-    
-    # Validate root schema is object type
-    if schema["type"] != "object":
-        if debug_validation:
-            logger.error("Schema type must be 'object', got %s", schema["type"])
-        raise SchemaValidationError("Root schema must be of type 'object'")
-    
-    # Ensure schema has properties
-    if "properties" not in schema:
-        if debug_validation:
-            logger.info("Schema missing properties field, using empty dict")
-        schema["properties"] = {}
-    
-    if debug_validation:
-        logger.info("Required fields: %s", schema.get("required", []))
-        logger.info("Properties:")
-        for prop_name, prop_schema in schema.get("properties", {}).items():
-            logger.info("  %s:", prop_name)
-            logger.info("    Type: %s", prop_schema.get("type"))
-            logger.info("    Required: %s", prop_name in schema.get("required", []))
-            logger.info("    Schema: %s", json.dumps(prop_schema, indent=2))
-    
-    if debug_validation:
-        logger.info("Validated schema structure: %s", json.dumps(schema, indent=2))
+    field_type = field_schema.get("type")
+    constraints: List[Any] = []
+    field_kwargs: Dict[str, Any] = {}
 
-    def _get_type_with_constraints(field_schema: dict) -> tuple:
-        """Get Python type with Pydantic v2 constraints."""
-        if debug_validation:
-            logger.info("Processing field schema for type constraints:")
-            logger.info(json.dumps(field_schema, indent=2))
-        
-        field_type = field_schema.get("type")
-        if debug_validation:
-            logger.info("Field type: %s", field_type)
+    # Add common field metadata
+    if "title" in field_schema:
+        field_kwargs["title"] = field_schema["title"]
+    if "description" in field_schema:
+        field_kwargs["description"] = field_schema["description"]
+    if "default" in field_schema:
+        field_kwargs["default"] = field_schema["default"]
+    if "readOnly" in field_schema:
+        field_kwargs["frozen"] = field_schema["readOnly"]
 
-        constraints = []
-        field_args = {
-            "description": field_schema.get("description"),
-            "title": field_schema.get("title"),
-            "json_schema_extra": {k: v for k, v in field_schema.items() 
-                                if k not in {"type", "description", "title", "default", 
-                                           "minimum", "maximum", "exclusiveMinimum", 
-                                           "exclusiveMaximum", "multipleOf", "minLength",
-                                           "maxLength", "pattern", "format", "enum"}}
-        }
-        
-        if "default" in field_schema:
-            field_args["default"] = field_schema["default"]
-            if debug_validation:
-                logger.info("Default value: %s", field_schema["default"])
-        
-        if field_type == "string":
-            if debug_validation:
-                logger.info("Processing string type constraints")
-            base_type = str
-            if "minLength" in field_schema:
-                constraints.append(annotated_types.MinLen(field_schema["minLength"]))
-                if debug_validation:
-                    logger.info("Added minLength constraint: %d", field_schema["minLength"])
-            if "maxLength" in field_schema:
-                constraints.append(annotated_types.MaxLen(field_schema["maxLength"]))
-                if debug_validation:
-                    logger.info("Added maxLength constraint: %d", field_schema["maxLength"])
-            if "pattern" in field_schema:
-                constraints.append(annotated_types.Pattern(field_schema["pattern"]))
-                if debug_validation:
-                    logger.info("Added pattern constraint: %s", field_schema["pattern"])
-            if "format" in field_schema:
-                if debug_validation:
-                    logger.info("Processing string format: %s", field_schema["format"])
-                # Handle special string formats
-                if field_schema["format"] == "date-time":
-                    base_type = datetime
-                elif field_schema["format"] == "date":
-                    base_type = date
-                elif field_schema["format"] == "time":
-                    base_type = time
-                elif field_schema["format"] == "email":
-                    base_type = EmailStr
-                elif field_schema["format"] == "uri":
-                    base_type = AnyUrl
-                if debug_validation:
-                    logger.info("Using base type: %s", base_type.__name__)
-        
-        elif field_type in ("integer", "number"):
-            if debug_validation:
-                logger.info("Processing numeric type constraints")
-            base_type = int if field_type == "integer" else float
-            if "minimum" in field_schema:
-                constraints.append(annotated_types.Ge(field_schema["minimum"]))
-                if debug_validation:
-                    logger.info("Added minimum constraint: %s", field_schema["minimum"])
-            if "maximum" in field_schema:
-                constraints.append(annotated_types.Le(field_schema["maximum"]))
-                if debug_validation:
-                    logger.info("Added maximum constraint: %s", field_schema["maximum"])
-            if "exclusiveMinimum" in field_schema:
-                constraints.append(annotated_types.Gt(field_schema["exclusiveMinimum"]))
-                if debug_validation:
-                    logger.info("Added exclusiveMinimum constraint: %s", field_schema["exclusiveMinimum"])
-            if "exclusiveMaximum" in field_schema:
-                constraints.append(annotated_types.Lt(field_schema["exclusiveMaximum"]))
-                if debug_validation:
-                    logger.info("Added exclusiveMaximum constraint: %s", field_schema["exclusiveMaximum"])
-            if "multipleOf" in field_schema:
-                constraints.append(annotated_types.MultipleOf(field_schema["multipleOf"]))
-                if debug_validation:
-                    logger.info("Added multipleOf constraint: %s", field_schema["multipleOf"])
-        
-        elif field_type == "boolean":
-            if debug_validation:
-                logger.info("Processing boolean type")
-            base_type = bool
-        
-        elif field_type == "null":
-            if debug_validation:
-                logger.info("Processing null type")
-            return (None, Field(**field_args))
-        
-        elif field_type == "array":
-            if debug_validation:
-                logger.info("Processing array type")
-            items = field_schema.get("items", {})
-            if items.get("type") == "object":
-                if debug_validation:
-                    logger.info("Array items are objects, creating nested model")
-                # Create nested model for array items
-                try:
-                    item_model = create_dynamic_model(
-                        items,
-                        base_name=f"{base_name}Item",
-                        show_schema=show_schema,
-                        debug_validation=debug_validation
-                    )
-                    base_type = List[item_model]
-                    if debug_validation:
-                        logger.info("Created array item model: %s", item_model.__name__)
-                except Exception as e:
-                    if debug_validation:
-                        logger.error("Failed to create array item model: %s", str(e))
-                    return (Any, Field(**field_args))
-            else:
-                if debug_validation:
-                    logger.info("Array items are primitive types")
-                # Handle primitive array types
-                item_type, _ = _get_type_with_constraints(items)
-                base_type = List[item_type]
-                if debug_validation:
-                    logger.info("Using array type: List[%s]", getattr(item_type, "__name__", str(item_type)))
-            
-            # Add array constraints
-            if "minItems" in field_schema:
-                constraints.append(annotated_types.MinLen(field_schema["minItems"]))
-                if debug_validation:
-                    logger.info("Added minItems constraint: %d", field_schema["minItems"])
-            if "maxItems" in field_schema:
-                constraints.append(annotated_types.MaxLen(field_schema["maxItems"]))
-                if debug_validation:
-                    logger.info("Added maxItems constraint: %d", field_schema["maxItems"])
-            if field_schema.get("uniqueItems", False):
-                base_type = Set[item_type if 'item_type' in locals() else item_model]
-                if debug_validation:
-                    logger.info("Using Set type for uniqueItems constraint")
-        
-        elif field_type == "object":
-            if debug_validation:
-                logger.info("Processing object type")
-            if "additionalProperties" in field_schema:
-                if debug_validation:
-                    logger.info("Object has additionalProperties")
-                if isinstance(field_schema["additionalProperties"], dict):
-                    value_type, _ = _get_type_with_constraints(field_schema["additionalProperties"])
-                    base_type = Dict[str, value_type]
-                    if debug_validation:
-                        logger.info("Using Dict[str, %s] for additionalProperties", 
-                                  getattr(value_type, "__name__", str(value_type)))
-                else:
-                    base_type = Dict[str, Any]
-                    if debug_validation:
-                        logger.info("Using Dict[str, Any] for additionalProperties")
-            else:
-                if debug_validation:
-                    logger.info("Creating nested object model")
-                try:
-                    base_type = create_dynamic_model(
-                        field_schema,
-                        base_name=f"{base_name}Object",
-                        show_schema=show_schema,
-                        debug_validation=debug_validation
-                    )
-                    if debug_validation:
-                        logger.info("Created nested object model: %s", base_type.__name__)
-                except Exception as e:
-                    if debug_validation:
-                        logger.error("Failed to create object model: %s", str(e))
-                    return (Any, Field(**field_args))
-        
-        else:
-            if debug_validation:
-                logger.info("Unknown type %s, using Any", field_type)
-            return (Any, Field(**field_args))
+    # Handle array type
+    if field_type == "array":
+        items_schema = field_schema.get("items", {})
+        if not items_schema:
+            # Default to Any for empty items schema
+            return (List[Any], Field(**field_kwargs))
 
-        # Handle enum values if present
-        if "enum" in field_schema:
-            if debug_validation:
-                logger.info("Processing enum values: %s", field_schema["enum"])
-                logger.info("Current base_name: %s", base_name)
-                logger.info("Field name: %s", field_name)
-                logger.info("Field schema: %s", json.dumps(field_schema, indent=2))
-                logger.info("Field args: %s", field_args)
-                
-            enum_name = f"{base_name}{field_name.title()}Enum"
-            return _create_enum_type(
-                enum_name=enum_name,
-                values=field_schema["enum"],
-                field_args=field_args,
-                debug_validation=debug_validation
-            )
-
-        # Create field with constraints
-        if constraints:
-            if debug_validation:
-                logger.info("Creating annotated type with %d constraints", len(constraints))
-                for constraint in constraints:
-                    logger.info("  Constraint: %s", constraint)
-            return (Annotated[base_type, *constraints], Field(**field_args))
-        
-        if debug_validation:
-            logger.info("Using base type without constraints: %s", 
-                       getattr(base_type, "__name__", str(base_type)))
-            logger.info("Field args: %s", field_args)
-        return (base_type, Field(**field_args))
-
-    def create_field_definition(field_schema: dict, field_name: str) -> tuple:
-        """Create a field definition with proper typing and validation."""
-        if debug_validation:
-            logger.debug("Creating field definition for %s", field_name)
-            logger.debug("Field schema: %s", json.dumps(field_schema, indent=2))
-        
-        try:
-            field_type = field_schema.get("type")
-            if not field_type:
-                return (Any, Field(description=field_schema.get("description")))
-
-            # Handle array types
-            if field_type == "array":
-                try:
-                    items = field_schema.get("items", {})
-                    if items.get("type") == "object":
-                        try:
-                            item_model = create_dynamic_model(
-                                items,  # Pass full items schema
-                                f"{base_name}{field_name.title()}Item",
-                                show_schema,
-                                debug_validation
-                            )
-                        except ModelCreationError as e:
-                            raise NestedModelError(
-                                f"{base_name}{field_name.title()}Item",
-                                field_name,
-                                str(e)
-                            ) from e
-                        
-                        constraints = {}
-                        if "minItems" in field_schema:
-                            constraints["min_length"] = field_schema["minItems"]
-                        if "maxItems" in field_schema:
-                            constraints["max_length"] = field_schema["maxItems"]
-                        if field_schema.get("uniqueItems", False):
-                            return (
-                                set[item_model],
-                                Field(description=field_schema.get("description"), **constraints)
-                            )
-                        return (
-                            List[item_model],
-                            Field(description=field_schema.get("description"), **constraints)
-                        )
-                    else:
-                        item_type, item_field = _get_type_with_constraints(items)
-                        constraints = {}
-                        if "minItems" in field_schema:
-                            constraints["min_length"] = field_schema["minItems"]
-                        if "maxItems" in field_schema:
-                            constraints["max_length"] = field_schema["maxItems"]
-                        return (
-                            List[item_type],
-                            Field(description=field_schema.get("description"), **constraints)
-                        )
-                except Exception as e:
-                    raise FieldDefinitionError(
-                        field_name,
-                        "array",
-                        f"Failed to create array field: {str(e)}"
-                    ) from e
-            
-            # Handle object types
-            elif field_type == "object":
-                try:
-                    if "additionalProperties" in field_schema:
-                        if isinstance(field_schema["additionalProperties"], dict):
-                            value_type, value_field = _get_type_with_constraints(field_schema["additionalProperties"])
-                            return (
-                                Dict[str, value_type],
-                                Field(description=field_schema.get("description"))
-                            )
-                    nested_model = create_dynamic_model(
-                        field_schema,  # Pass full field schema
-                        f"{base_name}{field_name.title()}",
-                        show_schema,
-                        debug_validation
-                    )
-                    return (
-                        nested_model,
-                        Field(description=field_schema.get("description"))
-                    )
-                except ModelCreationError as e:
-                    raise NestedModelError(
-                        f"{base_name}{field_name.title()}",
-                        field_name,
-                        str(e)
-                    ) from e
-                except Exception as e:
-                    raise FieldDefinitionError(
-                        field_name,
-                        "object",
-                        f"Failed to create object field: {str(e)}"
-                    ) from e
-            
-            # Handle basic types with constraints
-            else:
-                try:
-                    python_type, field = _get_type_with_constraints(field_schema)
-                    return (python_type, field)
-                except Exception as e:
-                    raise FieldDefinitionError(
-                        field_name,
-                        field_type,
-                        f"Failed to create basic field: {str(e)}"
-                    ) from e
-                    
-        except (FieldDefinitionError, NestedModelError):
-            raise
-        except Exception as e:
-            if debug_validation:
-                logger.error("Failed to create field definition for %s: %s", field_name, str(e))
-            raise FieldDefinitionError(
-                field_name,
-                field_schema.get("type", "unknown"),
-                f"Unexpected error: {str(e)}"
-            ) from e
-
-    # Create field definitions with proper naming
-    if debug_validation:
-        logger.info("Processing schema properties for %s", base_name)
-        logger.info("Schema: %s", json.dumps(schema, indent=2))
-        logger.info("Required fields: %s", schema.get("required", []))
-        
-    field_definitions = {}
-    properties = schema.get("properties", {})
-    required = schema.get("required", [])
-    
-    validation_errors = []
-    
-    for field_name, field_schema in properties.items():
-        try:
-            if debug_validation:
-                logger.info("Processing field %s:", field_name)
-                logger.info("  Schema: %s", json.dumps(field_schema, indent=2))
-                
-            python_type, field = create_field_definition(field_schema, field_name)
-            
-            # Handle optional fields
-            if field_name not in required:
-                if debug_validation:
-                    logger.info("Field %s is optional, wrapping in Optional", field_name)
-                python_type = Optional[python_type]
-            else:
-                if debug_validation:
-                    logger.info("Field %s is required", field_name)
-            
-            # Create field definition
-            field_definitions[field_name] = (python_type, field)
-            
-            if debug_validation:
-                logger.info("Successfully created field definition:")
-                logger.info("  Name: %s", field_name)
-                logger.info("  Type: %s", python_type)
-                logger.info("  Required: %s", field_name in required)
-                logger.info("  Field config:")
-                logger.info("    Description: %s", field.description)
-                logger.info("    Title: %s", field.title)
-                logger.info("    JSON Schema Extra: %s", field.json_schema_extra)
-                
-        except (FieldDefinitionError, NestedModelError) as e:
-            if debug_validation:
-                logger.error("Error creating field %s:", field_name)
-                logger.error("  Error type: %s", type(e).__name__)
-                logger.error("  Error message: %s", str(e))
-            validation_errors.append(str(e))
-    
-    if validation_errors:
-        if debug_validation:
-            logger.error("Model validation failed with %d errors:", len(validation_errors))
-            for error in validation_errors:
-                logger.error("  - %s", error)
-        raise ModelValidationError(base_name, validation_errors)
-
-    # Create model with configuration
-    try:
-        model_config = ConfigDict(
-            title=schema.get("title", base_name),
-            description=schema.get("description"),
-            extra="forbid" if schema.get("additionalProperties") is False else "allow",
-            strict=True,
-            frozen=schema.get("readOnly", False),
-            validate_default=True,
-            use_enum_values=True,
-            json_schema_mode='serialization',
-            arbitrary_types_allowed=True,
-            json_schema_extra={k: v for k, v in schema.items() 
-                            if k not in {"type", "properties", "required", "title", 
-                                       "description", "additionalProperties", "readOnly"}}
+        # Create nested model for array items
+        nested_type: Type[BaseModel] = create_dynamic_model(
+            items_schema,
+            base_name=f"{base_name}_{field_name}_Item",
+            show_schema=False,
+            debug_validation=False
         )
+        return (List[nested_type], Field(**field_kwargs))
 
-        if debug_validation:
-            logger.info("Creating model with configuration:")
-            logger.info("  Title: %s", model_config.get("title"))
-            logger.info("  Description: %s", model_config.get("description"))
-            logger.info("  Extra: %s", model_config.get("extra"))
-            logger.info("  Strict: %s", model_config.get("strict"))
-            logger.info("  Frozen: %s", model_config.get("frozen"))
-            logger.info("  Validate Default: %s", model_config.get("validate_default"))
-            logger.info("  Use Enum Values: %s", model_config.get("use_enum_values"))
-            logger.info("  JSON Schema Mode: %s", model_config.get("json_schema_mode"))
-            logger.info("  Arbitrary Types Allowed: %s", model_config.get("arbitrary_types_allowed"))
-            logger.info("  JSON Schema Extra: %s", model_config.get("json_schema_extra"))
-            logger.info("Full configuration: %s", json.dumps(model_config, default=str))
-            logger.info("Creating model with fields:")
-            for name, (type_, field) in field_definitions.items():
-                logger.info("  Field: %s", name)
-                logger.info("    Type: %s", type_)
-                logger.info("    Required: %s", name in required)
-                logger.info("    Field config:")
-                logger.info("      Description: %s", field.description)
-                logger.info("      Title: %s", field.title)
-                logger.info("      JSON Schema Extra: %s", field.json_schema_extra)
-
-        model = create_model(
-            base_name,
-            __config__=model_config,
-            **{name: (type_, field) for name, (type_, field) in field_definitions.items()}
+    # Handle object type
+    if field_type == "object":
+        # Create nested model for object
+        nested_type: Type[BaseModel] = create_dynamic_model(
+            field_schema,
+            base_name=f"{base_name}_{field_name}",
+            show_schema=False,
+            debug_validation=False
         )
+        return (nested_type, Field(**field_kwargs))
 
-        if debug_validation:
-            logger.info("Successfully created model: %s", model.__name__)
-            logger.info("Model config: %s", dict(model.model_config))
-            logger.info("Model schema: %s", json.dumps(model.model_json_schema(), indent=2))
+    # Handle additionalProperties
+    if "additionalProperties" in field_schema and isinstance(field_schema["additionalProperties"], dict):
+        # Create nested model for dict values
+        nested_type: Type[BaseModel] = create_dynamic_model(
+            field_schema["additionalProperties"],
+            base_name=f"{base_name}_{field_name}_Value",
+            show_schema=False,
+            debug_validation=False
+        )
+        return (Dict[str, nested_type], Field(**field_kwargs))
 
-        # Validate the model's JSON schema
-        try:
-            if debug_validation:
-                logger.info("Validating model schema")
-            schema = TypeAdapter(model).json_schema()
-            if debug_validation:
-                logger.info("Model schema validation successful")
-                logger.info("Generated schema: %s", json.dumps(schema, indent=2))
-            if show_schema or debug_validation:
-                logger.info("Generated model schema for %s:", base_name)
-                logger.info(json.dumps(schema, indent=2))
-        except ValidationError as e:
-            if debug_validation:
-                logger.error("Schema validation failed:")
-                logger.error("  Error type: %s", type(e).__name__)
-                logger.error("  Error message: %s", str(e))
-                if hasattr(e, 'errors'):
-                    logger.error("  Validation errors:")
-                    for error in e.errors():
-                        logger.error("    - %s", error)
-            raise ModelValidationError(base_name, [str(e)])
-        except Exception as e:
-            if debug_validation:
-                logger.error("Unexpected error during schema validation:")
-                logger.error("  Error type: %s", type(e).__name__)
-                logger.error("  Error message: %s", str(e))
-            raise ModelValidationError(base_name, [f"Schema validation failed: {str(e)}"])
+    # Handle other types
+    if field_type == "string":
+        field_type_cls: Type[Any] = str
+        if "pattern" in field_schema:
+            constraints.append(pattern(field_schema["pattern"]))
+        if "minLength" in field_schema:
+            constraints.append(min_length(field_schema["minLength"]))
+        if "maxLength" in field_schema:
+            constraints.append(max_length(field_schema["maxLength"]))
+        if "format" in field_schema:
+            if field_schema["format"] == "date-time":
+                field_type_cls = datetime
+            elif field_schema["format"] == "date":
+                field_type_cls = date
+            elif field_schema["format"] == "time":
+                field_type_cls = time
+            elif field_schema["format"] == "email":
+                constraints.append(EmailStr)
+            elif field_schema["format"] == "uri":
+                constraints.append(AnyUrl)
+        return (field_type_cls, Field(**field_kwargs))
 
-        return model
+    if field_type == "number":
+        field_type_cls = float
+        if "minimum" in field_schema:
+            constraints.append(ge(field_schema["minimum"]))
+        if "maximum" in field_schema:
+            constraints.append(le(field_schema["maximum"]))
+        if "exclusiveMinimum" in field_schema:
+            constraints.append(gt(field_schema["exclusiveMinimum"]))
+        if "exclusiveMaximum" in field_schema:
+            constraints.append(lt(field_schema["exclusiveMaximum"]))
+        if "multipleOf" in field_schema:
+            constraints.append(multiple_of(field_schema["multipleOf"]))
+        return (field_type_cls, Field(**field_kwargs))
 
-    except Exception as e:
-        if debug_validation:
-            logger.error("Failed to create model:")
-            logger.error("  Error type: %s", type(e).__name__)
-            logger.error("  Error message: %s", str(e))
-            if hasattr(e, '__cause__'):
-                logger.error("  Caused by: %s", str(e.__cause__))
-            if hasattr(e, '__context__'):
-                logger.error("  Context: %s", str(e.__context__))
-            if hasattr(e, '__traceback__'):
-                import traceback
-                logger.error("  Traceback:\n%s", ''.join(traceback.format_tb(e.__traceback__)))
-        raise ModelCreationError(f"Failed to create model '{base_name}': {str(e)}")
+    if field_type == "integer":
+        field_type_cls = int
+        if "minimum" in field_schema:
+            constraints.append(ge(field_schema["minimum"]))
+        if "maximum" in field_schema:
+            constraints.append(le(field_schema["maximum"]))
+        if "exclusiveMinimum" in field_schema:
+            constraints.append(gt(field_schema["exclusiveMinimum"]))
+        if "exclusiveMaximum" in field_schema:
+            constraints.append(lt(field_schema["exclusiveMaximum"]))
+        if "multipleOf" in field_schema:
+            constraints.append(multiple_of(field_schema["multipleOf"]))
+        return (field_type_cls, Field(**field_kwargs))
+
+    if field_type == "boolean":
+        return (bool, Field(**field_kwargs))
+
+    if field_type == "null":
+        return (type(None), Field(**field_kwargs))
+
+    # Handle enum
+    if "enum" in field_schema:
+        enum_type = _create_enum_type(field_schema["enum"], field_name)
+        return (cast(Type[Any], enum_type), Field(**field_kwargs))
+
+    # Default to Any for unknown types
+    return (Any, Field(**field_kwargs))
 
 
 T = TypeVar("T")
@@ -1459,61 +1057,34 @@ def parse_json_var(var_str: str) -> Tuple[str, Any]:
         raise
 
 
-def _create_enum_type(enum_name: str, values: list[str], field_args: dict[str, Any], debug_validation: bool = False) -> tuple[Type[Enum], Field]:
-    """Create a properly initialized string enum with version-aware implementation"""
-    try:
-        if debug_validation:
-            logger.info("Creating enum type with name: %s", enum_name)
-            logger.info("Values to process: %s", values)
-        
-        # Create member definitions with uppercase names
-        member_defs = [(v.upper(), v) for v in values]
-        
-        # Version-aware enum creation
-        if sys.version_info >= (3, 11):
-            enum_type = StrEnum(enum_name, member_defs, module=__name__)
-            if debug_validation:
-                logger.info("Using Python 3.11+ native StrEnum")
-        else:
-            enum_type = Enum(enum_name, member_defs, module=__name__, type=str)
-            if debug_validation:
-                logger.info("Using str-mixed Enum for Python < 3.11")
-        
-        # Core validation assertions
-        assert issubclass(enum_type, str), "Enum must inherit from str"
-        assert issubclass(enum_type, Enum), "Must be proper Enum"
-        
-        if debug_validation:
-            # Verify inheritance
-            logger.info("Verifying enum inheritance:")
-            logger.info("Is Enum: %s", issubclass(enum_type, Enum))
-            logger.info("Is str: %s", issubclass(enum_type, str))
-            
-            # Verify member access
-            test_value = values[0]
-            test_member = getattr(enum_type, test_value.upper())
-            logger.info("Member value test: %s == %s", test_member.value, test_value)
-            
-            # Verify instance creation
-            test_instance = enum_type(test_value)
-            logger.info("Instance creation test: %s", test_instance)
-            logger.info("Instance value: %s", test_instance.value)
-            
-            # Version-specific checks
-            if sys.version_info >= (3, 11):
-                logger.info("StrEnum verification: %s", isinstance(test_instance, StrEnum))
-            else:
-                logger.info("str mixin verification: %s", isinstance(test_instance, str))
-        
-        return (enum_type, Field(**field_args))
-        
-    except Exception as e:
-        if debug_validation:
-            logger.error("Failed to create enum type: %s", str(e))
-            logger.error("Exception type: %s", type(e).__name__)
-            if hasattr(e, '__cause__'):
-                logger.error("Caused by: %s", str(e.__cause__))
-        raise
+def _create_enum_type(values: List[Any], field_name: str) -> Type[Enum]:
+    """Create an enum type from a list of values.
+
+    Args:
+        values: List of enum values
+        field_name: Name of the field for enum type name
+
+    Returns:
+        Created enum type
+    """
+    # Determine the value type
+    value_types = {type(v) for v in values}
+    if len(value_types) > 1:
+        # Mixed types, use string representation
+        enum_dict = {f"VALUE_{i}": str(v) for i, v in enumerate(values)}
+        return cast(Type[Enum], Enum(f"{field_name.title()}Enum", enum_dict))
+    elif value_types == {int}:
+        # All integer values
+        enum_dict = {f"VALUE_{v}": v for v in values}
+        return cast(Type[Enum], IntEnum(f"{field_name.title()}Enum", enum_dict))
+    elif value_types == {str}:
+        # All string values
+        enum_dict = {v.upper().replace(" ", "_"): v for v in values}
+        return cast(Type[Enum], Enum(f"{field_name.title()}Enum", enum_dict))
+    else:
+        # Other types, use string representation
+        enum_dict = {f"VALUE_{i}": str(v) for i, v in enumerate(values)}
+        return cast(Type[Enum], Enum(f"{field_name.title()}Enum", enum_dict))
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -2057,13 +1628,266 @@ if __name__ == "__main__":
 
 # Export public API
 __all__ = [
-    "create_dynamic_model",
-    "validate_template_placeholders",
+    "ExitCode",
     "estimate_tokens_for_chat",
     "get_context_window_limit",
     "get_default_token_limit",
-    "validate_token_limits",
-    "supports_structured_output",
-    "ProgressContext",
+    "parse_json_var",
+    "create_dynamic_model",
     "validate_path_mapping",
+    "create_argument_parser",
+    "main",
 ]
+
+def create_dynamic_model(
+    schema: Dict[str, Any],
+    base_name: str = "DynamicModel",
+    show_schema: bool = False,
+    debug_validation: bool = False,
+) -> Type[BaseModel]:
+    """Create a Pydantic model from a JSON schema.
+
+    Args:
+        schema: JSON schema dict, can be wrapped in {"schema": ...} format
+        base_name: Base name for the model
+        show_schema: Whether to show the generated schema
+        debug_validation: Whether to enable validation debugging
+
+    Returns:
+        Generated Pydantic model class
+
+    Raises:
+        ModelCreationError: When model creation fails
+        SchemaValidationError: When schema is invalid
+    """
+    if debug_validation:
+        logger.info("Creating dynamic model from schema:")
+        logger.info(json.dumps(schema, indent=2))
+    
+    # Validate schema is a dictionary
+    if not isinstance(schema, dict):
+        if debug_validation:
+            logger.error("Schema must be a dictionary, got %s", type(schema))
+        raise SchemaValidationError("Schema must be a dictionary")
+    
+    # Handle our wrapper format if present
+    if "schema" in schema:
+        if debug_validation:
+            logger.info("Found schema wrapper, extracting inner schema")
+            logger.info("Original schema: %s", json.dumps(schema, indent=2))
+        inner_schema = schema["schema"]
+        if not isinstance(inner_schema, dict):
+            if debug_validation:
+                logger.error("Inner schema must be a dictionary, got %s", type(inner_schema))
+            raise SchemaValidationError("Inner schema must be a dictionary")
+        if debug_validation:
+            logger.info("Using inner schema:")
+            logger.info(json.dumps(inner_schema, indent=2))
+        schema = inner_schema
+    
+    # Ensure schema has type field
+    if "type" not in schema:
+        if debug_validation:
+            logger.info("Schema missing type field, assuming object type")
+        schema["type"] = "object"
+    
+    # Validate root schema is object type
+    if schema["type"] != "object":
+        if debug_validation:
+            logger.error("Schema type must be 'object', got %s", schema["type"])
+        raise SchemaValidationError("Root schema must be of type 'object'")
+    
+    # Ensure schema has properties
+    if "properties" not in schema:
+        if debug_validation:
+            logger.info("Schema missing properties field, using empty dict")
+        schema["properties"] = {}
+    
+    if debug_validation:
+        logger.info("Required fields: %s", schema.get("required", []))
+        logger.info("Properties:")
+        for prop_name, prop_schema in schema.get("properties", {}).items():
+            logger.info("  %s:", prop_name)
+            logger.info("    Type: %s", prop_schema.get("type"))
+            logger.info("    Required: %s", prop_name in schema.get("required", []))
+            logger.info("    Schema: %s", json.dumps(prop_schema, indent=2))
+    
+    if debug_validation:
+        logger.info("Validated schema structure: %s", json.dumps(schema, indent=2))
+    
+    # Create field definitions with proper naming
+    if debug_validation:
+        logger.info("Processing schema properties for %s", base_name)
+        logger.info("Schema: %s", json.dumps(schema, indent=2))
+        logger.info("Required fields: %s", schema.get("required", []))
+        
+    field_definitions: Dict[str, FieldDefinition] = {}
+    properties = schema.get("properties", {})
+    required: List[str] = schema.get("required", [])
+    
+    validation_errors: List[str] = []
+    
+    for field_name, field_schema in properties.items():
+        try:
+            if debug_validation:
+                logger.info("Processing field %s:", field_name)
+                logger.info("  Schema: %s", json.dumps(field_schema, indent=2))
+                
+            python_type, field = _get_type_with_constraints(
+                field_schema,
+                field_name,
+                base_name
+            )
+            
+            # Handle optional fields
+            if field_name not in required:
+                if debug_validation:
+                    logger.info("Field %s is optional, wrapping in Optional", field_name)
+                python_type = Optional[python_type]
+            else:
+                if debug_validation:
+                    logger.info("Field %s is required", field_name)
+            
+            # Create field definition
+            field_definitions[field_name] = (python_type, field)
+            
+            if debug_validation:
+                logger.info("Successfully created field definition:")
+                logger.info("  Name: %s", field_name)
+                logger.info("  Type: %s", python_type)
+                logger.info("  Required: %s", field_name in required)
+                logger.info("  Field config:")
+                if field is not None:
+                    logger.info("    Description: %s", field.description)
+                    logger.info("    Title: %s", field.title)
+                    logger.info("    JSON Schema Extra: %s", field.json_schema_extra)
+                
+        except (FieldDefinitionError, NestedModelError) as e:
+            if debug_validation:
+                logger.error("Error creating field %s:", field_name)
+                logger.error("  Error type: %s", type(e).__name__)
+                logger.error("  Error message: %s", str(e))
+            validation_errors.append(str(e))
+    
+    if validation_errors:
+        if debug_validation:
+            logger.error("Model validation failed with %d errors:", len(validation_errors))
+            for error in validation_errors:
+                logger.error("  - %s", error)
+        raise ModelValidationError(base_name, validation_errors)
+    
+    # Create model with configuration
+    try:
+        config = ConfigDict(
+            title=schema.get("title", base_name),
+            description=schema.get("description"),
+            extra="forbid" if schema.get("additionalProperties") is False else "allow",
+            validate_default=True,
+            use_enum_values=True,
+            arbitrary_types_allowed=True,
+            json_schema_extra={k: v for k, v in schema.items() 
+                           if k not in {"type", "properties", "required", "title", 
+                                      "description", "additionalProperties", "readOnly"}}
+        )
+
+        if debug_validation:
+            logger.info("Creating model with configuration:")
+            logger.info("  Title: %s", config.get("title"))
+            logger.info("  Description: %s", config.get("description"))
+            logger.info("  Extra: %s", config.get("extra"))
+            logger.info("  Validate Default: %s", config.get("validate_default"))
+            logger.info("  Use Enum Values: %s", config.get("use_enum_values"))
+            logger.info("  Arbitrary Types Allowed: %s", config.get("arbitrary_types_allowed"))
+            logger.info("  JSON Schema Extra: %s", config.get("json_schema_extra"))
+            logger.info("Full configuration: %s", json.dumps(dict(config), default=str))
+            logger.info("Creating model with fields:")
+            for name, (type_, field) in field_definitions.items():
+                logger.info("  Field: %s", name)
+                logger.info("    Type: %s", type_)
+                logger.info("    Required: %s", name in required)
+                logger.info("    Field config:")
+                if field is not None:
+                    logger.info("      Description: %s", field.description)
+                    logger.info("      Title: %s", field.title)
+                    logger.info("      JSON Schema Extra: %s", field.json_schema_extra)
+
+        # Create the model with the fields
+        model: Type[BaseModel] = create_model(
+            base_name,
+            __config__=config,
+            **{name: defn for name, defn in field_definitions.items()}
+        )
+
+        if debug_validation:
+            logger.info("Successfully created model: %s", model.__name__)
+            logger.info("Model config: %s", dict(model.model_config))
+            logger.info("Model schema: %s", json.dumps(model.model_json_schema(), indent=2))
+
+        # Validate the model's JSON schema
+        try:
+            if debug_validation:
+                logger.info("Validating model schema")
+            schema = TypeAdapter(model).json_schema()
+            if debug_validation:
+                logger.info("Model schema validation successful")
+                logger.info("Generated schema: %s", json.dumps(schema, indent=2))
+            if show_schema or debug_validation:
+                logger.info("Generated model schema for %s:", base_name)
+                logger.info(json.dumps(schema, indent=2))
+        except ValidationError as e:
+            if debug_validation:
+                logger.error("Schema validation failed:")
+                logger.error("  Error type: %s", type(e).__name__)
+                logger.error("  Error message: %s", str(e))
+                if hasattr(e, 'errors'):
+                    logger.error("  Validation errors:")
+                    for error in e.errors():
+                        logger.error("    - %s", error)
+            raise ModelValidationError(base_name, [str(e)])
+        except Exception as e:
+            if debug_validation:
+                logger.error("Unexpected error during schema validation:")
+                logger.error("  Error type: %s", type(e).__name__)
+                logger.error("  Error message: %s", str(e))
+            raise ModelValidationError(base_name, [f"Schema validation failed: {str(e)}"])
+
+        return model
+
+    except Exception as e:
+        if debug_validation:
+            logger.error("Failed to create model:")
+            logger.error("  Error type: %s", type(e).__name__)
+            logger.error("  Error message: %s", str(e))
+            if hasattr(e, '__cause__'):
+                logger.error("  Caused by: %s", str(e.__cause__))
+            if hasattr(e, '__context__'):
+                logger.error("  Context: %s", str(e.__context__))
+            if hasattr(e, '__traceback__'):
+                import traceback
+                logger.error("  Traceback:\n%s", ''.join(traceback.format_tb(e.__traceback__)))
+        raise ModelCreationError(f"Failed to create model '{base_name}': {str(e)}")
+
+# Validation functions
+def pattern(regex: str) -> Any:
+    return constr(pattern=regex)
+
+def min_length(length: int) -> Any:
+    return BeforeValidator(lambda v: v if len(str(v)) >= length else None)
+
+def max_length(length: int) -> Any:
+    return BeforeValidator(lambda v: v if len(str(v)) <= length else None)
+
+def ge(value: Union[int, float]) -> Any:
+    return BeforeValidator(lambda v: v if float(v) >= value else None)
+
+def le(value: Union[int, float]) -> Any:
+    return BeforeValidator(lambda v: v if float(v) <= value else None)
+
+def gt(value: Union[int, float]) -> Any:
+    return BeforeValidator(lambda v: v if float(v) > value else None)
+
+def lt(value: Union[int, float]) -> Any:
+    return BeforeValidator(lambda v: v if float(v) < value else None)
+
+def multiple_of(value: Union[int, float]) -> Any:
+    return BeforeValidator(lambda v: v if float(v) % value == 0 else None)

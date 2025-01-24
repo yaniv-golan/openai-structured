@@ -67,8 +67,14 @@ from .file_utils import FileInfo
 from .template_extensions import CommentExtension
 from .template_schema import DotDict, StdinProxy
 from .template_env import create_jinja_env
+from .errors import TemplateValidationError
 
-__all__ = ["render_template", "DotDict"]
+__all__ = [
+    "create_jinja_env",
+    "render_template",
+    "render_template_file",
+    "DotDict"
+]
 
 logger = logging.getLogger("ostruct")
 
@@ -103,7 +109,7 @@ def render_template(
         Rendered task template string
 
     Raises:
-        ValueError: If task template cannot be loaded or rendered. The original error
+        TemplateValidationError: If task template cannot be loaded or rendered. The original error
                   will be chained using `from` for proper error context.
     """
     from .progress import (  # Import here to avoid circular dependency
@@ -169,13 +175,13 @@ def render_template(
             template: Optional[jinja2.Template] = None
             if template_str.endswith((".j2", ".jinja2", ".md")):
                 if not os.path.isfile(template_str):
-                    raise ValueError(
+                    raise TemplateValidationError(
                         f"Task template file not found: {template_str}"
                     )
                 try:
                     template = jinja_env.get_template(template_str)
                 except jinja2.TemplateNotFound as e:
-                    raise ValueError(
+                    raise TemplateValidationError(
                         f"Task template file not found: {e.name}"
                     ) from e
             else:
@@ -183,14 +189,17 @@ def render_template(
                 try:
                     template = jinja_env.from_string(template_str)
                     # Add debug log for loop rendering
-                    template.globals['debug_file_render'] = lambda f: logger.info("Rendering file: %s", f.path) or ''
+                    def debug_file_render(f: FileInfo) -> str:
+                        logger.info("Rendering file: %s", f.path)
+                        return ''
+                    template.globals['debug_file_render'] = debug_file_render
                 except jinja2.TemplateSyntaxError as e:
-                    raise ValueError(
+                    raise TemplateValidationError(
                         f"Task template syntax error: {str(e)}"
                     ) from e
 
             if template is None:
-                raise ValueError("Failed to create task template")
+                raise TemplateValidationError("Failed to create task template")
             assert template is not None  # Help mypy understand control flow
 
             # Add template globals
@@ -210,12 +219,12 @@ def render_template(
                     if isinstance(value, list):
                         logger.info("  %s: list with %d items", key, len(value))
                         if value and isinstance(value[0], FileInfo):
-                            logger.info("    First file: %s (content length: %d)", 
-                                value[0].path, 
+                            logger.info("    First file: %s (content length: %d)",
+                                value[0].path,
                                 len(value[0].content) if hasattr(value[0], 'content') else -1)
                     elif isinstance(value, FileInfo):
-                        logger.info("  %s: FileInfo(%s) content length: %d", 
-                            key, value.path, 
+                        logger.info("  %s: FileInfo(%s) content length: %d",
+                            key, value.path,
                             len(value.content) if hasattr(value, 'content') else -1)
                     else:
                         logger.info("  %s: %s", key, type(value).__name__)
@@ -244,7 +253,7 @@ def render_template(
                 return result
             except (jinja2.TemplateError, Exception) as e:
                 logger.error("Template rendering failed: %s", str(e))
-                raise ValueError(f"Template rendering failed: {str(e)}") from e
+                raise TemplateValidationError(f"Template rendering failed: {str(e)}") from e
 
         except ValueError as e:
             # Re-raise with original context

@@ -13,6 +13,7 @@ from openai_structured.cli.template_utils import render_template
 from openai_structured.cli.template_validation import (
     validate_template_placeholders,
 )
+from openai_structured.cli.errors import TemplateValidationError
 
 
 class ConfigDict(TypedDict, total=False):
@@ -45,7 +46,7 @@ def test_render_task_template_missing_var() -> None:
     """Test task template rendering with missing variable."""
     template = "Hello {{ name }}!"
     context: Dict[str, Any] = {}
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         render_template(template, context)
     assert "'name' is undefined" in str(exc.value)
 
@@ -61,7 +62,7 @@ def test_validate_task_template_missing_var() -> None:
     """Test task template validation with missing variable."""
     template = "Hello {{ name }}!"
     file_mappings: Dict[str, Any] = {}  # Empty dict instead of set()
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, file_mappings)
     assert "undefined variable" in str(exc.value)
 
@@ -70,7 +71,7 @@ def test_validate_task_template_invalid_syntax() -> None:
     """Test task template validation with invalid syntax."""
     template = "Hello {{ name!"  # Missing closing brace
     file_mappings: Dict[str, Any] = {"name": "test"}
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, file_mappings)
     assert "Invalid task template syntax" in str(exc.value)
 
@@ -122,7 +123,7 @@ def test_validate_fileinfo_invalid_attribute(
         path="/test2/file.txt", security_manager=security_manager
     )
     file_mappings = {"file": file_info}
-    with pytest.raises(ValueError):
+    with pytest.raises(TemplateValidationError):
         validate_template_placeholders(template, file_mappings)
     assert file_info.content == "test content"
 
@@ -141,7 +142,7 @@ def test_validate_nested_json_invalid_key() -> None:
     """Test validation with invalid nested JSON key."""
     template = "{{ config['invalid_key'] }}"
     file_mappings = cast(Dict[str, Any], {"config": {"debug": True}})
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, file_mappings)
     assert "undefined" in str(exc.value)
 
@@ -220,7 +221,7 @@ def test_validate_template_undefined_in_loop() -> None:
     file_mappings: Dict[str, Any] = cast(
         Dict[str, Any], {"items": [{"name": "item1"}, {"name": "item2"}]}
     )
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, file_mappings)
     assert "undefined" in str(exc.value)
 
@@ -237,7 +238,7 @@ def test_validate_template_conditional_vars() -> None:
     file_mappings: Dict[str, Any] = cast(
         Dict[str, Any], {"condition": True, "defined_var": "test"}
     )
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, file_mappings)
     assert "undefined" in str(exc.value)
 
@@ -331,6 +332,6 @@ def test_invalid_json_variable_access() -> None:
     file_mappings: Dict[str, ConfigDict] = {
         "config": {"debug": True, "settings": {"mode": "test"}}
     }
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(TemplateValidationError) as exc:
         validate_template_placeholders(template, file_mappings)
     assert "undefined" in str(exc.value)
