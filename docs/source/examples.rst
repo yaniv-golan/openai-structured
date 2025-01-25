@@ -399,4 +399,140 @@ Use different models with version validation:
 
         finally:
             await client.close()
+
+Example Schemas
+==============
+
+The library provides example schemas and patterns to help you get started.
+
+Basic Usage
+----------
+
+The simplest way to use the library is with the ``SimpleMessage`` schema:
+
+.. code-block:: python
+
+    from openai import OpenAI
+    from openai_structured import openai_structured
+    from openai_structured.examples.schemas import SimpleMessage
+
+    client = OpenAI()
+    result = openai_structured(
+        client=client,
+        model="gpt-4o",
+        output_schema=SimpleMessage,
+        user_prompt="What is the capital of France?"
+    )
+    print(result.message)  # "The capital of France is Paris."
+
+Available Schemas
+--------------
+
+1. SimpleMessage
+~~~~~~~~~~~~~~
+
+A basic schema for text responses:
+
+.. code-block:: python
+
+    from openai_structured.examples.schemas import SimpleMessage
+
+    class SimpleMessage(BaseModel):
+        """Simple schema with a single message field."""
+        message: str
+
+Use this when you just need the model's response as text.
+
+2. SentimentMessage
+~~~~~~~~~~~~~~~~
+
+A more complex schema that includes sentiment analysis:
+
+.. code-block:: python
+
+    from openai_structured.examples.schemas import SentimentMessage
+
+    class SentimentMessage(BaseModel):
+        """Schema for sentiment analysis responses."""
+        message: str = Field(..., description="The analyzed message")
+        sentiment: str = Field(
+            ...,
+            pattern="(?i)^(positive|negative|neutral|mixed)$",
+            description="Sentiment of the message"
+        )
+
+Use this when you need both content and sentiment analysis:
+
+.. code-block:: python
+
+    result = openai_structured(
+        client=client,
+        model="gpt-4o",
+        output_schema=SentimentMessage,
+        user_prompt="How do you feel about AI?"
+    )
+    print(f"Message: {result.message}")
+    print(f"Sentiment: {result.sentiment}")
+
+Creating Your Own Schemas
+----------------------
+
+You can use these examples as templates for your own schemas:
+
+1. Basic Pattern
+~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    from pydantic import BaseModel
+
+    class YourSchema(BaseModel):
+        field1: str
+        field2: int
+
+2. With Validation
+~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    from pydantic import BaseModel, Field
+
+    class YourValidatedSchema(BaseModel):
+        field1: str = Field(..., description="Field description")
+        field2: int = Field(..., gt=0, description="Must be positive")
+
+3. With Complex Types
+~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    from typing import List, Optional
+    from pydantic import BaseModel
+
+    class YourComplexSchema(BaseModel):
+        items: List[str]
+        details: Optional[dict]
+
+Best Practices
+------------
+
+1. **Clear Field Names**
+   - Use descriptive names
+   - Follow Python naming conventions
+   - Add field descriptions
+
+2. **Appropriate Validation**
+   - Add type hints
+   - Use Field() for constraints
+   - Include pattern validation where needed
+
+3. **Documentation**
+   - Add class docstrings
+   - Document field meanings
+   - Include usage examples
+
+4. **Type Safety**
+   - Use appropriate types
+   - Consider Optional fields
+   - Add proper type hints
 ```

@@ -1,12 +1,19 @@
 """Test configuration and fixtures."""
 
 import json
-from typing import Dict, Generator
+from typing import Dict, Generator, Any
+from unittest.mock import MagicMock, AsyncMock
 
 import pytest
 from dotenv import load_dotenv
 from openai import OpenAI
 from pyfakefs.fake_filesystem import FakeFilesystem
+
+from openai_structured.testing import (
+    create_structured_response,
+    create_structured_stream_response,
+)
+from openai_structured.examples.schemas import SimpleMessage
 
 pytest_plugins = ["pytest_asyncio"]
 
@@ -57,9 +64,53 @@ def fs(fs: FakeFilesystem) -> Generator[FakeFilesystem, None, None]:
 
 
 @pytest.fixture  # type: ignore[misc]
-def mock_openai_client() -> OpenAI:
-    """Create a mock OpenAI client for testing."""
-    return OpenAI(api_key="test-key", base_url="http://localhost:8000")
+def mock_openai_sync_client() -> MagicMock:
+    """Create a mock OpenAI sync client."""
+    mock = MagicMock()
+    mock.chat.completions.create = create_structured_response(
+        output_schema=SimpleMessage,
+        data={"message": "test"}
+    )
+    return mock
+
+
+@pytest.fixture  # type: ignore[misc]
+def mock_openai_async_client() -> AsyncMock:
+    """Create a mock OpenAI async client."""
+    mock = AsyncMock()
+    mock.chat.completions.create = create_structured_stream_response(
+        output_schema=SimpleMessage,
+        data={"message": "test"}
+    )
+    return mock
+
+
+@pytest.fixture  # type: ignore[misc]
+def mock_openai_sync_stream_client() -> MagicMock:
+    """Create a mock OpenAI sync client for streaming."""
+    mock = MagicMock()
+    mock.chat.completions.create = create_structured_stream_response(
+        output_schema=SimpleMessage,
+        data=[
+            {"message": "part1"},
+            {"message": "part2"}
+        ]
+    )
+    return mock
+
+
+@pytest.fixture  # type: ignore[misc]
+def mock_openai_async_stream_client() -> AsyncMock:
+    """Create a mock OpenAI async client for streaming."""
+    mock = AsyncMock()
+    mock.chat.completions.create = create_structured_stream_response(
+        output_schema=SimpleMessage,
+        data=[
+            {"message": "part1"},
+            {"message": "part2"}
+        ]
+    )
+    return mock
 
 
 @pytest.fixture  # type: ignore[misc]

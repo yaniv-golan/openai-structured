@@ -336,3 +336,146 @@ Contributions are welcome! Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for g
 ## License
 
 This project is licensed under the MIT License - see the [`LICENSE`](LICENSE) file for details.
+
+## Testing
+
+The library provides comprehensive testing utilities and fixtures to make testing your code easy:
+
+```python
+import pytest
+from openai_structured import openai_structured_call
+from tests.support.models import SimpleMessage
+
+# Basic test with mock client
+def test_simple_call(mock_openai_client):
+    result = openai_structured_call(
+        client=mock_openai_client,
+        model="gpt-4",
+        output_schema=SimpleMessage,
+        user_prompt="test"
+    )
+    assert isinstance(result, SimpleMessage)
+
+# Stream test with helpers
+from tests.support.stream_helpers import create_stream_response
+
+def test_stream(mock_openai_client):
+    mock_openai_client.chat.completions.create.return_value = \
+        create_stream_response(
+            '{"message": "',
+            'hello',
+            '"}'
+        )
+    
+    results = list(openai_structured_stream(...))
+    assert len(results) == 1
+```
+
+For more detailed testing examples and best practices, see our [Testing Guide](https://openai-structured.readthedocs.io/en/latest/testing.html).
+
+## Testing Utilities
+
+The library provides comprehensive testing utilities to help you write tests for applications using openai-structured.
+
+### Basic Response Mocking
+
+```python
+from openai_structured.testing import create_structured_response
+from your_app.schemas import UserProfile
+
+# Create mock with schema validation
+mock_client = MagicMock()
+mock_client.chat.completions.create = create_structured_response(
+    output_schema=UserProfile,
+    data={
+        "name": "Test User",
+        "age": 30,
+        "email": "test@example.com"
+    }
+)
+
+# Use in your test
+result = openai_structured(
+    client=mock_client,
+    output_schema=UserProfile,
+    user_prompt="Get user info"
+)
+assert isinstance(result, UserProfile)
+```
+
+### Stream Response Testing
+
+```python
+from openai_structured.testing import create_structured_stream_response
+
+# Create streaming mock
+mock_client = MagicMock()
+mock_client.chat.completions.create = create_structured_stream_response(
+    output_schema=UserProfile,
+    data=[
+        {"name": "Part 1", "age": 30},
+        {"name": "Part 2", "age": 31}
+    ]
+)
+
+# Test streaming
+results = list(openai_structured_stream(...))
+assert len(results) == 2
+```
+
+### Error Simulation
+
+```python
+from openai_structured.testing import (
+    create_invalid_response,
+    create_error_response,
+    create_rate_limit_response
+)
+
+# Test schema validation errors
+mock_client.chat.completions.create = create_invalid_response(
+    output_schema=UserProfile,
+    error_type="missing_field"  # or "wrong_type", "nested_error", etc.
+)
+
+# Test API errors
+mock_client.chat.completions.create = create_error_response(
+    "API Error",
+    status_code=500
+)
+
+# Test rate limiting
+mock_client.chat.completions.create = create_rate_limit_response(
+    max_requests=3,
+    reset_after=60
+)
+```
+
+### Async Testing
+
+```python
+from unittest.mock import AsyncMock
+from openai_structured.testing import create_structured_stream_response
+
+@pytest.mark.asyncio
+async def test_async_stream():
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = create_structured_stream_response(
+        output_schema=UserProfile,
+        data={"name": "Test", "age": 30}
+    )
+    
+    async for result in async_openai_structured_stream(...):
+        assert isinstance(result, UserProfile)
+```
+
+### Best Practices
+
+1. Use schema validation in tests to catch issues early
+2. Test both success and error scenarios
+3. For streaming, test partial and complete responses
+4. Use appropriate error types for different scenarios
+5. Test nested schema validation
+6. Verify rate limiting and timeout handling
+
+For more examples and detailed API documentation, see the [Testing Guide](docs/testing.md).

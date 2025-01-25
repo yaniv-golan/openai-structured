@@ -179,3 +179,13 @@ class BufferOverflowError(StreamBufferError):
     """Raised when the buffer exceeds size limits."""
 
     pass
+
+
+class ConnectionTimeoutError(OpenAIClientError):
+    """Raised when a connection times out during testing.
+    
+    This error simulates network timeouts in test scenarios.
+    """
+    def __init__(self, message: str = "Request timed out", timeout: float = None):
+        self.timeout = timeout
+        super().__init__(message)

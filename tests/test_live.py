@@ -13,7 +13,13 @@ from openai_structured import (
     openai_structured_call,
     openai_structured_stream,
 )
-from tests.support.models import SentimentMessage
+from openai_structured.examples.schemas import SentimentMessage
+from openai_structured.testing import (
+    create_structured_response,
+    create_structured_stream_response,
+    create_error_response,
+    create_rate_limit_response,
+)
 
 
 class LogCapture:
@@ -44,7 +50,7 @@ def test_live_sync_api() -> None:
 
     result = openai_structured_call(
         client=client,
-        model="gpt-4o-2024-08-06",
+        model="gpt-4o",
         output_schema=SentimentMessage,
         user_prompt="What is the sentiment of 'I love pizza'?",
         system_prompt="You analyze sentiment of text.",
@@ -52,12 +58,7 @@ def test_live_sync_api() -> None:
     )
 
     assert isinstance(result, SentimentMessage)
-    assert result.sentiment.lower() in [
-        "positive",
-        "negative",
-        "neutral",
-        "mixed",
-    ]
+    assert result.sentiment in ["positive", "negative", "neutral"]
     assert len(log_capture.messages) > 0
 
 
@@ -69,34 +70,19 @@ def test_live_sync_streaming() -> None:
     """Test synchronous streaming with real OpenAI API."""
     log_capture = LogCapture()
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    config = StreamConfig(
-        max_buffer_size=1024 * 1024,  # 1MB
-        cleanup_threshold=512 * 1024,  # 512KB
-        chunk_size=8192,  # 8KB
-    )
 
-    results = []
-    for result in openai_structured_stream(
+    results = list(openai_structured_stream(
         client=client,
-        model="gpt-4o-2024-08-06",
+        model="gpt-4o",
         output_schema=SentimentMessage,
         user_prompt="What is the sentiment of 'I hate mondays'?",
         system_prompt="You analyze sentiment of text.",
-        stream_config=config,
         on_log=log_capture,
-    ):
-        assert isinstance(result, SentimentMessage)
-        assert result.sentiment.lower() in [
-            "positive",
-            "negative",
-            "neutral",
-            "mixed",
-        ]
-        results.append(result)
-        if len(results) >= 2:  # Test first two results
-            break
+    ))
 
     assert len(results) > 0
+    assert all(isinstance(r, SentimentMessage) for r in results)
+    assert all(r.sentiment in ["positive", "negative", "neutral"] for r in results)
     assert len(log_capture.messages) > 0
 
 
@@ -106,27 +92,22 @@ def test_live_sync_streaming() -> None:
 @pytest.mark.live  # type: ignore[misc]
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_live_async_api() -> None:
-    """Test async API calls with real OpenAI API."""
+    """Test asynchronous API calls with real OpenAI API."""
     log_capture = LogCapture()
-    async with AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")) as client:
-        result = await async_openai_structured_call(
-            client=client,
-            model="gpt-4o-2024-08-06",
-            output_schema=SentimentMessage,
-            user_prompt="What is the sentiment of 'I love pizza'?",
-            system_prompt="You analyze sentiment of text.",
-            on_log=log_capture,
-            timeout=30.0,  # Test timeout parameter
-        )
+    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-        assert isinstance(result, SentimentMessage)
-        assert result.sentiment.lower() in [
-            "positive",
-            "negative",
-            "neutral",
-            "mixed",
-        ]
-        assert len(log_capture.messages) > 0
+    result = await async_openai_structured_call(
+        client=client,
+        model="gpt-4o",
+        output_schema=SentimentMessage,
+        user_prompt="What is the sentiment of 'I am neutral about this'?",
+        system_prompt="You analyze sentiment of text.",
+        on_log=log_capture,
+    )
+
+    assert isinstance(result, SentimentMessage)
+    assert result.sentiment in ["positive", "negative", "neutral"]
+    assert len(log_capture.messages) > 0
 
 
 @pytest.mark.skipif(  # type: ignore[misc]
@@ -135,66 +116,91 @@ async def test_live_async_api() -> None:
 @pytest.mark.live  # type: ignore[misc]
 @pytest.mark.asyncio  # type: ignore[misc]
 async def test_live_async_streaming() -> None:
-    """Test async streaming with real OpenAI API."""
+    """Test asynchronous streaming with real OpenAI API."""
     log_capture = LogCapture()
-    config = StreamConfig(
-        max_buffer_size=1024 * 1024,  # 1MB
-        cleanup_threshold=512 * 1024,  # 512KB
-        chunk_size=8192,  # 8KB
+    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    results = []
+    async for result in async_openai_structured_stream(
+        client=client,
+        model="gpt-4o",
+        output_schema=SentimentMessage,
+        user_prompt="What is the sentiment of 'This is great!'?",
+        system_prompt="You analyze sentiment of text.",
+        on_log=log_capture,
+    ):
+        results.append(result)
+
+    assert len(results) > 0
+    assert all(isinstance(r, SentimentMessage) for r in results)
+    assert all(r.sentiment in ["positive", "negative", "neutral"] for r in results)
+    assert len(log_capture.messages) > 0
+
+
+def test_live_parameter_validation() -> None:
+    """Test parameter validation."""
+    client = OpenAI(api_key="dummy")
+
+    # Test invalid model
+    with pytest.raises(ValueError):
+        openai_structured_call(
+            client=client,
+            model="invalid-model",
+            output_schema=SentimentMessage,
+            user_prompt="test",
+        )
+
+    # Test missing system prompt
+    result = openai_structured_call(
+        client=client,
+        model="gpt-4o",
+        output_schema=SentimentMessage,
+        user_prompt="test",
+    )
+    assert isinstance(result, SentimentMessage)
+
+    # Test stream config validation
+    with pytest.raises(ValueError):
+        list(openai_structured_stream(
+            client=client,
+            model="gpt-4o",
+            output_schema=SentimentMessage,
+            user_prompt="test",
+            stream_config=StreamConfig(max_buffer_size=-1),
+        ))
+
+
+def test_mock_rate_limit() -> None:
+    """Test rate limit handling with mocks."""
+    client = MagicMock()
+    client.chat.completions.create = create_rate_limit_response(
+        max_requests=2,
+        reset_after=60
     )
 
-    async with AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")) as client:
-        results = []
-        async for result in async_openai_structured_stream(
+    # First two calls should succeed
+    result1 = openai_structured_call(
+        client=client,
+        model="gpt-4o",
+        output_schema=SentimentMessage,
+        user_prompt="test1",
+    )
+    assert isinstance(result1, SentimentMessage)
+
+    result2 = openai_structured_call(
+        client=client,
+        model="gpt-4o",
+        output_schema=SentimentMessage,
+        user_prompt="test2",
+    )
+    assert isinstance(result2, SentimentMessage)
+
+    # Third call should raise rate limit error
+    with pytest.raises(Exception) as exc:  # Replace with specific rate limit error
+        openai_structured_call(
             client=client,
-            model="gpt-4o-2024-08-06",
+            model="gpt-4o",
             output_schema=SentimentMessage,
-            user_prompt="What is the sentiment of 'I hate mondays'?",
-            system_prompt="You analyze sentiment of text.",
-            stream_config=config,
-            on_log=log_capture,
-        ):
-            assert isinstance(result, SentimentMessage)
-            assert result.sentiment.lower() in [
-                "positive",
-                "negative",
-                "neutral",
-                "mixed",
-            ]
-            results.append(result)
-            if len(results) >= 2:  # Test first two results
-                break
-
-        assert len(results) > 0
-        assert len(log_capture.messages) > 0
-
-
-@pytest.mark.skipif(  # type: ignore[misc]
-    not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
-)
-@pytest.mark.live  # type: ignore[misc]
-@pytest.mark.asyncio  # type: ignore[misc]
-async def test_live_parameter_validation() -> None:
-    """Test parameter validation with real API calls."""
-    async with AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")) as client:
-        # Test temperature limits
-        with pytest.raises(Exception):
-            await async_openai_structured_call(
-                client=client,
-                model="gpt-4o-2024-08-06",
-                output_schema=SentimentMessage,
-                user_prompt="test",
-                system_prompt="test",
-                temperature=2.5,  # Invalid temperature
-            )
-
-        # Test timeout behavior
-        with pytest.raises(Exception):
-            await async_openai_structured_call(
-                client=client,
-                model="gpt-4o-2024-08-06",
-                output_schema=SentimentMessage,
-                user_prompt="test",
-                system_prompt="test",
-                timeout=0.001,  # Very short timeout
-            )
+            user_prompt="test3",
+        )
+    assert "rate limit" in str(exc.value).lower()

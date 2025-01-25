@@ -416,7 +416,12 @@ class StreamBuffer:
         self._cleanup_stats = {"strategy": None, "cleaned_bytes": 0}
         self.parse_errors = 0
         self.cleanup_attempts = 0
-
+        
+    @property
+    def closed(self) -> bool:
+        """Return True if the buffer is closed."""
+        return self._buffer.closed
+        
     def _get_error_context(self, content: str, pos: Union[int, str]) -> str:
         """Get context around an error position."""
         if isinstance(pos, str):

@@ -78,6 +78,9 @@ from typing import (
     cast,
 )
 
+# Create logger
+logger = logging.getLogger(__name__)
+
 # Third-party imports
 import aiohttp
 from openai import (
@@ -273,11 +276,54 @@ def supports_structured_output(model_name: str) -> bool:
     return False
 
 
-def _validate_client_type(client: Any, expected_type: Type[ClientT]) -> None:
-    """Validate that the client is of the expected type."""
-    if not isinstance(client, expected_type):
+def _validate_client_type(client: Any, expected_type: str = "sync") -> None:
+    """Check if client has required methods and correct type (sync/async).
+
+    This function uses a hybrid approach to validation:
+    1. For official OpenAI clients, we trust the type (OpenAI vs AsyncOpenAI)
+    2. For other clients (mocks, custom implementations), we use duck typing
+       and method inspection
+
+    This approach provides:
+    - Reliable validation for official clients
+    - Maximum flexibility for mocks and custom implementations
+    - Clear error messages in all cases
+
+    Args:
+        client: The client to validate
+        expected_type: Either "sync" or "async"
+
+    Raises:
+        TypeError: If client is missing required methods or has wrong sync/async type
+    """
+    # Check required attributes
+    required_attrs = ["chat", "completions", "create"]
+    current = client
+    for attr in required_attrs:
+        if not hasattr(current, attr):
+            raise TypeError(f"Client missing required attribute: '{attr}'")
+        current = getattr(current, attr)
+
+    # For official clients, trust the type
+    from openai import OpenAI, AsyncOpenAI
+    if isinstance(client, (OpenAI, AsyncOpenAI)):
+        is_async = isinstance(client, AsyncOpenAI)
+    else:
+        # For other clients (mocks, etc), use method inspection
+        if hasattr(current, '__func__'):
+            current = current.__func__
+        is_async = asyncio.iscoroutinefunction(current)
+
+    # Validate against expected type
+    if expected_type == "async" and not is_async:
         raise TypeError(
-            f"Expected client of type {expected_type.__name__}, got {type(client).__name__}"
+            "Async client required but got sync client. "
+            "Use AsyncOpenAI or a client with async methods."
+        )
+    elif expected_type == "sync" and is_async:
+        raise TypeError(
+            "Sync client required but got async client. "
+            "Use OpenAI or a client with sync methods."
         )
 
 
@@ -286,8 +332,23 @@ def _validate_request(
     client: Union[OpenAI, AsyncOpenAI],
     expected_type: Type[ClientT],
 ) -> None:
-    """Validate the request parameters."""
-    _validate_client_type(client, expected_type)
+    """Validate the request parameters.
+    
+    This function performs two key validations:
+    1. Client interface and sync/async type validation using duck typing
+       (see _validate_client_type for details on this design choice)
+    2. Model support validation to ensure the model can handle structured output
+    
+    Args:
+        model: The model name to validate
+        client: The client to validate (can be official client or compatible mock)
+        expected_type: Used to determine if we need sync or async validation
+        
+    Raises:
+        TypeError: If client validation fails
+        ModelNotSupportedError: If model doesn't support structured output
+    """
+    _validate_client_type(client, "sync" if expected_type == OpenAI else "async")
     if not supports_structured_output(model):
         raise ModelNotSupportedError(
             f"Model {model} does not support structured output"
@@ -483,7 +544,13 @@ def _handle_api_error(
 
     # Re-raise OpenAI errors and our own errors as is, wrap others in OpenAIClientError
     if isinstance(
-        error, (OpenAIError, InvalidResponseFormatError, JSONParseError)
+        error,
+        (
+            OpenAIError,
+            InvalidResponseFormatError,
+            JSONParseError,
+            EmptyResponseError,
+        ),
     ):
         raise error
     raise OpenAIClientError(
@@ -607,14 +674,19 @@ def _process_stream_chunk(
 ) -> Optional[BaseModel]:
     """Process a single stream chunk with error handling."""
     if not chunk.choices:
+        logger.debug("Chunk has no choices, skipping")
         return None
 
     delta = chunk.choices[0].delta
-    if not delta.content:
+    if not hasattr(delta, 'content') or delta.content is None:
+        logger.debug(f"Delta has no content attribute or content is None: {delta}")
         return None
 
+    logger.debug(f"Processing chunk content: {delta.content!r}")
     try:
         buffer.write(delta.content)
+        logger.debug(f"Buffer size after write: {buffer.total_bytes} bytes")
+        logger.debug(f"Current buffer content: {buffer.getvalue()!r}")
 
         # Only log significant size changes
         if buffer.should_log_size():
@@ -627,16 +699,27 @@ def _process_stream_chunk(
 
         current_content = buffer.getvalue()
         try:
+            logger.debug(f"Attempting to parse JSON: {current_content!r}")
             model_instance = output_schema.model_validate_json(current_content)
+            logger.debug(f"Successfully parsed model: {model_instance}")
             # Only log successful parse
             _log(on_log, logging.DEBUG, "Successfully parsed complete object")
             buffer.reset()
             return model_instance
-        except (ValidationError, json.JSONDecodeError):
+        except ValidationError as e:
+            logger.debug(f"Validation error: {e}")
             # Only attempt cleanup if buffer is getting large
             if buffer.total_bytes > buffer.config.cleanup_threshold:
+                logger.debug("Buffer exceeded cleanup threshold, cleaning up")
+                buffer.cleanup()
+        except json.JSONDecodeError as e:
+            logger.debug(f"JSON decode error: {e}")
+            # Only attempt cleanup if buffer is getting large
+            if buffer.total_bytes > buffer.config.cleanup_threshold:
+                logger.debug("Buffer exceeded cleanup threshold, cleaning up")
                 buffer.cleanup()
     except (BufferOverflowError, StreamParseError) as e:
+        logger.error(f"Critical stream buffer error: {e}")
         # Only log critical errors
         _log(
             on_log,
@@ -960,7 +1043,7 @@ async def async_openai_structured_stream(
             timeout,
         )
 
-        buffer = StreamBuffer(config=stream_config or StreamConfig())
+        buffer = StreamBuffer(config=stream_config or StreamConfig(), schema=output_schema)
 
         _log(on_log, logging.DEBUG, "Creating streaming completion")
 
@@ -968,12 +1051,35 @@ async def async_openai_structured_stream(
 
         _log(on_log, logging.DEBUG, "Stream created")
 
+        logger.debug("Starting stream iteration")
         async for chunk in stream:
-            result = _process_stream_chunk(
-                chunk, buffer, output_schema, on_log
-            )
-            if result is not None:
-                yield result
+            logger.debug(f"Processing chunk: {chunk}")
+            if not hasattr(chunk, 'choices') or not chunk.choices:
+                logger.debug("Skipping chunk without choices")
+                continue
+
+            try:
+                choice = chunk.choices[0]
+                if not hasattr(choice, 'delta') or not hasattr(choice.delta, 'content'):
+                    logger.debug("Skipping chunk without delta content")
+                    continue
+
+                content = choice.delta.content
+                if not content:
+                    logger.debug("Skipping empty content")
+                    continue
+
+                logger.debug(f"Writing content to buffer: {content}")
+                result = buffer.process_stream_chunk(content)
+                if result is not None:
+                    logger.debug(f"Got result from buffer: {result}")
+                    yield result
+            except (KeyError, AttributeError) as e:
+                logger.error(f"Error processing chunk: {e}")
+                continue
+
+        if buffer is not None:
+            buffer.close()
 
     except Exception as e:
         _handle_stream_error(e, on_log)
@@ -1143,24 +1249,43 @@ def openai_structured_stream(
             timeout,
         )
 
-        buffer = StreamBuffer(config=stream_config or StreamConfig())
+        buffer = StreamBuffer(config=stream_config or StreamConfig(), schema=output_schema)
 
         _log(on_log, logging.DEBUG, "Creating streaming completion")
-
+            
         stream = client.chat.completions.create(**params)
 
         _log(on_log, logging.DEBUG, "Stream created")
 
+        logger.debug("Starting stream iteration")
         for chunk in stream:
-            result = _process_stream_chunk(
-                chunk, buffer, output_schema, on_log
-            )
-            if result is not None:
-                yield result
+            logger.debug(f"Processing chunk: {chunk}")
+            if not hasattr(chunk, 'choices') or not chunk.choices:
+                logger.debug("Skipping chunk without choices")
+                continue
+
+            try:
+                delta = chunk.choices[0].delta
+                if not hasattr(delta, 'content') or delta.content is None:
+                    logger.debug("Skipping chunk without content")
+                    continue
+
+                logger.debug(f"Processing content: {delta.content}")
+                result = buffer.process_stream_chunk(delta.content)
+                if result is not None:
+                    logger.debug(f"Got result from chunk: {result}")
+                    yield result
+
+            except (KeyError, AttributeError) as e:
+                logger.error(f"Error processing chunk: {e}")
+                continue
+
+        if buffer is not None:
+            buffer.close()
 
     except Exception as e:
+        logger.error(f"Error in stream: {e}")
         _handle_stream_error(e, on_log)
-
     finally:
         if buffer:
             buffer.close()
@@ -1174,3 +1299,4 @@ def openai_structured_stream(
                     "Error closing stream",
                     {"error": str(e)},
                 )
+

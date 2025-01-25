@@ -118,6 +118,7 @@ Documentation
    examples
    contributing
    installation
+   testing
 
 Supported Models
 --------------
