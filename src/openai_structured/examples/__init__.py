@@ -11,7 +11,7 @@ Example Schemas
 Usage
 -----
 >>> from openai_structured.examples.schemas import SimpleMessage
->>> 
+>>>
 >>> # Use in your code
 >>> result = openai_structured(
 ...     client=client,
@@ -22,6 +22,6 @@ Usage
 >>> print(result.message)
 """
 
-from openai_structured.examples.schemas import SimpleMessage, SentimentMessage
+from openai_structured.examples.schemas import SentimentMessage, SimpleMessage
 
 __all__ = ["SimpleMessage", "SentimentMessage"]

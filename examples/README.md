@@ -24,49 +24,6 @@ Comprehensive error handling examples:
 - Network error handling
 - Resource cleanup
 
-## CLI Examples
-
-### cli_basic.py
-
-Basic CLI usage examples:
-
-```bash
-# Simple analysis
-ostruct \
-  --system-prompt "Analyze the text" \
-  --template "Content: {{ input }}" \
-  --file input=data.txt \
-  --schema-file analysis_schema.json
-
-# Multiple files
-ostruct \
-  --system-prompt "Compare the files" \
-  --template "File A: {{ file_a }}\nFile B: {{ file_b }}" \
-  --file file_a=a.txt \
-  --file file_b=b.txt \
-  --schema-file comparison_schema.json \
-  --output-file result.json
-
-# With validation
-ostruct \
-  --system-prompt "Analyze code" \
-  --template "Code: {{ source }}" \
-  --file source=code.py \
-  --schema-file code_analysis_schema.json \
-  --validate-schema \
-  --verbose
-```
-
-### cli_advanced.py
-
-Advanced CLI usage:
-
-- Custom model configurations
-- Token limit management
-- Progress monitoring
-- Error handling
-- Output formatting
-
 ## Production Examples
 
 ### production_setup.py

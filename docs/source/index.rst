@@ -3,7 +3,11 @@
 openai-structured
 ===============
 
-A Python library and command-line tool for working with `OpenAI Structured Outputs <https://platform.openai.com/docs/guides/function-calling>`_, featuring streaming support and efficient buffer management. The library provides both a Python API and a CLI command `ostruct` for extracting structured data using OpenAI models.
+A Python library for working with `OpenAI Structured Outputs <https://platform.openai.com/docs/guides/function-calling>`_, featuring streaming support and efficient buffer management.
+
+.. note::
+   Looking for the CLI tool? It has been moved to a separate package called ``ostruct-cli``.
+   Visit https://github.com/yaniv-golan/ostruct for installation and usage instructions.
 
 Version Compatibility
 ------------------
@@ -113,12 +117,10 @@ Documentation
    :maxdepth: 2
 
    quickstart
-   cli
    api
    examples
    contributing
    installation
-   testing
 
 Supported Models
 --------------

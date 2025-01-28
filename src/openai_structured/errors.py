@@ -158,7 +158,7 @@ class StreamInterruptedError(OpenAIClientError):
         self.chunk_index = chunk_index
 
 
-class StreamBufferError(StreamInterruptedError):
+class StreamBufferError(OpenAIClientError):
     """Base class for stream buffer related errors."""
 
     pass
@@ -178,14 +178,17 @@ class StreamParseError(StreamInterruptedError):
 class BufferOverflowError(StreamBufferError):
     """Raised when the buffer exceeds size limits."""
 
-    pass
+    def __init__(self, message: str):
+        super().__init__(message)
 
 
 class ConnectionTimeoutError(OpenAIClientError):
-    """Raised when a connection times out during testing.
-    
-    This error simulates network timeouts in test scenarios.
-    """
-    def __init__(self, message: str = "Request timed out", timeout: float = None):
-        self.timeout = timeout
+    """Raised when a request times out."""
+
+    def __init__(
+        self,
+        message: str = "Request timed out",
+        timeout: Optional[float] = None,
+    ):
         super().__init__(message)
+        self.timeout = timeout

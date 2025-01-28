@@ -8,48 +8,6 @@ This section provides examples of common use cases for working with `OpenAI Stru
 Basic Examples
 ------------
 
-CLI Examples
-~~~~~~~~~~
-
-These examples demonstrate various `ostruct` CLI use cases, including handling different file sizes and prompt engineering techniques.
-
-**Handling Large Files:**
-
-When working with large files, structure your prompt to place the file content at the end, delimited by clear markers. This example demonstrates how to distill claims from a large document:
-
-.. code-block:: bash
-
-    ostruct \
-      --task "Distill all claims from the document in the <doc> element into the JSON response. Place the claim itself in the 'claim' element, and the source (if available) in the 'source' element. <doc>{{ input.content }}</doc>" \
-      --file input=large_document.txt \
-      --schema claims_schema.json \
-      --allowed-dir .
-
-**Note:** Replace `large_document.txt` and `claims_schema.json` with your actual file paths.
-
-Testing with Dry Run
-^^^^^^^^^^^^^^^^^
-
-Use ``--dry-run`` to preview what the CLI would do without making an API call:
-
-.. code-block:: bash
-
-    ostruct \
-      --system-prompt "You are a helpful assistant that summarizes text." \
-      --template "Please summarize this text: {{ input }}" \
-      --schema-file schema.json \
-      --file input=document.txt \
-      --dry-run \
-      --validate-schema
-
-This will show:
-- The rendered system and user prompts
-- Estimated token count
-- Model parameters
-- Schema validation status
-- Output file path (if specified)
-- No API call will be made
-
 Movie Review Analysis
 ~~~~~~~~~~~~~~~~~~
 
@@ -68,10 +26,35 @@ Extract structured movie reviews using OpenAI Structured Outputs with streaming:
         ValidationError,
         ModelNotSupportedError
     )
+    from typing import Optional
 
-    # Configure logging
+    # Configure application logging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
+
+    # Library logging callback - the library does not use Python's logging infrastructure directly
+    # Instead, it calls this callback for all internal logs, giving you full control over log handling
+    def log_callback(level: int, message: str, data: Optional[dict] = None):
+        """Custom logging callback to handle library logs.
+        
+        The library will call this function for all internal logs, allowing you to:
+        - Filter logs by level
+        - Format messages and data as needed
+        - Route logs to your logging system
+        - Add additional context or processing
+        
+        Note: The library itself does not use Python's logging infrastructure.
+        This callback is the only way the library outputs logs.
+        """
+        # Example: Route library logs through application logger
+        if level == logging.DEBUG:
+            logger.debug("Library: " + message, data or {})
+        elif level == logging.INFO:
+            logger.info("Library: " + message, data or {})
+        elif level == logging.WARNING:
+            logger.warning("Library: " + message, data or {})
+        elif level == logging.ERROR:
+            logger.error("Library: " + message, data or {})
 
     class MovieReview(BaseModel):
         title: str
@@ -84,10 +67,13 @@ Extract structured movie reviews using OpenAI Structured Outputs with streaming:
         client = AsyncOpenAI()  # Initialize client
 
         try:
+            # Application log
+            logger.info("Starting analysis of movie: %s", title)
+
             # Use OpenAI Structured Outputs with streaming
             async for chunk in async_openai_structured_stream(
                 client=client,
-                model="gpt-4o-2024-08-06",  # Model with OpenAI Structured Outputs support
+                model="gpt-4o-2024-08-06",
                 output_schema=MovieReview,
                 system_prompt="You are a movie critic.",
                 user_prompt=f"Review the movie '{title}'",
@@ -95,9 +81,11 @@ Extract structured movie reviews using OpenAI Structured Outputs with streaming:
                     max_buffer_size=1024 * 1024,  # 1MB
                     cleanup_threshold=512 * 1024   # 512KB
                 ),
-                timeout=30.0  # 30 second timeout
+                timeout=30.0,
+                on_log=log_callback  # Library will use this for all logging
             ):
-                logger.info("Processing review for %s", chunk.title)
+                # Application logs
+                logger.info("Received review for: %s", chunk.title)
                 print(f"Title: {chunk.title}")
                 print(f"Rating: {chunk.rating}/10")
                 print(f"Summary: {chunk.summary}")
@@ -109,35 +97,36 @@ Extract structured movie reviews using OpenAI Structured Outputs with streaming:
                     print(f"- {con}")
 
         except StreamBufferError as e:
-            logger.error("Buffer overflow: %s", e)
-            logger.info("Consider increasing buffer size or processing chunks faster")
+            # Application error logging
+            logger.error("Failed to process stream: %s", e)
+            logger.info("Hint: Try increasing buffer size or adjusting cleanup threshold")
+
         except StreamInterruptedError as e:
             logger.error("Stream interrupted: %s", e)
             logger.info("Check network connection and API status")
+
         except StreamParseError as e:
             logger.error(
                 "Parse error after %d attempts: %s",
                 e.attempts, e.last_error
             )
-            logger.debug("Cleanup stats: %s", e.__dict__.get('_cleanup_stats', {}))
-        except ValueError as e:
-            if "token limit" in str(e).lower():
-                logger.error("Token limit exceeded: %s", e)
-                logger.info("Consider reducing input size or using a model with larger context")
-            else:
-                raise
+            logger.debug("Buffer cleanup completed")
+
         except ValidationError as e:
-            logger.error("Invalid review format: %s", e)
+            logger.error("Invalid analysis format: %s", e)
             logger.debug("Error context: %s", e.errors())
+
         except APITimeoutError as e:
             logger.error("API timeout: %s", e)
-            logger.info("Consider increasing timeout or optimizing request")
+            logger.info("Consider increasing timeout for large files")
+
         except APIError as e:
             logger.error("API error: %s", e)
             if e.status_code == 429:
                 logger.info("Rate limit exceeded, implement backoff")
             elif e.status_code >= 500:
                 logger.info("Server error, retry with exponential backoff")
+
         except ModelNotSupportedError as e:
             logger.error("Model not supported: %s", e)
             logger.info("Supported versions: %s", e.supported_versions)
@@ -237,8 +226,7 @@ Analyze code using OpenAI Structured Outputs with custom rules and streaming:
 
         except StreamBufferError as e:
             logger.error("Buffer overflow: %s", e)
-            if hasattr(e, '_cleanup_stats'):
-                logger.debug("Cleanup stats: %s", e._cleanup_stats)
+            logger.info("Consider increasing buffer size or processing chunks faster")
         except StreamInterruptedError as e:
             logger.error("Stream interrupted: %s", e)
             logger.info("Check network connection and API status")
@@ -247,7 +235,7 @@ Analyze code using OpenAI Structured Outputs with custom rules and streaming:
                 "Parse error after %d attempts: %s (max attempts: %d)",
                 e.attempts, e.last_error, StreamBuffer.MAX_PARSE_ERRORS
             )
-            logger.debug("Cleanup stats: %s", e.__dict__.get('_cleanup_stats', {}))
+            logger.debug("Buffer cleanup completed")
         except ValidationError as e:
             logger.error("Invalid analysis format: %s", e)
             logger.debug("Error context: %s", e.errors())
@@ -339,7 +327,7 @@ Configure buffer settings for different OpenAI Structured Outputs use cases:
                 StreamBuffer.MAX_PARSE_ERRORS,
                 e.last_error
             )
-            logger.debug("Cleanup stats: %s", e.__dict__.get('_cleanup_stats', {}))
+            logger.debug("Buffer cleanup completed")
 
         finally:
             await client.close()

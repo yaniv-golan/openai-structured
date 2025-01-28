@@ -9,6 +9,9 @@
 
 A Python library for working with [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/function-calling) using Pydantic models.
 
+> **Note:** Looking for the CLI tool? It has been moved to a separate package called `ostruct-cli`.
+> Visit <https://github.com/yaniv-golan/ostruct> for installation and usage instructions.
+
 ## Key Features
 
 * **Structured Output:** Get structured data using OpenAI Structured Outputs with Pydantic models
@@ -17,7 +20,6 @@ A Python library for working with [OpenAI Structured Outputs](https://platform.o
 * **Simple API:** Clean and intuitive interface
 * **Error Handling:** Comprehensive error handling with specific error types
 * **Modern:** Built for OpenAI's latest API and Python 3.9+
-* **CLI Tool:** Powerful command-line interface for structured API calls
 
 ## Requirements
 
@@ -30,8 +32,6 @@ These will be installed automatically:
 
 * `openai>=1.12.0`: OpenAI Python SDK
 * `pydantic>=2.6.3`: Data validation
-* `ijson>=3.2.3`: Efficient JSON streaming
-* `tiktoken>=0.6.0`: Token counting and validation
 
 ## Installation
 
@@ -43,104 +43,16 @@ pip install openai-structured
 
 ### Using Poetry (recommended for development)
 
+```bash
 # Install Poetry (if needed)
-
-curl -sSL <https://install.python-poetry.org> | python3 -
+curl -sSL https://install.python-poetry.org | python3 -
 
 # Clone, install, and activate
-
-git clone <https://github.com/yaniv-golan/openai-structured.git>
+git clone https://github.com/yaniv-golan/openai-structured.git
 cd openai-structured
 poetry install
 poetry shell
-
-## Command-Line Interface
-
-> **⚠️ Deprecation Notice:** The CLI functionality will be moved to a separate package `ostruct-cli` in version 1.0.0.
-> Please install `ostruct-cli` to continue using the CLI features. See <https://github.com/yaniv-golan/ostruct> for more information.
-
-The CLI provides a powerful way to make structured API calls from the command line:
-
-```bash
-ostruct \
-  --system-prompt "You are a helpful assistant" \
-  --task @task.txt \
-  --file input=data.txt \
-  --schema-file schema.json \
-  --model gpt-4o \
-  --output-file result.json
 ```
-
-### Key CLI Features
-
-* **Streaming by Default:** All responses are streamed for optimal performance
-* **File Input:** Process multiple input files with template placeholders using Jinja2
-* **Schema Validation:** Automatic JSON schema validation
-* **Token Management:** Automatic token counting and limit validation
-* **Simple Output:** Write to file or stdout with direct streaming
-
-### CLI Arguments
-
-Required:
-
-```bash
---task TEXT           # Task template string or path to template file (with @ prefix)
-                     # Example: --task "Analyze this: {{ input }}"
-                     # Example with file: --task @task.txt
---schema PATH    # JSON schema for response structure
-```
-
-Optional:
-
-```bash
---system-prompt TEXT # System prompt for the model (optional)
---dry-run           # Simulate API call without making the actual request
---file NAME=PATH    # File mapping (name=path), use multiple times
-                    # Example: --file input=data.txt
-```
-
-Model Configuration:
-
-```bash
---model TEXT          # Model to use (default: gpt-4o-2024-08-06). 
-                      # Use dated model versions for stability (e.g., gpt-4o-2024-08-06).
---temperature FLOAT   # Temperature (default: 0.0)
---max-tokens INT      # Max tokens (default: model-specific)
---top-p FLOAT        # Top-p sampling (default: 1.0)
---timeout FLOAT      # API timeout in seconds (default: 60.0)
-```
-
-Output and Logging:
-
-```bash
---output-file PATH    # Write JSON output to file
---verbose            # Enable detailed logging
---validate-schema    # Validate schema and response
-```
-
-Authentication:
-
-```bash
---api-key TEXT       # OpenAI API key (overrides env var)
-```
-
-## File Handling and Security
-
-The CLI provides powerful file input capabilities, but it's crucial to use them securely:
-
-* **Restricted Access:** By default, the CLI only allows access to files within the current working directory.
-* **Explicitly Allowed Directories:** Use the `--allowed-dir` option to grant access to additional directories. Be very specific when using this option.
-  * Example: `--allowed-dir ~/Documents/data`
-* **Avoid Overly Permissive Access:** Do not use `--allowed-dir` with root (`/`) or overly broad paths.
-* **No Symlink Following:** The CLI does not follow symbolic links, preventing accidental access to files outside the allowed directories.
-* **`@` Notation for Directory Lists:** You can load a list of allowed directories from a file using the `@` notation:
-  * Example: `--allowed-dir @allowed_dirs.txt`
-  * `allowed_dirs.txt` should contain one directory path per line.
-
-**Security Implications:**
-
-* **Careless use of `--allowed-dir` can expose sensitive data.** Only allow access to directories that are absolutely necessary for your task.
-* **Review your allowed directories regularly.**
 
 ## Supported Models
 
@@ -339,143 +251,67 @@ This project is licensed under the MIT License - see the [`LICENSE`](LICENSE) fi
 
 ## Testing
 
-The library provides comprehensive testing utilities and fixtures to make testing your code easy:
+### Basic Tests
 
 ```python
-import pytest
-from openai_structured import openai_structured_call
-from tests.support.models import SimpleMessage
-
-# Basic test with mock client
-def test_simple_call(mock_openai_client):
+def test_simple_call():
+    client = OpenAI()  # Configure with test credentials
     result = openai_structured_call(
-        client=mock_openai_client,
-        model="gpt-4",
+        client=client,
+        model="gpt-4o",
         output_schema=SimpleMessage,
         user_prompt="test"
     )
     assert isinstance(result, SimpleMessage)
+    assert result.message
 
-# Stream test with helpers
-from tests.support.stream_helpers import create_stream_response
-
-def test_stream(mock_openai_client):
-    mock_openai_client.chat.completions.create.return_value = \
-        create_stream_response(
-            '{"message": "',
-            'hello',
-            '"}'
-        )
+def test_stream():
+    client = OpenAI()  # Configure with test credentials
+    results = []
+    for result in openai_structured_stream(
+        client=client,
+        model="gpt-4o",
+        output_schema=SimpleMessage,
+        user_prompt="test"
+    ):
+        results.append(result)
     
-    results = list(openai_structured_stream(...))
-    assert len(results) == 1
-```
+    assert len(results) > 0
+    for result in results:
+        assert isinstance(result, SimpleMessage)
 
-For more detailed testing examples and best practices, see our [Testing Guide](https://openai-structured.readthedocs.io/en/latest/testing.html).
-
-## Testing Utilities
-
-The library provides comprehensive testing utilities to help you write tests for applications using openai-structured.
-
-### Basic Response Mocking
+### Error Handling
 
 ```python
-from openai_structured.testing import create_structured_response
-from your_app.schemas import UserProfile
-
-# Create mock with schema validation
-mock_client = MagicMock()
-mock_client.chat.completions.create = create_structured_response(
-    output_schema=UserProfile,
-    data={
-        "name": "Test User",
-        "age": 30,
-        "email": "test@example.com"
-    }
-)
-
-# Use in your test
-result = openai_structured(
-    client=mock_client,
-    output_schema=UserProfile,
-    user_prompt="Get user info"
-)
-assert isinstance(result, UserProfile)
-```
-
-### Stream Response Testing
-
-```python
-from openai_structured.testing import create_structured_stream_response
-
-# Create streaming mock
-mock_client = MagicMock()
-mock_client.chat.completions.create = create_structured_stream_response(
-    output_schema=UserProfile,
-    data=[
-        {"name": "Part 1", "age": 30},
-        {"name": "Part 2", "age": 31}
-    ]
-)
-
-# Test streaming
-results = list(openai_structured_stream(...))
-assert len(results) == 2
-```
-
-### Error Simulation
-
-```python
-from openai_structured.testing import (
-    create_invalid_response,
-    create_error_response,
-    create_rate_limit_response
-)
-
-# Test schema validation errors
-mock_client.chat.completions.create = create_invalid_response(
-    output_schema=UserProfile,
-    error_type="missing_field"  # or "wrong_type", "nested_error", etc.
-)
-
-# Test API errors
-mock_client.chat.completions.create = create_error_response(
-    "API Error",
-    status_code=500
-)
-
-# Test rate limiting
-mock_client.chat.completions.create = create_rate_limit_response(
-    max_requests=3,
-    reset_after=60
-)
-```
+def test_invalid_credentials():
+    client = OpenAI(api_key="invalid-key")
+    with pytest.raises(StreamInterruptedError):
+        list(openai_structured_stream(
+            client=client,
+            model="gpt-4o",
+            output_schema=SimpleMessage,
+            user_prompt="test"
+        ))
 
 ### Async Testing
 
 ```python
-from unittest.mock import AsyncMock
-from openai_structured.testing import create_structured_stream_response
-
-@pytest.mark.asyncio
 async def test_async_stream():
-    mock_client = AsyncMock()
-    mock_client.chat.completions.create = create_structured_stream_response(
-        output_schema=UserProfile,
-        data={"name": "Test", "age": 30}
-    )
+    client = AsyncOpenAI()  # Configure with test credentials
+    results = []
+    async for result in async_openai_structured_stream(
+        client=client,
+        model="gpt-4o",
+        output_schema=SimpleMessage,
+        user_prompt="test"
+    ):
+        results.append(result)
     
-    async for result in async_openai_structured_stream(...):
-        assert isinstance(result, UserProfile)
+    assert len(results) > 0
+    for result in results:
+        assert isinstance(result, SimpleMessage)
 ```
 
-### Best Practices
+## Contributing
 
-1. Use schema validation in tests to catch issues early
-2. Test both success and error scenarios
-3. For streaming, test partial and complete responses
-4. Use appropriate error types for different scenarios
-5. Test nested schema validation
-6. Verify rate limiting and timeout handling
-
-For more examples and detailed API documentation, see the [Testing Guide](docs/testing.md).
+Contributions are welcome! Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidelines.

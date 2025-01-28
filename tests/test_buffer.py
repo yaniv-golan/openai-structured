@@ -1,119 +1,97 @@
+"""Test buffer functionality."""
+
+from typing import Any, Dict, List
+
 import pytest
 from pydantic import BaseModel
 
-from openai_structured.buffer import ParseError, StreamBuffer, StreamConfig
+from src.openai_structured.buffer import StreamBuffer, StreamConfig
+from src.openai_structured.examples.schemas import SimpleMessage
 
 
-def test_buffer_close() -> None:
-    """Test that buffer resources are properly closed."""
-    buffer = StreamBuffer()
-    buffer.write("test content")
-    buffer.close()
-
-    # Verify buffer is closed
-    assert buffer._buffer.closed
-    assert buffer.total_bytes == 0
-    assert buffer.parse_errors == 0
-    assert buffer.cleanup_attempts == 0
+# Test models
+class ComplexMessage(BaseModel):  # type: ignore[misc]
+    meta: Dict[str, Any]
+    items: List[Any]
 
 
-def test_buffer_reset_state() -> None:
-    """Test that all state is properly reset."""
-    buffer = StreamBuffer()
-
-    # Perform operations that modify state
-    buffer.write("test content")
-    buffer.cleanup()  # This will increment cleanup_attempts
-
-    # Force a parse error
-    buffer.write("{invalid json")
-    try:
-        buffer.cleanup()
-    except ParseError:
-        pass
-
-    # Verify state before reset
-    assert buffer.total_bytes > 0
-    assert buffer.parse_errors > 0
-    assert buffer.cleanup_attempts > 0
-
-    # Reset and verify all counters
-    buffer.reset()
-    assert buffer.total_bytes == 0
-    assert buffer.parse_errors == 0
-    assert buffer.cleanup_attempts == 0
+@pytest.fixture  # type: ignore[misc]
+def default_stream_config() -> StreamConfig:
+    return StreamConfig(
+        max_buffer_size=1024, cleanup_threshold=512, max_parse_errors=3
+    )
 
 
-def test_invalid_schema_type() -> None:
-    """Test that invalid schema types are rejected."""
-
-    class NotAPydanticModel:
-        pass
-
-    with pytest.raises(
-        ValueError, match="Schema must be a Pydantic model class"
-    ):
-        StreamBuffer(schema=NotAPydanticModel)
+# 1. Basic Buffer Operations
+def test_buffer_write_read(default_stream_config: StreamConfig) -> None:
+    """Test basic buffer write and read."""
+    buf = StreamBuffer(default_stream_config, SimpleMessage)
+    buf.write('{"message": "test"}')
+    assert buf.getvalue() == '{"message": "test"}'
 
 
-def test_schema_validation_error_context() -> None:
-    """Test that schema validation errors include proper context."""
-
-    class TestModel(BaseModel):  # type: ignore[misc]
-        value: int
-
-    buffer = StreamBuffer(schema=TestModel)
-    buffer.write('{"value": "not an integer"}')
-
-    with pytest.raises(ParseError) as exc_info:
-        buffer.cleanup()
-
-    # Verify error context is included
-    assert "Context:" in str(exc_info.value)
+# 2. JSON Parsing and Validation
+def test_buffer_valid_json(default_stream_config: StreamConfig) -> None:
+    """Test processing valid JSON."""
+    buf = StreamBuffer(default_stream_config, SimpleMessage)
+    buf.write('{"message": "test"}')
+    result = buf.process_stream_chunk("")
+    assert isinstance(result, SimpleMessage)
+    assert result.message == "test"
 
 
-def test_cleanup_attempts_tracking() -> None:
-    """Test that cleanup attempts are properly tracked and limited."""
-    buffer = StreamBuffer(config=StreamConfig(max_cleanup_attempts=2))
-
-    # Write invalid content
-    buffer.write("{invalid")
-
-    # First attempt
-    with pytest.raises(ParseError):
-        buffer.cleanup()
-    assert buffer.cleanup_attempts == 1
-
-    # Second attempt should fail with max attempts error
-    with pytest.raises(ParseError, match="Exceeded maximum cleanup attempts"):
-        buffer.cleanup()
+def test_buffer_complex_json(default_stream_config: StreamConfig) -> None:
+    """Test processing complex JSON in chunks."""
+    buf = StreamBuffer(default_stream_config, SimpleMessage)
+    buf.write('{"message": "')
+    assert buf.process_stream_chunk("") is None
+    buf.write('test"}')
+    result = buf.process_stream_chunk("")
+    assert isinstance(result, SimpleMessage)
+    assert result.message == "test"
 
 
-def test_error_stats_consistency() -> None:
-    """Test that error statistics are consistently tracked."""
-    buffer = StreamBuffer()
+# 3. Error Handling and Cleanup
+def test_buffer_invalid_json(default_stream_config: StreamConfig) -> None:
+    """Test handling invalid JSON."""
+    buf = StreamBuffer(default_stream_config, SimpleMessage)
+    buf.write('{"message": invalid}')
+    # Process chunk to trigger validation
+    assert buf.process_stream_chunk("") is None
+    # Buffer should be cleaned up after max parse errors
+    for _ in range(default_stream_config.max_parse_errors + 1):
+        buf.process_stream_chunk("")
+    assert buf.getvalue() == ""
 
-    # Test JSON decode error stats
-    buffer.write("{invalid")
-    try:
-        buffer.cleanup()
-    except ParseError:
-        pass
 
-    assert "json_error" in buffer._cleanup_stats
-    assert "error_type" in buffer._cleanup_stats
+def test_buffer_cleanup(default_stream_config: StreamConfig) -> None:
+    """Test buffer cleanup after threshold."""
+    config = StreamConfig(cleanup_threshold=10)
+    buf = StreamBuffer(config, SimpleMessage)
+    buf.write('{"message": "test"}')
+    result = buf.process_stream_chunk("")
+    assert isinstance(result, SimpleMessage)
+    assert buf.getvalue() == ""  # Buffer should be cleaned up
 
-    # Test validation error stats
-    class TestModel(BaseModel):  # type: ignore[misc]
-        value: int
 
-    buffer = StreamBuffer(schema=TestModel)
-    buffer.write('{"value": "not an integer"}')
+def test_buffer_parse_errors(default_stream_config: StreamConfig) -> None:
+    """Test parse error accumulation."""
+    buf = StreamBuffer(default_stream_config, SimpleMessage)
+    buf.write('{"wrong": "format"}')
+    # Process chunk to trigger validation
+    assert buf.process_stream_chunk("") is None
+    # Buffer should be cleaned up after max parse errors
+    for _ in range(default_stream_config.max_parse_errors + 1):
+        buf.process_stream_chunk("")
+    assert buf.getvalue() == ""
 
-    try:
-        buffer.cleanup()
-    except ParseError:
-        pass
 
-    assert "validation_error" in buffer._cleanup_stats
-    assert "error_context" in buffer._cleanup_stats
+# 4. Buffer Size Limits and Thresholds
+def test_buffer_cleanup_threshold(default_stream_config: StreamConfig) -> None:
+    """Test buffer cleanup threshold."""
+    config = StreamConfig(cleanup_threshold=10)
+    buf = StreamBuffer(config, SimpleMessage)
+    buf.write('{"message": "test"}')
+    assert len(buf.getvalue()) > 0
+    buf.cleanup()
+    assert len(buf.getvalue()) == 0

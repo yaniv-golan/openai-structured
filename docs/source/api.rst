@@ -858,50 +858,44 @@ Here are some practical examples combining multiple features:
 Testing
 -------
 
-The library provides comprehensive testing utilities in ``tests.support``.
+The library provides utilities for testing applications that use openai-structured.
 
 Stream Testing
 ~~~~~~~~~~~~
 
+When testing streaming functionality, you should test both the iteration mechanism and content processing:
+
 .. code-block:: python
 
-    from tests.support.stream_helpers import create_stream_response
-    
-    # Mock streaming responses
-    responses = create_stream_response(
-        '{"message": "',
-        'hello',
-        '"}'
-    )
-    
     # Test streaming functionality
     results = list(openai_structured_stream(
-        client=mock_client,
-        model="gpt-4",
+        client=client,  # Use a real client with test credentials
+        model="gpt-4o",
         output_schema=SimpleMessage,
         user_prompt="test"
     ))
     
-    assert len(results) == 1
-    assert results[0].message == "hello"
+    # Verify results
+    assert len(results) > 0
+    for result in results:
+        assert isinstance(result, SimpleMessage)
 
 Error Handling
 ~~~~~~~~~~~~
 
+Test error scenarios by configuring your client with invalid credentials or using network conditions that would trigger errors:
+
 .. code-block:: python
 
     from openai_structured.errors import StreamInterruptedError
-    from tests.support.stream_helpers import create_error_response
     
-    # Test error scenarios
-    mock_client.chat.completions.create = create_error_response(
-        ConnectionError("Stream interrupted")
-    )
+    # Test with invalid API key
+    client = OpenAI(api_key="invalid-key")
     
     with pytest.raises(StreamInterruptedError):
         list(openai_structured_stream(
-            client=mock_client,
-            model="gpt-4",
+            client=client,
+            model="gpt-4o",
             output_schema=SimpleMessage,
             user_prompt="test"
         ))
@@ -909,105 +903,24 @@ Error Handling
 Async Testing
 ~~~~~~~~~~~
 
+For async code, use pytest-asyncio and test both successful and error cases:
+
 .. code-block:: python
 
     @pytest.mark.asyncio
-    async def test_async_stream(mock_async_client):
-        mock_async_client.chat.completions.create.return_value = \
-            create_stream_response('{"message": "test"}')
+    async def test_async_stream():
+        client = AsyncOpenAI()  # Configure with test credentials
             
         results = []
-        async for result in async_openai_structured_stream(...):
+        async for result in async_openai_structured_stream(
+            client=client,
+            model="gpt-4o",
+            output_schema=SimpleMessage,
+            user_prompt="test"
+        ):
             results.append(result)
             
-        assert len(results) == 1 
-
-Testing Utilities
---------------
-
-.. module:: openai_structured.testing
-
-The testing module provides utilities for testing applications that use openai-structured.
-
-Response Helpers
-~~~~~~~~~~~~~
-
-.. function:: create_structured_response(output_schema: Type[T], data: Union[Dict[str, Any], List[Dict[str, Any]]], validate: bool = True) -> MagicMock
-
-    Create a mock response that matches a Pydantic schema.
-
-    :param output_schema: The Pydantic model class to validate against
-    :param data: Dict or list of dicts to convert to response
-    :param validate: Whether to validate against schema before creating response
-    :return: MagicMock configured with valid schema response
-    :raises ValidationError: If validate=True and data doesn't match schema
-
-.. function:: create_invalid_response(output_schema: Type[T], error_type: str = "missing_field", field_path: str = None) -> MagicMock
-
-    Create a mock response that fails schema validation.
-
-    :param output_schema: The Pydantic model class to validate against
-    :param error_type: Type of validation error to simulate ("missing_field", "wrong_type", "invalid_enum", "pattern_mismatch", "nested_error")
-    :param field_path: Dot notation path to field with error (e.g. "user.address.city")
-    :return: MagicMock configured to trigger schema validation error
-
-Stream Helpers
-~~~~~~~~~~~~
-
-.. function:: create_structured_stream_response(output_schema: Type[T], data: Union[Dict[str, Any], List[Dict[str, Any]]], chunk_size: int = 100) -> MagicMock
-
-    Create a mock stream response that matches a Pydantic schema.
-
-    :param output_schema: The Pydantic model class to validate against
-    :param data: Dict or list of dicts to convert to stream chunks
-    :param chunk_size: Optional size for chunking responses
-    :return: MagicMock configured to yield valid schema chunks
-
-.. function:: create_invalid_stream_response(error_type: str = "malformed", delay: float = None, status_code: int = None) -> MagicMock
-
-    Create a mock stream response that simulates various error conditions.
-
-    :param error_type: Type of error to simulate ("malformed", "incomplete", "invalid_format", "empty", "interrupted", "timeout", "rate_limit", "partial_json")
-    :param delay: Optional delay before error occurs
-    :param status_code: Optional HTTP status code
-    :return: MagicMock configured to simulate the specified error
-
-Error Helpers
-~~~~~~~~~~~
-
-.. function:: create_error_response(error: Union[str, Exception, Type[Exception]], status_code: Optional[int] = None, delay: Optional[float] = None) -> MagicMock
-
-    Create a mock that raises an error when accessed.
-
-    :param error: String message, exception instance, or exception class
-    :param status_code: Optional HTTP status code
-    :param delay: Optional delay before error occurs (in seconds)
-    :return: MagicMock configured to raise the specified error
-
-.. function:: create_rate_limit_response(max_requests: int = 3, reset_after: float = 60) -> MagicMock
-
-    Create a mock that simulates rate limiting.
-
-    :param max_requests: Number of requests before rate limit
-    :param reset_after: Time until rate limit resets (seconds)
-    :return: MagicMock that raises rate limit error after max_requests
-
-.. function:: create_timeout_response(timeout_after: float = 5.0) -> MagicMock
-
-    Create a mock that simulates network timeouts.
-
-    :param timeout_after: Time until timeout occurs (seconds)
-    :return: MagicMock that raises timeout error after specified duration
-
-Exceptions
-~~~~~~~~~
-
-.. class:: MockAPIError
-
-    Mock API error with status code and message.
-
-    .. attribute:: status_code
-        :type: Optional[int]
-
-        HTTP status code associated with the error 
+        assert len(results) > 0
+        for result in results:
+            assert isinstance(result, SimpleMessage) 
 
