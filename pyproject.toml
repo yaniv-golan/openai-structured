@@ -36,7 +36,6 @@ sphinx = ">=7.0,<8.0"
 types-pyyaml = "^6.0.12.20241230"
 types-pygments = "^2.19.0.20250107"
 types-chardet = "^5.0.4.6"
-pyfakefs = "^5.7.4"
 types-cachetools = "^5.5.0.20240820"
 
 [tool.poetry.group.docs]
