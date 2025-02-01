@@ -204,12 +204,19 @@ Production Models
     - 100K output tokens
     - Best for large structured outputs
 
+* ``o3-mini-2025-01-31``
+    - Mini variant optimized for structured data
+    - 200K context window
+    - 100K output tokens
+    - Efficient for large outputs
+
 Development Aliases
 ~~~~~~~~~~~~~~~~
 
 * ``gpt-4o``: Latest GPT-4 structured model
 * ``gpt-4o-mini``: Latest mini variant
 * ``o1``: Latest optimized model
+* ``o3-mini``: Latest mini optimized model
 
 .. note::
     Use dated versions in production for stability.

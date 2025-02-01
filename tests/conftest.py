@@ -1,7 +1,5 @@
 """Test configuration and fixtures."""
 
-from typing import Generator
-
 import pytest
 from dotenv import load_dotenv
 

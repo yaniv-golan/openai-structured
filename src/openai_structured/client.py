@@ -146,6 +146,7 @@ MODEL_VERSION_PATTERN = re.compile(r"^([\w-]+?)-(\d{4}-\d{2}-\d{2})$")
 # - gpt-4o: 128K context window, 16K max output tokens (minimum version: 2024-08-06)
 # - gpt-4o-mini: 128K context window, 16K max output tokens (minimum version: 2024-07-18)
 # - o1: 200K context window, 100K max output tokens (minimum version: 2024-12-17)
+# - o3-mini: 200K context window, 100K max output tokens (minimum version: 2025-01-31)
 #
 # When using aliases (e.g., "gpt-4o"), OpenAI will automatically use the latest
 # compatible version. We validate that the model meets our minimum version
@@ -155,6 +156,7 @@ MODEL_VERSION_PATTERN = re.compile(r"^([\w-]+?)-(\d{4}-\d{2}-\d{2})$")
 # - gpt-4o-2024-08-06: 128K context window, 16K max output tokens
 # - gpt-4o-mini-2024-07-18: 128K context window, 16K max output tokens
 # - o1-2024-12-17: 200K context window, 100K max output tokens
+# - o3-mini-2025-01-31: 200K context window, 100K max output tokens
 #
 # Note: These limits may change as OpenAI updates their models
 
@@ -163,6 +165,7 @@ OPENAI_API_SUPPORTED_MODELS = {
     "gpt-4o": ModelVersion(2024, 8, 6),  # Minimum supported version
     "gpt-4o-mini": ModelVersion(2024, 7, 18),  # Minimum supported version
     "o1": ModelVersion(2024, 12, 17),  # Minimum supported version
+    "o3-mini": ModelVersion(2025, 1, 31),  # Minimum supported version
 }
 
 

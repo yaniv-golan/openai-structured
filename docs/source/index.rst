@@ -144,6 +144,11 @@ Production Models (Recommended)
     * 100K output tokens
     * Minimum version: 2024-12-17
 
+* ``o3-mini-2025-01-31``: Mini variant optimized for OpenAI Structured Outputs
+    * 200K context window
+    * 100K output tokens
+    * Minimum version: 2025-01-31
+
 Development Aliases
 ~~~~~~~~~~~~~~~~~
 
@@ -158,6 +163,10 @@ Development Aliases
 * ``o1``: Latest model optimized for OpenAI Structured Outputs
     * Maps to most recent compatible version
     * Minimum version: 2024-12-17
+
+* ``o3-mini``: Latest mini variant optimized for OpenAI Structured Outputs
+    * Maps to most recent compatible version
+    * Minimum version: 2025-01-31
 
 Contributing
 -----------
