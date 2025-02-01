@@ -7,31 +7,30 @@
 [![Documentation Status](https://readthedocs.org/projects/openai-structured/badge/?version=latest)](https://openai-structured.readthedocs.io/en/latest/)
 [![Build Status](https://github.com/yaniv-golan/openai-structured/actions/workflows/python-package.yml/badge.svg)](https://github.com/yaniv-golan/openai-structured/actions/workflows/python-package.yml)
 
-A Python library for working with [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/function-calling) using Pydantic models.
+openai-structured is a Python library that provides a structured approach to interfacing with [OpenAI's Structured Outputs](https://platform.openai.com/docs/guides/function-calling) using Pydantic models. The library simplifies the processing and validation of structured outputs with support for both synchronous and asynchronous calls, robust error handling, and efficient streaming.
 
 > **Note:** Looking for the CLI tool? It has been moved to a separate package called `ostruct-cli`.
 > Visit <https://github.com/yaniv-golan/ostruct> for installation and usage instructions.
 
 ## Key Features
 
-* **Structured Output:** Get structured data using OpenAI Structured Outputs with Pydantic models
-* **Efficient Streaming:** Built-in streaming support for optimal performance
-* **Type Safety:** Full type hints and Pydantic validation
-* **Simple API:** Clean and intuitive interface
-* **Error Handling:** Comprehensive error handling with specific error types
-* **Modern:** Built for OpenAI's latest API and Python 3.9+
+- **Structured Output**: Validate API responses directly against Pydantic models.
+- **Streaming Support**: Process large or incremental responses efficiently.
+- **Type Safety**: Full type annotations ensure reliable and predictable behavior.
+- **Robust Error Handling**: Specific exception types for handling API and streaming errors.
+- **Multi-Model Support**: Compatible with various models that offer structured outputs.
 
 ## Requirements
 
-* Python 3.9 or higher
-* OpenAI API key
+- Python 3.9 or higher
+- OpenAI API key
 
 ### Dependencies
 
 These will be installed automatically:
 
-* `openai>=1.12.0`: OpenAI Python SDK
-* `pydantic>=2.6.3`: Data validation
+- `openai>=1.12.0`: OpenAI Python SDK
+- `pydantic>=2.6.3`: Data validation
 
 ## Installation
 
@@ -60,31 +59,31 @@ The library supports models with [OpenAI Structured Outputs](https://platform.op
 
 ### Production Models (Recommended)
 
-* `gpt-4o-2024-08-06`: GPT-4 with OpenAI Structured Outputs
-  * 128K context window
-  * 16K output tokens
-  * Full JSON schema support
+- `gpt-4o-2024-08-06`: GPT-4 with OpenAI Structured Outputs
+  - 128K context window
+  - 16K output tokens
+  - Full JSON schema support
 
-* `gpt-4o-mini-2024-07-18`: Smaller GPT-4 variant
-  * 128K context window
-  * 16K output tokens
-  * Optimized for faster responses
+- `gpt-4o-mini-2024-07-18`: Smaller GPT-4 variant
+  - 128K context window
+  - 16K output tokens
+  - Optimized for faster responses
 
-* `o1-2024-12-17`: Optimized for structured data
-  * 200K context window
-  * 100K output tokens
-  * Best for large structured outputs
+- `o1-2024-12-17`: Optimized for structured data
+  - 200K context window
+  - 100K output tokens
+  - Best for large structured outputs
 
-* `o3-mini-2025-01-31`: Mini variant optimized for structured data
-  * 200K context window
-  * 100K output tokens
+- `o3-mini-2025-01-31`: Mini variant optimized for structured data
+  - 200K context window
+  - 100K output tokens
 
 ### Development Aliases
 
-* `gpt-4o`: Latest GPT-4 structured model
-* `gpt-4o-mini`: Latest mini variant
-* `o1`: Latest optimized model
-* `o3-mini`: Latest mini optimized model
+- `gpt-4o`: Latest GPT-4 structured model
+- `gpt-4o-mini`: Latest mini variant
+- `o1`: Latest optimized model
+- `o3-mini`: Latest mini optimized model
 
 Note: Use dated versions in production for stability. Aliases automatically use the latest compatible version.
 
@@ -238,9 +237,9 @@ OPENAI_API_VERSION=2024-02-01  # Optional API version
 
 ### Python Version Support
 
-* Python 3.9+
-* Tested on CPython implementations
-* Compatible with Linux, macOS, and Windows
+- Python 3.9+
+- Tested on CPython implementations
+- Compatible with Linux, macOS, and Windows
 
 ## Documentation
 
