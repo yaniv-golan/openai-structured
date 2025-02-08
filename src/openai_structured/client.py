@@ -411,7 +411,9 @@ def _create_request_params(
 
 def _get_schema(model_class: Type[BaseModel]) -> dict[str, Any]:
     """Get JSON schema for a model class."""
-    return model_class.model_json_schema()
+    schema = model_class.model_json_schema()
+    assert isinstance(schema, dict)
+    return schema
 
 
 def _parse_json_response(

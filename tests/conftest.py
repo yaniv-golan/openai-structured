@@ -23,7 +23,12 @@ def pytest_configure(config: pytest.Config) -> None:
 def env_setup(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Set up environment variables for testing."""
+    """Set up environment variables for testing.
+
+    Args:
+        request: Pytest fixture request
+        monkeypatch: Pytest monkeypatch fixture
+    """
     # Load .env file for live tests
     if "live" in request.keywords:
         load_dotenv()

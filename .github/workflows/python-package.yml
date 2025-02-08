@@ -35,7 +35,8 @@ jobs:
         poetry run flake8 src/ tests/ examples/
     - name: Type check with mypy
       run: |
-        poetry run mypy --follow-imports=skip src/ tests/
+        # Run mypy using configuration from pyproject.toml
+        poetry run mypy
     - name: Run tests with pytest
       run: |
         # Run all tests except live tests, with verbose output and logging

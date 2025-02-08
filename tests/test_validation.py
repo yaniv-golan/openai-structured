@@ -31,6 +31,10 @@ from openai_structured.client import supports_structured_output
 def test_supports_structured_output(model_name: str, expected: bool) -> None:
     """Test model support validation with various model names.
 
+    Args:
+        model_name: Name of the model to test
+        expected: Expected result of the validation
+
     This test covers:
     1. Basic alias validation
     2. Dated version validation (minimum and newer versions)

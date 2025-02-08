@@ -3,7 +3,7 @@
 from typing import Any, Dict, List
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from openai_structured.buffer import StreamBuffer, StreamConfig
 from openai_structured.errors import ClosedBufferError
@@ -12,12 +12,16 @@ from openai_structured.examples.schemas import SimpleMessage
 
 # Test models
 class ComplexMessage(BaseModel):
+    """Complex message model for testing."""
+
+    model_config = ConfigDict(strict=True)
     meta: Dict[str, Any]
     items: List[Any]
 
 
 @pytest.fixture
 def default_stream_config() -> StreamConfig:
+    """Return default stream configuration for testing."""
     return StreamConfig(
         max_buffer_size=1024, cleanup_threshold=512, max_parse_errors=3
     )

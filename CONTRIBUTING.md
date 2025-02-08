@@ -32,6 +32,55 @@ We welcome contributions to `openai-structured`! Here's how you can contribute:
    poetry install
    ```
 
+## Type Checking with Pydantic and mypy
+
+This project uses Pydantic with mypy for robust type checking. Here's how to ensure proper setup:
+
+1. **Install Pydantic with mypy support:**
+
+   In `pyproject.toml`, ensure Pydantic is installed with mypy extras:
+
+   ```toml
+   [tool.poetry.dependencies]
+   pydantic = { version = "^2.6.3", extras = ["mypy"] }
+   ```
+
+2. **Configure mypy for Pydantic:**
+
+   Add these settings to `pyproject.toml`:
+
+   ```toml
+   [tool.mypy]
+   plugins = ["pydantic.mypy"]
+   follow_imports = "normal"
+   strict = true
+   show_error_codes = true
+   warn_unused_configs = true
+
+   # Path configuration
+   mypy_path = ["src", "tests"]
+   files = ["src/openai_structured", "tests"]
+
+   [tool.pydantic-mypy]
+   init_forbid_extra = true
+   init_typed = true
+   warn_required_dynamic_aliases = true
+   warn_untyped_fields = true
+   ```
+
+3. **Run type checking:**
+
+   ```bash
+   poetry run mypy
+   ```
+
+   Note: Always run mypy through Poetry to ensure it uses the correct virtual environment.
+
+4. **Common issues and solutions:**
+   * If mypy can't find Pydantic plugin: Ensure you've installed Pydantic with mypy extras
+   * If getting "Cannot find implementation or library stub" errors: Check mypy_path setting
+   * For example files that don't need strict typing: Add them to exclude patterns or use `# type: ignore`
+
 ## Making Changes
 
 1. **Create a new branch** for your changes:
