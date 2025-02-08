@@ -198,3 +198,17 @@ class ConnectionTimeoutError(OpenAIClientError):
     ):
         super().__init__(message)
         self.timeout = timeout
+
+
+class TokenLimitError(OpenAIClientError):
+    """Raised when token limits are exceeded."""
+
+    def __init__(
+        self,
+        message: str,
+        requested_tokens: Optional[int] = None,
+        model_limit: Optional[int] = None,
+    ):
+        super().__init__(message)
+        self.requested_tokens = requested_tokens
+        self.model_limit = model_limit

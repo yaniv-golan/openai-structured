@@ -118,6 +118,34 @@ Functions
         - For dated versions, both the base model and date are validated
         - Newer versions are accepted if the base model is supported
 
+.. function:: get_context_window_limit(model_name: str) -> int
+
+    Get the context window limit (maximum total tokens) for a given model.
+
+    :param model_name: The model name (e.g., "gpt-4o", "o1", "o3-mini")
+    :return: Maximum context window size in tokens
+    
+    Example::
+
+        limit = get_context_window_limit("gpt-4o")  # Returns 128,000
+        limit = get_context_window_limit("o1")      # Returns 200,000
+        limit = get_context_window_limit("o3-mini") # Returns 200,000
+
+.. function:: get_default_token_limit(model_name: str) -> int
+
+    Get the default output token limit for a given model.
+
+    :param model_name: The model name (e.g., "gpt-4o", "o1", "o3-mini")
+    :return: Maximum output tokens allowed
+    
+    Example::
+
+        limit = get_default_token_limit("gpt-4o")  # Returns 16,384
+        limit = get_default_token_limit("o1")      # Returns 100,000
+        limit = get_default_token_limit("o3-mini") # Returns 100,000
+
+    Note: The actual usable output tokens may be slightly less due to invisible reasoning tokens.
+
 Classes
 ~~~~~~~
 
@@ -313,6 +341,34 @@ Exceptions
 
 .. note::
     Token limit validation is performed using the `validate_token_limits` function, which raises a `ValueError` if limits are exceeded.
+
+.. exception:: TokenLimitError
+
+    Raised when token limits are exceeded for a model.
+
+    Attributes:
+        - requested_tokens (Optional[int]): The number of tokens requested
+        - model_limit (Optional[int]): The maximum token limit for the model
+
+    Example::
+
+        try:
+            result = await async_openai_structured_call(
+                client=client,
+                model="gpt-4o",
+                max_tokens=20_000,  # Exceeds limit
+                output_schema=MySchema,
+                user_prompt="..."
+            )
+        except TokenLimitError as e:
+            print(f"Token limit exceeded: requested {e.requested_tokens} tokens")
+            print(f"Model limit is {e.model_limit} tokens")
+
+    Note:
+        Token limits vary by model:
+        - gpt-4o: 16,384 output tokens
+        - o1: 100,000 output tokens
+        - o3-mini: 100,000 output tokens
 
 Error Handling Examples
 ~~~~~~~~~~~~~~~~~~~~

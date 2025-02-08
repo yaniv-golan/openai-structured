@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-02-15
+
+### Added
+
+- Support for token limit validation
+  - Added `get_context_window_limit` function
+  - Added `get_default_token_limit` function
+  - Added `TokenLimitError` exception class
+- Enhanced model token limit documentation
+  - Updated model specifications
+  - Added token limit examples
+  - Improved error handling documentation
+
+### Changed
+
+- Improved error handling for token limits
+  - Added token limit validation in request preparation
+  - Enhanced error messages with detailed token information
+  - Updated examples with token limit handling
+
 ## [1.2.0] - 2025-02-08
 
 ### Added

@@ -108,7 +108,7 @@ Configure streaming behavior:
 Error Handling
 ------------
 
-The `openai-structured` library provides robust error handling to help you build resilient applications. Here's a realistic example analyzing sentiment from customer reviews:
+The library provides robust error handling to help you build resilient applications. Here's a realistic example analyzing sentiment from customer reviews:
 
 .. code-block:: python
 

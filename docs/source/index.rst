@@ -150,9 +150,9 @@ Production Models (Recommended)
     * Minimum version: 2025-01-31
 
 Development Aliases
-~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
 
-* ``gpt-4o``: Latest GPT-4 with OpenAI Structured Outputs
+* ``gpt-4o``: Latest GPT-4 model with OpenAI Structured Outputs
     * Maps to most recent compatible version
     * Minimum version: 2024-08-06
 
@@ -160,13 +160,18 @@ Development Aliases
     * Maps to most recent compatible version
     * Minimum version: 2024-07-18
 
-* ``o1``: Latest model optimized for OpenAI Structured Outputs
+* ``o1``: Latest model with OpenAI Structured Outputs
     * Maps to most recent compatible version
     * Minimum version: 2024-12-17
 
-* ``o3-mini``: Latest mini variant optimized for OpenAI Structured Outputs
+* ``o3-mini``: Latest mini variant with OpenAI Structured Outputs
     * Maps to most recent compatible version
     * Minimum version: 2025-01-31
+
+.. note::
+    Use dated versions in production for stability.
+    Aliases automatically use the latest compatible version.
+    Actual output tokens may be slightly less due to invisible reasoning tokens.
 
 Contributing
 -----------

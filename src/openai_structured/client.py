@@ -79,6 +79,8 @@ from .errors import (
     OpenAIClientError,
     StreamBufferError,
     StreamInterruptedError,
+    StreamParseError,
+    TokenLimitError,
 )
 from .model_version import ModelVersion
 
@@ -102,9 +104,9 @@ __all__ = [
     "BufferOverflowError",
     "ModelNotSupportedError",
     "InvalidResponseFormatError",
-    "EmptyResponseError",
     "JSONParseError",
     "ValidationError",
+    "TokenLimitError",
 ]
 
 # Create logger
@@ -117,8 +119,8 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 # Constants
-DEFAULT_TEMPERATURE = 0.2
-DEFAULT_TIMEOUT = 60.0  # Default timeout in seconds
+DEFAULT_TEMPERATURE = 0.0
+DEFAULT_TIMEOUT = 60.0
 
 # Format: "{base_model}-{YYYY}-{MM}-{DD}"
 # Examples:
@@ -159,6 +161,21 @@ MODEL_VERSION_PATTERN = re.compile(r"^([\w-]+?)-(\d{4}-\d{2}-\d{2})$")
 # - o3-mini-2025-01-31: 200K context window, 100K max output tokens
 #
 # Note: These limits may change as OpenAI updates their models
+# Note: Actual output may be lower than these theoretical limits due to invisible
+# reasoning tokens that count against the same budget
+
+# Model token limits defined as constants
+MODEL_CONTEXT_WINDOWS = {
+    "o1": 200_000,  # o1 models
+    "gpt-4o": 128_000,  # gpt-4o models
+    "o3-mini": 200_000,  # o3-mini models
+}
+
+MODEL_OUTPUT_LIMITS = {
+    "o1": 100_000,  # o1 models
+    "gpt-4o": 16_384,  # gpt-4o models
+    "o3-mini": 100_000,  # o3-mini models
+}
 
 # Model version mapping - maps aliases to minimum supported versions
 OPENAI_API_SUPPORTED_MODELS = {
@@ -202,17 +219,6 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
         return func(*args, **kwargs)
 
     return wrapper
-
-
-class StreamParseError(StreamInterruptedError):
-    """Raised when stream content cannot be parsed after multiple attempts."""
-
-    def __init__(self, message: str, attempts: int, last_error: Exception):
-        super().__init__(
-            f"{message} after {attempts} attempts. Last error: {last_error}"
-        )
-        self.attempts = attempts
-        self.last_error = last_error
 
 
 def supports_structured_output(model_name: str) -> bool:
@@ -605,6 +611,7 @@ def _prepare_request(
 ) -> dict[str, Any]:
     """Prepare common request parameters and validate inputs."""
     _validate_request(model, client, expected_type)
+    _validate_token_limits(model, max_tokens)
     messages = _create_chat_messages(system_prompt, user_prompt)
     schema = _get_schema(output_schema)
 
@@ -630,12 +637,12 @@ def _handle_stream_error(
     if isinstance(e, StreamBufferError):
         raise
 
-    if isinstance(e, StreamParseError):
+    if isinstance(e, (StreamParseError, StreamInterruptedError)):
         _log(
             on_log,
             logging.ERROR,
             "Stream parsing failed",
-            {"attempts": e.attempts, "error": str(e.last_error)},
+            {"error": str(e)},
         )
         raise
 
@@ -1275,10 +1282,9 @@ async def async_openai_structured_stream(
                 _log(
                     on_log,
                     logging.ERROR,
-                    f"Error processing chunk in async_openai_structured_stream function: {str(e)}",
+                    "Error processing chunk in async_openai_structured_stream function",
                     {
                         "error": str(e),
-                        "chunk": str(chunk),
                         "error_type": type(e).__name__,
                     },
                 )
@@ -1533,3 +1539,88 @@ def openai_structured_stream(
                     "Error closing stream",
                     {"error": str(e)},
                 )
+
+
+def _get_base_model(model: str) -> str:
+    """Extract base model name from full model name.
+
+    Args:
+        model: The model name (e.g., 'gpt-4o', 'gpt-4o-2024-08-06')
+
+    Returns:
+        The base model name without version
+
+    Example:
+        >>> _get_base_model("gpt-4o-2024-08-06")
+        'gpt-4o'
+        >>> _get_base_model("o1")
+        'o1'
+    """
+    match = MODEL_VERSION_PATTERN.match(model)
+    if match:
+        return match.group(1)
+    return model
+
+
+def get_context_window_limit(model: str) -> int:
+    """Get the total context window limit for a given model.
+
+    Args:
+        model: The model name (e.g., 'gpt-4o', 'o1', 'o1-mini', 'o3-mini')
+
+    Returns:
+        The total context window limit for the model in tokens
+
+    Example:
+        >>> get_context_window_limit("o1")
+        200_000
+        >>> get_context_window_limit("gpt-4o-2024-08-06")
+        128_000
+    """
+    base_model = _get_base_model(model)
+    for prefix, limit in MODEL_CONTEXT_WINDOWS.items():
+        if base_model.startswith(prefix):
+            return limit
+    return 8_192  # Default fallback
+
+
+def get_default_token_limit(model: str) -> int:
+    """Get the default maximum output token limit for a given model.
+
+    Args:
+        model: The model name (e.g., 'gpt-4o', 'o1', 'o1-mini', 'o3-mini')
+
+    Returns:
+        The default maximum number of output tokens for the model
+
+    Example:
+        >>> get_default_token_limit("o1")
+        100_000
+        >>> get_default_token_limit("gpt-4o")
+        16_384
+    """
+    base_model = _get_base_model(model)
+    for prefix, limit in MODEL_OUTPUT_LIMITS.items():
+        if base_model.startswith(prefix):
+            return limit
+    return 4_096  # Default fallback
+
+
+def _validate_token_limits(model: str, max_tokens: Optional[int]) -> None:
+    """Validate token limits for a model.
+
+    Args:
+        model: The model name
+        max_tokens: The requested maximum number of tokens
+
+    Raises:
+        TokenLimitError: If the requested tokens exceed the model's limit
+    """
+    if max_tokens is not None:
+        default_limit = get_default_token_limit(model)
+        if max_tokens > default_limit:
+            raise TokenLimitError(
+                f"Requested {max_tokens} tokens exceeds model limit of {default_limit}",
+                requested_tokens=max_tokens,
+                model_limit=default_limit,
+            )

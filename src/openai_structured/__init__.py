@@ -18,6 +18,8 @@ from .client import (
     StreamConfig,
     async_openai_structured_call,
     async_openai_structured_stream,
+    get_context_window_limit,
+    get_default_token_limit,
     openai_structured_call,
     openai_structured_stream,
     supports_structured_output,
@@ -34,6 +36,7 @@ from .errors import (
     StreamBufferError,
     StreamInterruptedError,
     StreamParseError,
+    TokenLimitError,
 )
 from .model_version import ModelVersion, parse_model_version
 
@@ -44,6 +47,9 @@ __all__ = [
     "async_openai_structured_call",
     "async_openai_structured_stream",
     "supports_structured_output",
+    # Token limit functions
+    "get_context_window_limit",
+    "get_default_token_limit",
     # Configuration
     "StreamConfig",
     # Type hints
@@ -62,4 +68,5 @@ __all__ = [
     "StreamBufferError",
     "StreamParseError",
     "BufferOverflowError",
+    "TokenLimitError",
 ]
