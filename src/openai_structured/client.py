@@ -223,7 +223,9 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
                     "support."
                 )
             elif model == "o3" or (
-                is_o3_model and not ("mini" in model.lower())
+                is_o3_model
+                and model is not None
+                and not ("mini" in model.lower())
             ):
                 raise OpenAIClientError(
                     "The main o3 model does not support streaming. Setting stream=True "
