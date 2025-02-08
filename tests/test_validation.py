@@ -138,7 +138,11 @@ def test_o1_fixed_parameters() -> None:
     # Test streaming rejection for o1-2024-12-17
     with pytest.raises(
         OpenAIClientError,
-        match="o1-2024-12-17 does not support streaming.*Supported values are: false.*Use o1-preview, o1-mini, or a different model",
+        match=(
+            "o1-2024-12-17 does not support streaming.*"
+            "Supported values are: false.*"
+            "Use o1-preview, o1-mini, or a different model"
+        ),
     ):
         openai_structured_stream(
             client=client,

@@ -49,14 +49,14 @@ The `ostruct-cli` package provides 100% feature parity with the CLI functionalit
 
 ## FAQ
 
-**Q: Do I need to change my CLI usage or scripts?**  
+**Q: Do I need to change my CLI usage or scripts?**
 A: No, all commands and options remain exactly the same. Just install the new package.
 
-**Q: Will my existing templates and schemas work?**  
+**Q: Will my existing templates and schemas work?**
 A: Yes, all existing templates, schemas, and configurations will work without modification.
 
-**Q: What happens if I don't migrate?**  
+**Q: What happens if I don't migrate?**
 A: The CLI in `openai-structured` will continue to work until v1.0.0, but you should migrate before then to ensure continued functionality.
 
-**Q: Can I install both packages?**  
+**Q: Can I install both packages?**
 A: Yes, but it's recommended to migrate to `ostruct-cli` for CLI functionality and use `openai-structured` only for its library features.

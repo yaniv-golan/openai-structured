@@ -129,9 +129,9 @@ If you encounter issues:
 
    .. code-block:: bash
 
-      pip install --upgrade openai-structured 
+      pip install --upgrade openai-structured
 
 # Example configuration
 OPENAI_API_KEY=your-api-key-here
 OPENAI_MODEL=gpt-4o-2024-08-06  # Default model for testing
-LOG_LEVEL=INFO 
+LOG_LEVEL=INFO

@@ -13,4 +13,4 @@
 
 # Build and deployment
 /.github/workflows/ @yaniv-golan
-pyproject.toml @yaniv-golan 
+pyproject.toml @yaniv-golan

@@ -36,13 +36,13 @@ Extract structured movie reviews using OpenAI Structured Outputs with streaming:
     # Instead, it calls this callback for all internal logs, giving you full control over log handling
     def log_callback(level: int, message: str, data: Optional[dict] = None):
         """Custom logging callback to handle library logs.
-        
+
         The library will call this function for all internal logs, allowing you to:
         - Filter logs by level
         - Format messages and data as needed
         - Route logs to your logging system
         - Add additional context or processing
-        
+
         Note: The library itself does not use Python's logging infrastructure.
         This callback is the only way the library outputs logs.
         """
@@ -211,17 +211,17 @@ Analyze code using OpenAI Structured Outputs with custom rules and streaming:
                 logger.info("Analyzing %s", chunk.file_name)
                 print(f"\nAnalysis for {chunk.file_name}:")
                 print(f"Language: {chunk.language}")
-                
+
                 print("\nIssues:")
                 for issue in chunk.issues:
                     print(f"[{issue.severity.upper()}] Line {issue.line_number}")
                     print(f"  Problem: {issue.description}")
                     print(f"  Suggestion: {issue.suggestion}")
-                
+
                 print("\nBest Practices:")
                 for practice in chunk.best_practices:
                     print(f"- {practice}")
-                
+
                 print(f"\nSummary: {chunk.improvement_summary}")
 
         except StreamBufferError as e:

@@ -124,7 +124,7 @@ The library provides robust error handling to help you build resilient applicati
                 - List the key positive phrases in 'positive_phrases'
                 - List the key negative phrases in 'negative_phrases'
                 - Summarize the emotional tone in 'tone'
-                
+
                 Review: {{ review.content }}""",
             file_vars={"review": "customer_review.txt"}
         ):
@@ -250,7 +250,7 @@ The library uses these environment variables:
     Custom API endpoint URL
 
 * ``OPENAI_API_VERSION`` (optional)
-    Specific API version to use 
+    Specific API version to use
 
 Advanced Usage
 ------------
@@ -334,4 +334,4 @@ The library provides comprehensive error handling:
     except APIError as e:
         print(f"API error: {e}")
     finally:
-        await client.close() 
+        await client.close()

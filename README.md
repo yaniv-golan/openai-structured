@@ -300,7 +300,7 @@ def test_stream():
         user_prompt="test"
     ):
         results.append(result)
-    
+
     assert len(results) > 0
     for result in results:
         assert isinstance(result, SimpleMessage)
@@ -331,7 +331,7 @@ async def test_async_stream():
         user_prompt="test"
     ):
         results.append(result)
-    
+
     assert len(results) > 0
     for result in results:
         assert isinstance(result, SimpleMessage)

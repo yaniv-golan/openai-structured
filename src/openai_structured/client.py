@@ -210,7 +210,9 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
         is_o3_model = base_model.startswith("o3")
 
         # Check if streaming is requested
-        stream = kwargs.get("stream", True)  # Default to True since our functions use streaming
+        stream = kwargs.get(
+            "stream", True
+        )  # Default to True since our functions use streaming
         if stream:
             if model == "o1-2024-12-17":
                 raise OpenAIClientError(
@@ -220,7 +222,9 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
                     "Use o1-preview, o1-mini, or a different model if you need streaming "
                     "support."
                 )
-            elif model == "o3" or (is_o3_model and not ("mini" in model.lower())):
+            elif model == "o3" or (
+                is_o3_model and not ("mini" in model.lower())
+            ):
                 raise OpenAIClientError(
                     "The main o3 model does not support streaming. Setting stream=True "
                     "will result in a 400 error. Use o3-mini or o3-mini-high if you "

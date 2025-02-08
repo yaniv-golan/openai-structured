@@ -124,7 +124,7 @@ Functions
 
     :param model_name: The model name (e.g., "gpt-4o", "o1", "o3-mini")
     :return: Maximum context window size in tokens
-    
+
     Example::
 
         limit = get_context_window_limit("gpt-4o")  # Returns 128,000
@@ -137,7 +137,7 @@ Functions
 
     :param model_name: The model name (e.g., "gpt-4o", "o1", "o3-mini")
     :return: Maximum output tokens allowed
-    
+
     Example::
 
         limit = get_default_token_limit("gpt-4o")  # Returns 16,384
@@ -408,7 +408,7 @@ Basic Error Recovery
             cleanup_threshold=512 * 1024   # 512KB
         )
         buffer = StreamBuffer(config=stream_config)
-        
+
         try:
             async for chunk in async_openai_structured_stream(
                 model="gpt-4o",
@@ -423,24 +423,24 @@ Basic Error Recovery
             # Handle model compatibility issues
             print(f"Model not supported: {e}")
             print("Available models: gpt-4o, gpt-4o-mini, o1")
-            
+
         except ValidationError as e:
             # Handle schema validation failures
             print(f"Schema validation failed: {e}")
             print("Fields with errors:", e.errors())
-            
+
         except StreamBufferError as e:
             # Handle buffer-related issues
             print(f"Buffer error: {e}")
             if hasattr(e, '_cleanup_stats'):
                 print("Cleanup attempts:", e._cleanup_stats['attempts'])
                 print("Last buffer size:", e._cleanup_stats['bytes_before'])
-            
+
         except StreamParseError as e:
             # Handle JSON parsing issues
             print(f"Parse error after {e.attempts} attempts")
             print(f"Last error: {e.last_error}")
-            
+
         except APIResponseError as e:
             # Handle API response issues with detailed info
             print(f"API Response Error (ID: {e.response_id})")
@@ -671,7 +671,7 @@ Schema Validation
         ):
             process_chunk(chunk)
     except ValidationError as e:
-        print(f"Validation failed: {e}") 
+        print(f"Validation failed: {e}")
 
 Schema Validation
 ~~~~~~~~~~~~~~~
@@ -704,7 +704,7 @@ Schema Validation
         ):
             process_chunk(chunk)
     except ValidationError as e:
-        print(f"Validation failed: {e}") 
+        print(f"Validation failed: {e}")
 
 Error Handling
 ~~~~~~~~~~~~~
@@ -749,7 +749,7 @@ Example error handling:
     except APIError as e:
         print(f"API error: {e}")
     finally:
-        await client.close() 
+        await client.close()
 
 Logging Events
 ~~~~~~~~~~~~
@@ -804,7 +804,7 @@ Example logging implementation::
         user_prompt="Sample text to analyze",
         on_log=log_callback
     ):
-        process_chunk(chunk) 
+        process_chunk(chunk)
 
 Data Processing Features
 =====================
@@ -910,20 +910,20 @@ Here are some practical examples combining multiple features:
     # Generate summary report
     {% set stats = data|aggregate('value') %}
     {% set distribution = data|pluck('category')|frequency %}
-    
+
     Summary Statistics:
     {{ stats|dict_to_table }}
-    
+
     Category Distribution:
     {{ distribution|dict_to_table }}
 
     # Create detailed pivot analysis
-    {% set pivot_data = pivot_table(data, 
+    {% set pivot_data = pivot_table(data,
                                   index='category',
                                   values='amount',
                                   aggfunc='mean') %}
     Average Amount by Category:
-    {{ pivot_data|dict_to_table }} 
+    {{ pivot_data|dict_to_table }}
 
 Testing
 -------
@@ -944,7 +944,7 @@ When testing streaming functionality, you should test both the iteration mechani
         output_schema=SimpleMessage,
         user_prompt="test"
     ))
-    
+
     # Verify results
     assert len(results) > 0
     for result in results:
@@ -958,10 +958,10 @@ Test error scenarios by configuring your client with invalid credentials or usin
 .. code-block:: python
 
     from openai_structured.errors import StreamInterruptedError
-    
+
     # Test with invalid API key
     client = OpenAI(api_key="invalid-key")
-    
+
     with pytest.raises(StreamInterruptedError):
         list(openai_structured_stream(
             client=client,
@@ -980,7 +980,7 @@ For async code, use pytest-asyncio and test both successful and error cases:
     @pytest.mark.asyncio
     async def test_async_stream():
         client = AsyncOpenAI()  # Configure with test credentials
-            
+
         results = []
         async for result in async_openai_structured_stream(
             client=client,
@@ -989,19 +989,19 @@ For async code, use pytest-asyncio and test both successful and error cases:
             user_prompt="test"
         ):
             results.append(result)
-            
+
         assert len(results) > 0
         for result in results:
-            assert isinstance(result, SimpleMessage) 
+            assert isinstance(result, SimpleMessage)
 
 .. note::
     o1 and o3 models have fixed parameters that cannot be modified:
-    
+
     - temperature: Fixed at 1.0
     - top_p: Fixed at 1.0
     - frequency_penalty: Fixed at 0.0
     - presence_penalty: Fixed at 0.0
-    
+
     Attempting to modify these parameters will raise an OpenAIClientError.
 
     Example::
@@ -1114,4 +1114,3 @@ Exceptions
    - When attempting to use streaming with unsupported models
    - When model version is not supported
    - When validation fails
-
