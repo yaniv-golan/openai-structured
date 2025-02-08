@@ -214,14 +214,17 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
         if stream:
             if model == "o1-2024-12-17":
                 raise OpenAIClientError(
-                    "o1-2024-12-17 does not support streaming. Setting stream=True will result in a 400 error with message: "
-                    "'Unsupported value: \\'stream\\' does not support true with this model. Supported values are: false'. "
-                    "Use o1-preview, o1-mini, or a different model if you need streaming support."
+                    "o1-2024-12-17 does not support streaming. Setting stream=True will "
+                    "result in a 400 error with message: 'Unsupported value: 'stream' "
+                    "does not support true with this model. Supported values are: false'. "
+                    "Use o1-preview, o1-mini, or a different model if you need streaming "
+                    "support."
                 )
             elif model == "o3" or (is_o3_model and not ("mini" in model.lower())):
                 raise OpenAIClientError(
-                    "The main o3 model does not support streaming. Setting stream=True will result in a 400 error. "
-                    "Use o3-mini or o3-mini-high if you need streaming support."
+                    "The main o3 model does not support streaming. Setting stream=True "
+                    "will result in a 400 error. Use o3-mini or o3-mini-high if you "
+                    "need streaming support."
                 )
 
         # Get temperature with proper type casting
