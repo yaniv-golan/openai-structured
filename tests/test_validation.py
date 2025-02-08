@@ -7,6 +7,7 @@ from openai_structured.client import (
     get_context_window_limit,
     get_default_token_limit,
     openai_structured_call,
+    openai_structured_stream,
     supports_structured_output,
 )
 from openai_structured.errors import OpenAIClientError, TokenLimitError
@@ -134,6 +135,32 @@ def test_o1_fixed_parameters() -> None:
     """Test that o1 models enforce fixed parameters."""
     client = OpenAI()
 
+    # Test streaming rejection for o1-2024-12-17
+    with pytest.raises(
+        OpenAIClientError,
+        match="o1-2024-12-17 does not support streaming.*Supported values are: false.*Use o1-preview, o1-mini, or a different model",
+    ):
+        openai_structured_stream(
+            client=client,
+            model="o1-2024-12-17",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+        )
+
+    # Test that streaming is allowed for o1-preview
+    try:
+        openai_structured_stream(
+            client=client,
+            model="o1-preview",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+        )
+    except OpenAIClientError as e:
+        if "streaming" in str(e).lower():
+            pytest.fail("o1-preview should support streaming")
+
     # Test temperature enforcement
     with pytest.raises(
         OpenAIClientError,
@@ -192,8 +219,47 @@ def test_o1_fixed_parameters() -> None:
 
 
 def test_o3_fixed_parameters() -> None:
-    """Test that o3 models enforce fixed parameters."""
+    """Test that o3 models enforce fixed parameters and streaming restrictions."""
     client = OpenAI()
+
+    # Test streaming rejection for main o3 model
+    with pytest.raises(
+        OpenAIClientError,
+        match="The main o3 model does not support streaming.*Use o3-mini or o3-mini-high",
+    ):
+        openai_structured_stream(
+            client=client,
+            model="o3",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+        )
+
+    # Test that streaming is allowed for o3-mini
+    try:
+        openai_structured_stream(
+            client=client,
+            model="o3-mini",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+        )
+    except OpenAIClientError as e:
+        if "streaming" in str(e).lower():
+            pytest.fail("o3-mini should support streaming")
+
+    # Test that streaming is allowed for o3-mini-high
+    try:
+        openai_structured_stream(
+            client=client,
+            model="o3-mini-high",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+        )
+    except OpenAIClientError as e:
+        if "streaming" in str(e).lower():
+            pytest.fail("o3-mini-high should support streaming")
 
     # Test temperature enforcement
     with pytest.raises(

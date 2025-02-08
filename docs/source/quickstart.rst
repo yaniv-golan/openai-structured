@@ -181,55 +181,62 @@ Process files efficiently:
             await process_chunk(chunk)
 
 Supported Models
---------------
+---------------
 
-Production Models
-~~~~~~~~~~~~~~~
+Production Models (Recommended)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* ``gpt-4o-2024-08-06``
-    - GPT-4 with structured output
+- **gpt-4o-2024-08-06**: GPT-4 with OpenAI Structured Outputs
     - 128K context window
     - 16K output tokens
     - Full JSON schema support
+    - Supports streaming
 
-* ``gpt-4o-mini-2024-07-18``
-    - Smaller GPT-4 variant
+- **gpt-4o-mini-2024-07-18**: GPT-4 variant
     - 128K context window
     - 16K output tokens
-    - Optimized for faster responses
+    - Supports streaming
 
-* ``o1-2024-12-17``
-    - Optimized for structured data
+- **o1-2024-12-17**
     - 200K context window
     - 100K output tokens
-    - Fixed parameters (temperature=1.0, top_p=1.0)
-    - Best for large structured outputs
+    - Does not support streaming
+    - Fixed parameters (see note below)
 
-* ``o3-mini-2025-01-31``
-    - Mini variant optimized for structured data
+- **o3-mini-2025-01-31**
     - 200K context window
     - 100K output tokens
-    - Fixed parameters (temperature=1.0, top_p=1.0)
-    - Efficient for large outputs
+    - Supports streaming
+    - Fixed parameters (see note below)
 
 Development Aliases
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
 
-* ``gpt-4o``: Latest GPT-4 structured model
-* ``gpt-4o-mini``: Latest mini variant
-* ``o1``: Latest optimized model with fixed parameters
-* ``o3-mini``: Latest mini optimized model with fixed parameters
+- **gpt-4o**: Latest GPT-4 structured model (supports streaming)
+- **gpt-4o-mini**: Latest mini variant (supports streaming)
+- **o1**: Latest optimized model (fixed parameters, no streaming)
+- **o3**: Latest optimized model (fixed parameters, no streaming)
+- **o3-mini**: Latest mini optimized model (fixed parameters, supports streaming)
 
 .. note::
-    o1 and o3 models have fixed parameters that cannot be modified:
-    
+   Use dated versions in production for stability. Aliases automatically use the latest compatible version.
+
+Important Notes
+~~~~~~~~~~~~~
+
+1. o1 and o3 models have fixed parameters that cannot be modified:
     - temperature: Fixed at 1.0
     - top_p: Fixed at 1.0
     - frequency_penalty: Fixed at 0.0
     - presence_penalty: Fixed at 0.0
-    
-    Attempting to modify these parameters will raise an OpenAIClientError.
-    Use other models if you need to adjust these parameters.
+
+2. Streaming Support:
+    - o1-2024-12-17: Does not support streaming. Setting stream=True will result in a 400 error with message: "Unsupported value: 'stream' does not support true with this model. Supported values are: false"
+    - o3: Does not support streaming. Setting stream=True will result in a 400 error
+    - o3-mini and o3-mini-high: Support streaming
+
+Attempting to modify fixed parameters will raise an OpenAIClientError.
+Use other models if you need to adjust these parameters or require streaming support.
 
 Environment Variables
 ------------------

@@ -1009,11 +1009,109 @@ For async code, use pytest-asyncio and test both successful and error cases:
         try:
             result = await async_openai_structured_call(
                 client=client,
-                model="o1",
+                model="o1-2024-12-17",
                 temperature=0.5,  # This will raise an error
                 output_schema=MySchema,
                 user_prompt="..."
             )
         except OpenAIClientError as e:
             print(f"Error: {e}")  # "o1 models have fixed parameters that cannot be modified"
+
+Model Support
+------------
+
+The library supports the following OpenAI models with structured output:
+
+Production Models
+~~~~~~~~~~~~~~~
+
+- **gpt-4o-2024-08-06**
+    - Full JSON schema support
+    - 128K context window
+    - 16K output tokens
+    - Supports streaming
+
+- **gpt-4o-mini-2024-07-18**
+    - 128K context window
+    - 16K output tokens
+    - Supports streaming
+
+- **o1-2024-12-17**
+    - 200K context window
+    - 100K output tokens
+    - Fixed parameters
+    - Does not support streaming
+
+- **o3-mini-2025-01-31**
+    - 200K context window
+    - 100K output tokens
+    - Fixed parameters
+    - Supports streaming
+
+Fixed Parameters
+~~~~~~~~~~~~~~
+
+o1 and o3 models have fixed parameters that cannot be modified:
+
+.. code-block:: python
+
+    # These parameters are fixed and cannot be changed
+    temperature = 1.0
+    top_p = 1.0
+    frequency_penalty = 0.0
+    presence_penalty = 0.0
+
+    # Attempting to modify them will raise an error
+    client.openai_structured_call(
+        model="o1-2024-12-17",
+        temperature=0.5  # This will raise OpenAIClientError
+    )
+
+Streaming Support
+~~~~~~~~~~~~~~
+
+Different models have varying streaming support:
+
+.. code-block:: python
+
+    # o1-2024-12-17 does not support streaming
+    try:
+        async for response in async_openai_structured_stream(
+            model="o1-2024-12-17",  # Will raise 400 error
+            stream=True
+        ):
+            process_response(response)
+    except OpenAIClientError as e:
+        # Error: "Unsupported value: 'stream' does not support true with this model"
+        handle_error(e)
+
+    # o3 main model does not support streaming
+    try:
+        async for response in async_openai_structured_stream(
+            model="o3",  # Will raise 400 error
+            stream=True
+        ):
+            process_response(response)
+    except OpenAIClientError as e:
+        # Error: "The main o3 model does not support streaming"
+        handle_error(e)
+
+    # o3-mini and o3-mini-high support streaming
+    async for response in async_openai_structured_stream(
+        model="o3-mini",  # Works correctly
+        stream=True
+    ):
+        process_response(response)
+
+Exceptions
+---------
+
+.. py:exception:: OpenAIClientError
+
+   Base exception for client-side errors. Raised in several cases:
+
+   - When attempting to modify fixed parameters on o1/o3 models
+   - When attempting to use streaming with unsupported models
+   - When model version is not supported
+   - When validation fails
 
