@@ -1,12 +1,15 @@
 import pytest
+from openai import OpenAI
+from pydantic import BaseModel
 
 from openai_structured.client import (
     _validate_token_limits,
     get_context_window_limit,
     get_default_token_limit,
+    openai_structured_call,
     supports_structured_output,
 )
-from openai_structured.errors import TokenLimitError
+from openai_structured.errors import OpenAIClientError, TokenLimitError
 
 
 @pytest.mark.parametrize(
@@ -125,3 +128,125 @@ def test_validate_token_limits(
             _validate_token_limits(model_name, max_tokens)
         except TokenLimitError as e:
             pytest.fail(f"Unexpected TokenLimitError: {e}")
+
+
+def test_o1_fixed_parameters() -> None:
+    """Test that o1 models enforce fixed parameters."""
+    client = OpenAI()
+
+    # Test temperature enforcement
+    with pytest.raises(
+        OpenAIClientError,
+        match="o1 models have fixed parameters that cannot be modified",
+    ):
+        openai_structured_call(
+            client=client,
+            model="o1",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+            temperature=0.5,
+        )
+
+    # Test top_p enforcement
+    with pytest.raises(
+        OpenAIClientError,
+        match="o1 models have fixed parameters that cannot be modified",
+    ):
+        openai_structured_call(
+            client=client,
+            model="o1",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+            top_p=0.5,
+        )
+
+    # Test frequency_penalty enforcement
+    with pytest.raises(
+        OpenAIClientError,
+        match="o1 models have fixed parameters that cannot be modified",
+    ):
+        openai_structured_call(
+            client=client,
+            model="o1",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+            frequency_penalty=0.5,
+        )
+
+    # Test presence_penalty enforcement
+    with pytest.raises(
+        OpenAIClientError,
+        match="o1 models have fixed parameters that cannot be modified",
+    ):
+        openai_structured_call(
+            client=client,
+            model="o1",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+            presence_penalty=0.5,
+        )
+
+
+def test_o3_fixed_parameters() -> None:
+    """Test that o3 models enforce fixed parameters."""
+    client = OpenAI()
+
+    # Test temperature enforcement
+    with pytest.raises(
+        OpenAIClientError,
+        match="o3 models have fixed parameters that cannot be modified",
+    ):
+        openai_structured_call(
+            client=client,
+            model="o3",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+            temperature=0.5,
+        )
+
+    # Test top_p enforcement
+    with pytest.raises(
+        OpenAIClientError,
+        match="o3 models have fixed parameters that cannot be modified",
+    ):
+        openai_structured_call(
+            client=client,
+            model="o3",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+            top_p=0.5,
+        )
+
+    # Test frequency_penalty enforcement
+    with pytest.raises(
+        OpenAIClientError,
+        match="o3 models have fixed parameters that cannot be modified",
+    ):
+        openai_structured_call(
+            client=client,
+            model="o3",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+            frequency_penalty=0.5,
+        )
+
+    # Test presence_penalty enforcement
+    with pytest.raises(
+        OpenAIClientError,
+        match="o3 models have fixed parameters that cannot be modified",
+    ):
+        openai_structured_call(
+            client=client,
+            model="o3",
+            output_schema=BaseModel,
+            system_prompt="test",
+            user_prompt="test",
+            presence_penalty=0.5,
+        )

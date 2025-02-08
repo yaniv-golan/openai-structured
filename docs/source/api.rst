@@ -370,6 +370,20 @@ Exceptions
         - o1: 100,000 output tokens
         - o3-mini: 100,000 output tokens
 
+.. exception:: OpenAIClientError
+
+    Base exception for client-side errors. Used for various validation and parameter errors.
+
+    Example::
+
+        try:
+            result = await async_openai_structured_call(...)
+        except OpenAIClientError as e:
+            if "fixed parameters" in str(e):
+                print("Cannot modify fixed parameters for this model")
+            else:
+                print(f"Client error: {e}")
+
 Error Handling Examples
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -979,4 +993,27 @@ For async code, use pytest-asyncio and test both successful and error cases:
         assert len(results) > 0
         for result in results:
             assert isinstance(result, SimpleMessage) 
+
+.. note::
+    o1 and o3 models have fixed parameters that cannot be modified:
+    
+    - temperature: Fixed at 1.0
+    - top_p: Fixed at 1.0
+    - frequency_penalty: Fixed at 0.0
+    - presence_penalty: Fixed at 0.0
+    
+    Attempting to modify these parameters will raise an OpenAIClientError.
+
+    Example::
+
+        try:
+            result = await async_openai_structured_call(
+                client=client,
+                model="o1",
+                temperature=0.5,  # This will raise an error
+                output_schema=MySchema,
+                user_prompt="..."
+            )
+        except OpenAIClientError as e:
+            print(f"Error: {e}")  # "o1 models have fixed parameters that cannot be modified"
 

@@ -77,15 +77,26 @@ The library supports models with [OpenAI Structured Outputs](https://platform.op
 - `o3-mini-2025-01-31`: Mini variant optimized for structured data
   - 200K context window
   - 100K output tokens
+  - Efficient for large outputs
 
 ### Development Aliases
 
 - `gpt-4o`: Latest GPT-4 structured model
 - `gpt-4o-mini`: Latest mini variant
-- `o1`: Latest optimized model
-- `o3-mini`: Latest mini optimized model
+- `o1`: Latest optimized model (fixed parameters)
+- `o3-mini`: Latest mini optimized model (fixed parameters)
 
 Note: Use dated versions in production for stability. Aliases automatically use the latest compatible version.
+
+> **Note**: o1 and o3 models have fixed parameters that cannot be modified:
+>
+> - temperature: Fixed at 1.0
+> - top_p: Fixed at 1.0
+> - frequency_penalty: Fixed at 0.0
+> - presence_penalty: Fixed at 0.0
+>
+> Attempting to modify these parameters will raise an OpenAIClientError.
+> Use other models if you need to adjust these parameters.
 
 ## Error Handling
 

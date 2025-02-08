@@ -191,6 +191,24 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
 
     @wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        # Get model name from kwargs or first positional argument
+        model = kwargs.get("model")
+        if model is None and len(args) > 1:
+            model = args[1]  # model is the second argument after client
+
+        # Check if this is an o1 or o3 model
+        if model is None:
+            base_model = ""
+        else:
+            if not isinstance(model, str):
+                raise ValueError(
+                    f"Model name must be a string, got {type(model)}"
+                )
+            base_model = _get_base_model(model)
+
+        is_o1_model = base_model.startswith("o1")
+        is_o3_model = base_model.startswith("o3")
+
         # Get temperature with proper type casting
         temp_val = kwargs.get("temperature", DEFAULT_TEMPERATURE)
         temperature = float(
@@ -198,23 +216,58 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
             if isinstance(temp_val, (int, float, str))
             else DEFAULT_TEMPERATURE
         )
-        if not 0 <= temperature <= 2:
-            raise OpenAIClientError("Temperature must be between 0 and 2")
 
-        # Get top_p with proper type casting
-        top_p_val = kwargs.get("top_p", 1.0)
-        top_p = float(
-            top_p_val if isinstance(top_p_val, (int, float, str)) else 1.0
-        )
-        if not 0 <= top_p <= 1:
-            raise OpenAIClientError("Top-p must be between 0 and 1")
+        # Enforce fixed parameters for o1 and o3 models
+        if is_o1_model or is_o3_model:
+            model_name = "o1" if is_o1_model else "o3"
+            if "temperature" in kwargs:
+                raise OpenAIClientError(
+                    f"{model_name} models have fixed parameters that cannot be modified. "
+                    "Temperature adjustment is not supported."
+                )
+            if "top_p" in kwargs:
+                raise OpenAIClientError(
+                    f"{model_name} models have fixed parameters that cannot be modified. "
+                    "Top-p adjustment is not supported."
+                )
+            if "frequency_penalty" in kwargs:
+                raise OpenAIClientError(
+                    f"{model_name} models have fixed parameters that cannot be modified. "
+                    "Frequency penalty adjustment is not supported."
+                )
+            if "presence_penalty" in kwargs:
+                raise OpenAIClientError(
+                    f"{model_name} models have fixed parameters that cannot be modified. "
+                    "Presence penalty adjustment is not supported."
+                )
+            # Set fixed values for o1 and o3 models
+            kwargs["temperature"] = 1.0
+            kwargs["top_p"] = 1.0
+            kwargs["frequency_penalty"] = 0.0
+            kwargs["presence_penalty"] = 0.0
+        else:
+            # Regular parameter validation for other models
+            if not 0 <= temperature <= 2:
+                raise OpenAIClientError("Temperature must be between 0 and 2")
 
-        # Get frequency and presence penalties with proper type casting
-        for param in ["frequency_penalty", "presence_penalty"]:
-            val = kwargs.get(param, 0.0)
-            value = float(val if isinstance(val, (int, float, str)) else 0.0)
-            if not -2 <= value <= 2:
-                raise OpenAIClientError(f"{param} must be between -2 and 2")
+            # Get top_p with proper type casting
+            top_p_val = kwargs.get("top_p", 1.0)
+            top_p = float(
+                top_p_val if isinstance(top_p_val, (int, float, str)) else 1.0
+            )
+            if not 0 <= top_p <= 1:
+                raise OpenAIClientError("Top-p must be between 0 and 1")
+
+            # Get frequency and presence penalties with proper type casting
+            for param in ["frequency_penalty", "presence_penalty"]:
+                val = kwargs.get(param, 0.0)
+                value = float(
+                    val if isinstance(val, (int, float, str)) else 0.0
+                )
+                if not -2 <= value <= 2:
+                    raise OpenAIClientError(
+                        f"{param} must be between -2 and 2"
+                    )
 
         return func(*args, **kwargs)
 
@@ -1556,6 +1609,8 @@ def _get_base_model(model: str) -> str:
         >>> _get_base_model("o1")
         'o1'
     """
+    if not isinstance(model, str):
+        raise ValueError(f"Model name must be a string, got {type(model)}")
     match = MODEL_VERSION_PATTERN.match(model)
     if match:
         return match.group(1)

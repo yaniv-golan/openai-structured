@@ -142,11 +142,13 @@ Production Models (Recommended)
 * ``o1-2024-12-17``: Optimized for OpenAI Structured Outputs
     * 200K context window
     * 100K output tokens
+    * Fixed parameters (temperature=1.0, top_p=1.0, frequency_penalty=0.0, presence_penalty=0.0)
     * Minimum version: 2024-12-17
 
 * ``o3-mini-2025-01-31``: Mini variant optimized for OpenAI Structured Outputs
     * 200K context window
     * 100K output tokens
+    * Fixed parameters (temperature=1.0, top_p=1.0, frequency_penalty=0.0, presence_penalty=0.0)
     * Minimum version: 2025-01-31
 
 Development Aliases
@@ -162,15 +164,18 @@ Development Aliases
 
 * ``o1``: Latest model with OpenAI Structured Outputs
     * Maps to most recent compatible version
+    * Fixed parameters (cannot be modified)
     * Minimum version: 2024-12-17
 
 * ``o3-mini``: Latest mini variant with OpenAI Structured Outputs
     * Maps to most recent compatible version
+    * Fixed parameters (cannot be modified)
     * Minimum version: 2025-01-31
 
 .. note::
     Use dated versions in production for stability.
     Aliases automatically use the latest compatible version.
+    o1 and o3 models have fixed parameters that cannot be modified.
     Actual output tokens may be slightly less due to invisible reasoning tokens.
 
 Contributing
