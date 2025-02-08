@@ -209,30 +209,6 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
         is_o1_model = base_model.startswith("o1")
         is_o3_model = base_model.startswith("o3")
 
-        # Check if streaming is requested
-        stream = kwargs.get(
-            "stream", True
-        )  # Default to True since our functions use streaming
-        if stream:
-            if model == "o1-2024-12-17":
-                raise OpenAIClientError(
-                    "o1-2024-12-17 does not support streaming. Setting stream=True will "
-                    "result in a 400 error with message: 'Unsupported value: 'stream' "
-                    "does not support true with this model. Supported values are: false'. "
-                    "Use o1-preview, o1-mini, or a different model if you need streaming "
-                    "support."
-                )
-            elif model == "o3" or (
-                is_o3_model
-                and model is not None
-                and not ("mini" in model.lower())
-            ):
-                raise OpenAIClientError(
-                    "The main o3 model does not support streaming. Setting stream=True "
-                    "will result in a 400 error. Use o3-mini or o3-mini-high if you "
-                    "need streaming support."
-                )
-
         # Get temperature with proper type casting
         temp_val = kwargs.get("temperature", DEFAULT_TEMPERATURE)
         temperature = float(
@@ -269,7 +245,32 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
             kwargs["top_p"] = 1.0
             kwargs["frequency_penalty"] = 0.0
             kwargs["presence_penalty"] = 0.0
-        else:
+
+        # Check if streaming is requested
+        stream = kwargs.get(
+            "stream", True
+        )  # Default to True since our functions use streaming
+        if stream:
+            if model == "o1-2024-12-17":
+                raise OpenAIClientError(
+                    "o1-2024-12-17 does not support streaming. Setting stream=True will "
+                    "result in a 400 error with message: 'Unsupported value: 'stream' "
+                    "does not support true with this model. Supported values are: false'. "
+                    "Use o1-preview, o1-mini, or a different model if you need streaming "
+                    "support."
+                )
+            elif model == "o3" or (
+                is_o3_model
+                and model is not None
+                and not ("mini" in model.lower())
+            ):
+                raise OpenAIClientError(
+                    "The main o3 model does not support streaming. Setting stream=True "
+                    "will result in a 400 error. Use o3-mini or o3-mini-high if you "
+                    "need streaming support."
+                )
+
+        if not (is_o1_model or is_o3_model):
             # Regular parameter validation for other models
             if not 0 <= temperature <= 2:
                 raise OpenAIClientError("Temperature must be between 0 and 2")
