@@ -164,6 +164,19 @@ class StreamBufferError(OpenAIClientError):
     pass
 
 
+class ClosedBufferError(StreamBufferError):
+    """Raised when attempting to write to a closed buffer."""
+
+    pass
+
+
+class BufferOverflowError(StreamBufferError):
+    """Raised when the buffer exceeds size limits."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
 class StreamParseError(StreamInterruptedError):
     """Raised when stream content cannot be parsed after multiple attempts."""
 
@@ -173,13 +186,6 @@ class StreamParseError(StreamInterruptedError):
         )
         self.attempts = attempts
         self.last_error = last_error
-
-
-class BufferOverflowError(StreamBufferError):
-    """Raised when the buffer exceeds size limits."""
-
-    def __init__(self, message: str):
-        super().__init__(message)
 
 
 class ConnectionTimeoutError(OpenAIClientError):

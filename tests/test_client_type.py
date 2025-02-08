@@ -2,7 +2,7 @@
 import pytest
 from openai import AsyncOpenAI, OpenAI
 
-from src.openai_structured.client import _validate_client_type
+from openai_structured.client import _validate_client_type
 
 
 def test_official_sync_client() -> None:

@@ -19,7 +19,7 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
-@pytest.fixture(autouse=True)  # type: ignore[misc]
+@pytest.fixture(autouse=True)
 def env_setup(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:

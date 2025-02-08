@@ -6,7 +6,12 @@ from typing import Any, Callable, List, Optional, Type, Union
 
 from pydantic import BaseModel, ValidationError
 
-from .errors import BufferOverflowError, StreamBufferError, StreamParseError
+from .errors import (
+    BufferOverflowError,
+    ClosedBufferError,
+    StreamBufferError,
+    StreamParseError,
+)
 
 # Buffer size constants
 MAX_BUFFER_SIZE = 1024 * 1024  # 1MB
@@ -92,12 +97,12 @@ class StreamBuffer:
         return self._buffer_size >= self._config.max_buffer_size
 
     def write(self, content: str) -> None:
-        """Write content to buffer, raising BufferOverflowError if too large."""
+        """Write content to buffer, raising appropriate error if cannot write."""
         if self._closed:
             logging.debug("Attempting to write to closed buffer")
-            error = BufferOverflowError("Cannot write to a closed buffer")
-            logging.debug(f"Raising error: {str(error)!r}")
-            raise error
+            closed_error = ClosedBufferError("Cannot write to a closed buffer")
+            logging.debug(f"Raising error: {str(closed_error)!r}")
+            raise closed_error
 
         content_bytes_len = len(content.encode("utf-8"))
         if (
@@ -107,9 +112,9 @@ class StreamBuffer:
             logging.debug(
                 f"Buffer size limit exceeded: {self._buffer_size + content_bytes_len} > {self._config.max_buffer_size}"
             )
-            error = BufferOverflowError("Buffer size limit exceeded")
-            logging.debug(f"Raising error: {str(error)!r}")
-            raise error
+            overflow_error = BufferOverflowError("Buffer size limit exceeded")
+            logging.debug(f"Raising error: {str(overflow_error)!r}")
+            raise overflow_error
 
         self._buffer.write(content)
         self._buffer_size += content_bytes_len

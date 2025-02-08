@@ -5,7 +5,7 @@ from openai_structured.client import supports_structured_output
 
 @pytest.mark.parametrize(
     "model_name,expected",
-    [  # type: ignore[misc]
+    [
         # Alias cases
         ("gpt-4o", True),  # Basic alias
         ("gpt-3.5-turbo", False),  # Unsupported model

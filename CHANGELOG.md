@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-02-08
+
+### Added
+
+- New `ClosedBufferError` class for better error handling of closed buffer states
+- Enhanced mypy configuration for improved type checking and package structure
+
+### Changed
+
+- Improved error handling in StreamBuffer
+  - Fixed incorrect error type when writing to closed buffer
+  - Better error variable naming for clarity
+  - Enhanced error documentation
+- Fixed import paths to use installed package structure
+- Updated mypy configuration for better src layout support
+  - Added proper path configuration
+  - Improved cache management
+  - Enhanced import handling
+  - Added Pydantic-specific overrides
+
+### Fixed
+
+- Bug fix: Using correct error type (`ClosedBufferError` instead of `BufferOverflowError`) when writing to closed buffer
+- Import path in test files to use installed package path
+
 ## [1.1.0] - 2025-02-01
 
 ### Added

@@ -5,17 +5,18 @@ from typing import Any, Dict, List
 import pytest
 from pydantic import BaseModel
 
-from src.openai_structured.buffer import StreamBuffer, StreamConfig
-from src.openai_structured.examples.schemas import SimpleMessage
+from openai_structured.buffer import StreamBuffer, StreamConfig
+from openai_structured.errors import ClosedBufferError
+from openai_structured.examples.schemas import SimpleMessage
 
 
 # Test models
-class ComplexMessage(BaseModel):  # type: ignore[misc]
+class ComplexMessage(BaseModel):
     meta: Dict[str, Any]
     items: List[Any]
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def default_stream_config() -> StreamConfig:
     return StreamConfig(
         max_buffer_size=1024, cleanup_threshold=512, max_parse_errors=3
@@ -95,3 +96,18 @@ def test_buffer_cleanup_threshold(default_stream_config: StreamConfig) -> None:
     assert len(buf.getvalue()) > 0
     buf.cleanup()
     assert len(buf.getvalue()) == 0
+
+
+def test_buffer_closed_state(default_stream_config: StreamConfig) -> None:
+    """Test that writing to a closed buffer raises ClosedBufferError."""
+    buf = StreamBuffer(default_stream_config, SimpleMessage)
+    buf.write('{"message": "test"}')  # Initial write should succeed
+    buf.close()
+
+    with pytest.raises(ClosedBufferError) as exc_info:
+        buf.write('{"message": "more"}')
+    assert str(exc_info.value) == "Cannot write to a closed buffer"
+
+    # Verify buffer was properly cleaned up
+    assert buf.getvalue() == ""
+    assert buf.size == 0

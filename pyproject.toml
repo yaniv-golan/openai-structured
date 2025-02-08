@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "openai-structured"
-version = "1.1.0"
+version = "1.2.0"
 description = "Structured output for OpenAI API"
 authors = ["Yaniv Golan <yaniv@golan.name>"]
 readme = "README.md"
@@ -53,21 +53,31 @@ extend-ignore = ["E203"]
 [tool.mypy]
 plugins = ["pydantic.mypy"]
 strict = true
-exclude = [
-    "docs/",
-    "examples/"
-]
-packages = ["openai_structured", "tests"]
 python_version = "3.9"
-warn_unused_configs = true
-disallow_untyped_defs = true
-check_untyped_defs = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_return_any = true
-warn_unreachable = true
-show_error_codes = true
+namespace_packages = true
+explicit_package_bases = true
+
+# Path configuration
+mypy_path = ["src", "tests"]
+files = ["src/openai_structured", "tests"]
+
+# Cache management
+cache_dir = ".mypy_cache"
+incremental = true
+
+# Import handling
+follow_imports = "silent"
 ignore_missing_imports = false
+
+# Error reporting
+show_error_codes = true
+warn_unused_configs = true
+disable_error_code = ["misc"]
+
+# Pydantic-specific
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+ignore_missing_imports = true
 
 [tool.black]
 line-length = 79

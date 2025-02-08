@@ -5,14 +5,14 @@ from pydantic import BaseModel, Field
 
 
 @pytest.mark.no_collect
-class SimpleMessage(BaseModel):  # type: ignore[misc]
+class SimpleMessage(BaseModel):
     """Simple schema for testing basic responses."""
 
     message: str
 
 
 @pytest.mark.no_collect
-class SentimentMessage(BaseModel):  # type: ignore[misc]
+class SentimentMessage(BaseModel):
     """Response model for sentiment analysis."""
 
     message: str = Field(..., description="The analyzed message")
