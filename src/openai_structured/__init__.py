@@ -27,8 +27,12 @@ from .client import (
 from .errors import (
     APIResponseError,
     BufferOverflowError,
+    ClosedBufferError,
+    ConnectionTimeoutError,
     EmptyResponseError,
+    InvalidDateError,
     InvalidResponseFormatError,
+    InvalidVersionFormatError,
     JSONParseError,
     ModelNotSupportedError,
     ModelVersionError,
@@ -37,8 +41,10 @@ from .errors import (
     StreamInterruptedError,
     StreamParseError,
     TokenLimitError,
+    VersionTooOldError,
 )
-from .model_version import ModelVersion, parse_model_version
+from .model_registry import ModelCapabilities, ModelRegistry
+from .model_version import ModelVersion
 
 __all__ = [
     # Main functions
@@ -54,19 +60,26 @@ __all__ = [
     "StreamConfig",
     # Type hints
     "ModelVersion",
-    # Utility functions
-    "parse_model_version",
+    # Model registry
+    "ModelRegistry",
+    "ModelCapabilities",
+    "get_registry",
     # Exceptions
     "OpenAIClientError",
     "ModelNotSupportedError",
     "ModelVersionError",
+    "InvalidVersionFormatError",
+    "InvalidDateError",
+    "VersionTooOldError",
     "APIResponseError",
     "InvalidResponseFormatError",
     "EmptyResponseError",
     "JSONParseError",
     "StreamInterruptedError",
     "StreamBufferError",
-    "StreamParseError",
+    "ClosedBufferError",
     "BufferOverflowError",
+    "StreamParseError",
+    "ConnectionTimeoutError",
     "TokenLimitError",
 ]

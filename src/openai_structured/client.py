@@ -73,6 +73,7 @@ from .buffer import StreamBuffer, StreamConfig
 from .errors import (
     BufferOverflowError,
     EmptyResponseError,
+    InvalidDateError,
     InvalidResponseFormatError,
     JSONParseError,
     ModelNotSupportedError,
@@ -357,7 +358,7 @@ def supports_structured_output(model_name: str) -> bool:
             version = ModelVersion.from_string(version_str)
             min_version = OPENAI_API_SUPPORTED_MODELS[base_model]
             return version >= min_version
-        except ValueError:
+        except (ValueError, InvalidDateError):
             return False
 
     return False
