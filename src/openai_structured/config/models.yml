@@ -1,0 +1,95 @@
+# OpenAI Model Capabilities Configuration
+# This file defines the capabilities and constraints for supported models.
+# It is used by the ModelRegistry to validate and enforce model-specific limits.
+
+gpt-4o:
+  context_window: 128000
+  max_output_tokens: 16000
+  supports_structured: true
+  supports_streaming: true
+  supported_parameters:
+    temperature:
+      min: 0.0
+      max: 2.0
+    top_p:
+      min: 0.0
+      max: 1.0
+    frequency_penalty:
+      min: -2.0
+      max: 2.0
+    presence_penalty:
+      min: -2.0
+      max: 2.0
+    max_completion_tokens:
+      min: 1
+      max: 16000
+  aliases: ["gpt-4o-latest"]
+  min_version:
+    year: 2024
+    month: 8
+    day: 6
+
+gpt-4o-mini:
+  context_window: 128000
+  max_output_tokens: 16000
+  supports_structured: true
+  supports_streaming: true
+  supported_parameters:
+    temperature:
+      min: 0.0
+      max: 2.0
+    top_p:
+      min: 0.0
+      max: 1.0
+    frequency_penalty:
+      min: -2.0
+      max: 2.0
+    presence_penalty:
+      min: -2.0
+      max: 2.0
+    max_completion_tokens:
+      min: 1
+      max: 16000
+  aliases: ["gpt-4o-mini-latest"]
+  min_version:
+    year: 2024
+    month: 7
+    day: 18
+
+o1:
+  context_window: 200000
+  max_output_tokens: 100000
+  supports_structured: true
+  supports_streaming: true
+  supported_parameters:
+    reasoning_effort:
+      - low
+      - medium
+      - high
+    max_completion_tokens:
+      min: 1
+      max: 100000
+  aliases: ["o1-latest"]
+  min_version:
+    year: 2024
+    month: 12
+    day: 17
+
+o3-mini:
+  context_window: 200000
+  max_output_tokens: 100000
+  supports_structured: true
+  supports_streaming: true
+  supported_parameters:
+    reasoning_effort:
+      - low
+      - medium
+      - high
+    max_completion_tokens:
+      min: 1
+      max: 100000
+  aliases: ["o3-mini-latest"]
+  min_version:
+    year: 2025
+    month: 1
+    day: 31
