@@ -148,17 +148,18 @@ class StreamBuffer:
         )
 
     def _perform_cleanup(self) -> None:
-        self._reset_buffer()
-        self._last_cleanup = 0
+        """Reset the buffer and update last cleanup tracking."""
+        self._buffer = StringIO()
+        self._last_cleanup = self._buffer_size  # Track the size at cleanup
+        self._buffer_size = 0
 
     def extract_response(self) -> Optional[BaseModel]:
         """
         Attempt to extract a complete JSON object from the buffer and validate it.
         """
-        if self._should_cleanup():
-            self._perform_cleanup()
-
         buffer_content = self._buffer.getvalue()
+        if not buffer_content:
+            return None
 
         # Try to find a complete JSON object
         brace_count = 0
@@ -238,43 +239,23 @@ class StreamBuffer:
                     {"size_bytes": self._buffer_size},
                 )
 
-            current_content = self.getvalue()
-            if self._schema is not None:
-                try:
-                    result = self._schema.model_validate_json(current_content)
-                    self._log(
-                        on_log,
-                        logging.DEBUG,
-                        "Successfully parsed complete object",
-                    )
-                    self.reset()
-                    return result
-                except ValidationError as e:
-                    self._parse_errors.append(e)
-                    if (
-                        len(self._parse_errors)
-                        >= self._config.max_parse_errors
-                    ):
-                        self.reset()  # Clear buffer after max errors
-                    elif self._buffer_size > self._config.cleanup_threshold:
-                        self.cleanup()
-                except json.JSONDecodeError as e:
-                    self._parse_errors.append(e)
-                    if (
-                        len(self._parse_errors)
-                        >= self._config.max_parse_errors
-                    ):
-                        self.reset()  # Clear buffer after max errors
-                    elif self._buffer_size > self._config.cleanup_threshold:
-                        self.cleanup()
-            return None
+            # Try to extract a complete JSON object from the buffer
+            result = self.extract_response()
+            if result is not None:
+                self._log(
+                    on_log,
+                    logging.DEBUG,
+                    "Successfully extracted complete object",
+                    {"content": str(result)},
+                )
+            return result
+
         except BufferError as e:
-            self._parse_errors.append(e)
             self._log(
                 on_log,
                 logging.ERROR,
-                "Critical stream buffer error",
-                {"error": str(e), "bytes": self._buffer_size},
+                "Buffer error while processing chunk",
+                {"error": str(e)},
             )
             raise
 

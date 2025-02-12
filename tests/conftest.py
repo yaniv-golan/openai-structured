@@ -3,6 +3,8 @@
 import pytest
 from dotenv import load_dotenv
 
+from openai_structured.model_registry import ModelRegistry
+
 pytest_plugins = ["pytest_asyncio"]
 
 
@@ -35,3 +37,13 @@ def env_setup(
     # Only set test key for non-live tests
     else:
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+
+@pytest.fixture
+def registry() -> ModelRegistry:
+    """Create a model registry for testing.
+
+    Returns:
+        ModelRegistry: A model registry instance for testing
+    """
+    return ModelRegistry()

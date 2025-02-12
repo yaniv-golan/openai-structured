@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Type
+from typing import Any, Callable, Dict, Optional, Type, Union
 
 from pydantic import BaseModel
 
@@ -23,7 +23,7 @@ class LogLevel(Enum):
     ERROR = logging.ERROR
 
 
-class LogEvent(Enum):
+class LogEvent(str, Enum):
     """Standard event types for structured logging."""
 
     # Error events
@@ -53,7 +53,7 @@ class LogEvent(Enum):
 def _log(
     on_log: Optional[LogCallback],
     level: LogLevel,
-    event: LogEvent,
+    event: Union[LogEvent, str],
     details: Dict[str, Any],
     *,
     extra: Optional[Dict[str, Any]] = None,
@@ -63,20 +63,32 @@ def _log(
     Args:
         on_log: Optional callback for external logging
         level: Log level from LogLevel enum
-        event: Event type from LogEvent enum
+        event: Event type from LogEvent enum or string
         details: Event-specific details
         extra: Optional additional context
     """
     if on_log:  # Only log if callback is provided
+        # Convert string event to LogEvent if needed
+        if isinstance(event, str):
+            try:
+                event = LogEvent(event)
+            except ValueError:
+                # If the string doesn't match any LogEvent value, use it as is
+                event_value = event
+            else:
+                event_value = event.value
+        else:
+            event_value = event.value
+
         data = {
-            "event": event.value,
+            "event": event_value,
             "timestamp": datetime.utcnow().isoformat(),
             "source": "openai_structured",
             **details,
         }
         if extra:
             data.update(extra)
-        on_log(level.value, event.value, data)
+        on_log(level.value, event_value, data)
 
 
 def _get_request_details(

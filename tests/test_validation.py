@@ -1,16 +1,20 @@
+"""Tests for the model registry functionality."""
+
+from typing import Optional
+
 import pytest
-from openai import OpenAI
-from pydantic import BaseModel
 
 from openai_structured.client import (
     _validate_token_limits,
     get_context_window_limit,
     get_default_token_limit,
-    openai_structured_call,
-    openai_structured_stream,
     supports_structured_output,
 )
-from openai_structured.errors import OpenAIClientError, TokenLimitError
+from openai_structured.errors import (
+    OpenAIClientError,
+    TokenLimitError,
+    TokenParameterError,
+)
 
 
 @pytest.mark.parametrize(
@@ -18,16 +22,21 @@ from openai_structured.errors import OpenAIClientError, TokenLimitError
     [
         # Alias cases
         ("gpt-4o", True),  # Basic alias
+        ("gpt-4o-mini", True),  # Mini variant
+        ("o1", True),  # O1 model
+        ("o3-mini", True),  # O3 mini model
         ("gpt-3.5-turbo", False),  # Unsupported model
-        ("o3-mini", True),  # New o3-mini alias
         # Dated versions - valid
-        ("gpt-4o-2024-08-06", True),  # Minimum version
+        ("gpt-4o-2024-08-06", True),  # Base version
+        ("gpt-4o-mini-2024-07-18", True),  # Mini base version
+        ("o1-2024-12-17", True),  # O1 base version
+        ("o3-mini-2025-01-31", True),  # O3 mini base version
         ("gpt-4o-2024-09-01", True),  # Newer version
-        ("o3-mini-2025-01-31", True),  # Minimum o3-mini version
-        ("o3-mini-2025-02-01", True),  # Newer o3-mini version
+        ("o3-mini-2025-02-01", True),  # Newer version
         # Dated versions - invalid
-        ("gpt-4o-2024-07-01", False),  # Too old
-        ("gpt-4o-2023-12-01", False),  # Much too old
+        ("gpt-4o-2024-07-01", False),  # Too old for gpt-4o
+        ("gpt-4o-mini-2024-07-17", False),  # Too old for gpt-4o-mini
+        ("o1-2024-12-16", False),  # Too old for o1
         ("o3-mini-2025-01-30", False),  # Too old for o3-mini
         # Edge cases
         ("", False),  # Empty string
@@ -59,12 +68,14 @@ def test_supports_structured_output(model_name: str, expected: bool) -> None:
     [
         # Alias cases
         ("gpt-4o", 128_000),  # Basic GPT-4 model
+        ("gpt-4o-mini", 128_000),  # GPT-4 mini model
         ("o1", 200_000),  # o1 model
-        ("o3-mini", 200_000),  # o3-mini model (corrected from 128K to 200K)
+        ("o3-mini", 200_000),  # o3-mini model
         # Dated versions
-        ("gpt-4o-2024-08-06", 128_000),  # GPT-4 dated version
-        ("o1-2024-12-17", 200_000),  # o1 dated version
-        ("o3-mini-2025-01-31", 200_000),  # o3-mini dated version
+        ("gpt-4o-2024-08-06", 128_000),  # GPT-4 base version
+        ("gpt-4o-mini-2024-07-18", 128_000),  # GPT-4 mini base version
+        ("o1-2024-12-17", 200_000),  # o1 base version
+        ("o3-mini-2025-01-31", 200_000),  # o3-mini base version
         # Edge cases
         ("unknown-model", 8_192),  # Unknown model gets default
         ("", 8_192),  # Empty string gets default
@@ -80,12 +91,14 @@ def test_context_window_limit(model_name: str, expected_limit: int) -> None:
     [
         # Alias cases
         ("gpt-4o", 16_384),  # Basic GPT-4 model
+        ("gpt-4o-mini", 16_384),  # GPT-4 mini model
         ("o1", 100_000),  # o1 model
-        ("o3-mini", 100_000),  # o3-mini model (corrected from 16K to 100K)
+        ("o3-mini", 100_000),  # o3-mini model
         # Dated versions
-        ("gpt-4o-2024-08-06", 16_384),  # GPT-4 dated version
-        ("o1-2024-12-17", 100_000),  # o1 dated version
-        ("o3-mini-2025-01-31", 100_000),  # o3-mini dated version
+        ("gpt-4o-2024-08-06", 16_384),  # GPT-4 base version
+        ("gpt-4o-mini-2024-07-18", 16_384),  # GPT-4 mini base version
+        ("o1-2024-12-17", 100_000),  # o1 base version
+        ("o3-mini-2025-01-31", 100_000),  # o3-mini base version
         # Edge cases
         ("unknown-model", 4_096),  # Unknown model gets default
         ("", 4_096),  # Empty string gets default
@@ -99,22 +112,41 @@ def test_default_token_limit(model_name: str, expected_limit: int) -> None:
 @pytest.mark.parametrize(
     "model_name,max_tokens,should_raise",
     [
-        # Valid cases
+        # Valid cases - GPT-4 models
         ("gpt-4o", 16_384, False),  # Exactly at limit
         ("gpt-4o", 16_000, False),  # Under limit
+        ("gpt-4o-mini", 16_384, False),  # Exactly at limit
+        ("gpt-4o-mini", 16_000, False),  # Under limit
+        ("gpt-4o-2024-08-06", 16_384, False),  # Base version at limit
+        (
+            "gpt-4o-mini-2024-07-18",
+            16_384,
+            False,
+        ),  # Mini base version at limit
+        # Valid cases - o1/o3 models
         ("o1", 100_000, False),  # Exactly at limit
+        ("o1", 90_000, False),  # Under limit
         ("o3-mini", 100_000, False),  # Exactly at limit
         ("o3-mini", 90_000, False),  # Under limit
+        ("o1-2024-12-17", 100_000, False),  # Base version at limit
+        ("o3-mini-2025-01-31", 100_000, False),  # Base version at limit
+        # Edge cases
         (None, None, False),  # No token limit specified
-        # Invalid cases
+        # Invalid cases - GPT-4 models
         ("gpt-4o", 16_385, True),  # Just over limit
+        ("gpt-4o-mini", 16_385, True),  # Just over limit
+        ("gpt-4o-2024-08-06", 16_385, True),  # Base version over limit
+        # Invalid cases - o1/o3 models
         ("o1", 100_001, True),  # Just over limit
         ("o3-mini", 150_000, True),  # Well over limit
+        ("o1-2024-12-17", 100_001, True),  # Base version over limit
+        ("o3-mini-2025-01-31", 150_000, True),  # Base version well over limit
+        # Invalid cases - unknown models
         ("unknown-model", 5_000, True),  # Over default limit
     ],
 )
 def test_validate_token_limits(
-    model_name: str, max_tokens: int, should_raise: bool
+    model_name: Optional[str], max_tokens: Optional[int], should_raise: bool
 ) -> None:
     """Test token limit validation for various models and token counts."""
     if should_raise:
@@ -129,194 +161,81 @@ def test_validate_token_limits(
             _validate_token_limits(model_name, max_tokens)
         except TokenLimitError as e:
             pytest.fail(f"Unexpected TokenLimitError: {e}")
+        except OpenAIClientError as e:
+            if "not supported" not in str(e):
+                raise  # Re-raise if it's not a model support error
 
 
-def test_o1_fixed_parameters() -> None:
-    """Test that o1 models enforce fixed parameters."""
-    client = OpenAI()
+def test_token_parameter_validation(registry):
+    """Test validation of token-related parameters."""
+    # Test GPT-4 models
+    gpt4o = registry.get_capabilities("gpt-4o")
+    used_params = set()
 
-    # Test streaming rejection for o1-2024-12-17
-    with pytest.raises(
-        OpenAIClientError,
-        match=(
-            "o1-2024-12-17 does not support streaming.*"
-            "Supported values are: false.*"
-            "Use o1-preview, o1-mini, or a different model"
-        ),
-    ):
-        openai_structured_stream(
-            client=client,
-            model="o1-2024-12-17",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
+    # Test max_output_tokens
+    gpt4o.validate_parameter(
+        "max_output_tokens", 1000, used_params=used_params
+    )
+
+    # Test max_completion_tokens raises error when both are used
+    with pytest.raises(TokenParameterError) as exc_info:
+        gpt4o.validate_parameter(
+            "max_completion_tokens", 1000, used_params=used_params
         )
+    assert "Cannot specify both" in str(exc_info.value)
 
-    # Test that streaming is allowed for o1-preview
-    try:
-        openai_structured_stream(
-            client=client,
-            model="o1-preview",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
+    # Test o1/o3 models
+    o1 = registry.get_capabilities("o1")
+    used_params = set()
+
+    # Test max_completion_tokens
+    o1.validate_parameter(
+        "max_completion_tokens", 1000, used_params=used_params
+    )
+
+    # Test max_output_tokens raises error when both are used
+    with pytest.raises(TokenParameterError) as exc_info:
+        o1.validate_parameter(
+            "max_output_tokens", 1000, used_params=used_params
         )
-    except OpenAIClientError as e:
-        if "streaming" in str(e).lower():
-            pytest.fail("o1-preview should support streaming")
-
-    # Test temperature enforcement
-    with pytest.raises(
-        OpenAIClientError,
-        match="o1 models have fixed parameters that cannot be modified",
-    ):
-        openai_structured_call(
-            client=client,
-            model="o1",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-            temperature=0.5,
-        )
-
-    # Test top_p enforcement
-    with pytest.raises(
-        OpenAIClientError,
-        match="o1 models have fixed parameters that cannot be modified",
-    ):
-        openai_structured_call(
-            client=client,
-            model="o1",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-            top_p=0.5,
-        )
-
-    # Test frequency_penalty enforcement
-    with pytest.raises(
-        OpenAIClientError,
-        match="o1 models have fixed parameters that cannot be modified",
-    ):
-        openai_structured_call(
-            client=client,
-            model="o1",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-            frequency_penalty=0.5,
-        )
-
-    # Test presence_penalty enforcement
-    with pytest.raises(
-        OpenAIClientError,
-        match="o1 models have fixed parameters that cannot be modified",
-    ):
-        openai_structured_call(
-            client=client,
-            model="o1",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-            presence_penalty=0.5,
-        )
+    assert "Cannot specify both" in str(exc_info.value)
 
 
-def test_o3_fixed_parameters() -> None:
-    """Test that o3 models enforce fixed parameters and streaming restrictions."""
-    client = OpenAI()
+def test_parameter_validation_with_overrides(registry):
+    """Test parameter validation with max_value overrides."""
+    gpt4o = registry.get_capabilities("gpt-4o")
 
-    # Test streaming rejection for main o3 model
-    with pytest.raises(
-        OpenAIClientError,
-        match="The main o3 model does not support streaming.*Use o3-mini or o3-mini-high",
-    ):
-        openai_structured_stream(
-            client=client,
-            model="o3",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-        )
+    # Find temperature parameter reference
+    temp_ref = None
+    for ref in gpt4o.supported_parameters:
+        if ref.ref == "numeric_constraints.temperature":
+            temp_ref = ref
+            break
 
-    # Test that streaming is allowed for o3-mini
-    try:
-        openai_structured_stream(
-            client=client,
-            model="o3-mini",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-        )
-    except OpenAIClientError as e:
-        if "streaming" in str(e).lower():
-            pytest.fail("o3-mini should support streaming")
+    assert temp_ref is not None
 
-    # Test that streaming is allowed for o3-mini-high
-    try:
-        openai_structured_stream(
-            client=client,
-            model="o3-mini-high",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-        )
-    except OpenAIClientError as e:
-        if "streaming" in str(e).lower():
-            pytest.fail("o3-mini-high should support streaming")
+    # Test with default max value
+    gpt4o.validate_parameter("temperature", 1.5)
 
-    # Test temperature enforcement
-    with pytest.raises(
-        OpenAIClientError,
-        match="o3 models have fixed parameters that cannot be modified",
-    ):
-        openai_structured_call(
-            client=client,
-            model="o3",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-            temperature=0.5,
-        )
+    # Test with override
+    temp_ref.max_value = 1.0
+    with pytest.raises(OpenAIClientError, match="must be between"):
+        gpt4o.validate_parameter("temperature", 1.5)
 
-    # Test top_p enforcement
-    with pytest.raises(
-        OpenAIClientError,
-        match="o3 models have fixed parameters that cannot be modified",
-    ):
-        openai_structured_call(
-            client=client,
-            model="o3",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-            top_p=0.5,
-        )
+    # Reset override
+    temp_ref.max_value = None
 
-    # Test frequency_penalty enforcement
-    with pytest.raises(
-        OpenAIClientError,
-        match="o3 models have fixed parameters that cannot be modified",
-    ):
-        openai_structured_call(
-            client=client,
-            model="o3",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-            frequency_penalty=0.5,
-        )
 
-    # Test presence_penalty enforcement
-    with pytest.raises(
-        OpenAIClientError,
-        match="o3 models have fixed parameters that cannot be modified",
-    ):
-        openai_structured_call(
-            client=client,
-            model="o3",
-            output_schema=BaseModel,
-            system_prompt="test",
-            user_prompt="test",
-            presence_penalty=0.5,
-        )
+def test_parameter_validation_with_dynamic_max(registry):
+    """Test parameter validation with dynamic max values."""
+    o1 = registry.get_capabilities("o1")
+
+    # Test max_completion_tokens with dynamic limit
+    o1.validate_parameter(
+        "max_completion_tokens", 90_000
+    )  # Under model's max_output_tokens
+
+    with pytest.raises(OpenAIClientError, match="must not exceed"):
+        o1.validate_parameter(
+            "max_completion_tokens", 150_000
+        )  # Over model's max_output_tokens

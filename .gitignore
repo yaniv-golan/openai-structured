@@ -79,3 +79,8 @@ dmypy.json
 .poetry/
 poetry.toml
 .cursorrules
+version_comparison.md
+.cursor/rules/bug-analysis.mdc
+.cursor/rules/cursor-rules-location.mdc
+.cursor/rules/terminal-commands.mdc
+.cursor/rules/openai-structured-output.mdc

@@ -71,12 +71,13 @@ def test_buffer_invalid_json(default_stream_config: StreamConfig) -> None:
 
 def test_buffer_cleanup(default_stream_config: StreamConfig) -> None:
     """Test buffer cleanup after threshold."""
-    config = StreamConfig(cleanup_threshold=10)
+    config = StreamConfig(cleanup_threshold=50)
     buf = StreamBuffer(config, SimpleMessage)
     buf.write('{"message": "test"}')
     result = buf.process_stream_chunk("")
     assert isinstance(result, SimpleMessage)
-    assert buf.getvalue() == ""  # Buffer should be cleaned up
+    assert result.message == "test"
+    assert buf.getvalue() == ""
 
 
 def test_buffer_parse_errors(default_stream_config: StreamConfig) -> None:

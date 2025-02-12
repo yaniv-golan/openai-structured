@@ -83,7 +83,7 @@ from .errors import (
     StreamParseError,
     TokenLimitError,
 )
-from .model_version import ModelVersion
+from .model_registry import ModelRegistry, ModelVersion, NumericConstraint
 
 # Define public API
 __all__ = [
@@ -194,106 +194,49 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         # Get model name from kwargs or first positional argument
         model = kwargs.get("model")
-        if model is None and len(args) > 1:
-            model = args[1]  # model is the second argument after client
+        if model is None and len(args) > 0:
+            model = args[0]
+        if not model:
+            raise OpenAIClientError("Model name is required")
 
-        # Check if this is an o1 or o3 model
-        if model is None:
-            base_model = ""
-        else:
-            if not isinstance(model, str):
-                raise ValueError(
-                    f"Model name must be a string, got {type(model)}"
-                )
-            base_model = _get_base_model(model)
+        # Get model capabilities
+        registry = ModelRegistry.get_instance()
+        capabilities = registry.get_capabilities(model)
 
-        is_o1_model = base_model.startswith("o1")
-        is_o3_model = base_model.startswith("o3")
+        # Validate all parameters using the model's capabilities
+        for param_name, value in kwargs.items():
+            if param_name in {
+                "temperature",
+                "top_p",
+                "frequency_penalty",
+                "presence_penalty",
+                "max_completion_tokens",
+                "reasoning_effort",
+            }:
+                # Get the parameter constraint to determine type
+                param_ref = None
+                for ref in capabilities.supported_parameters:
+                    if param_name in ref.ref:
+                        param_ref = ref
+                        break
 
-        # Get temperature with proper type casting
-        temp_val = kwargs.get("temperature", DEFAULT_TEMPERATURE)
-        temperature = float(
-            temp_val
-            if isinstance(temp_val, (int, float, str))
-            else DEFAULT_TEMPERATURE
-        )
+                if param_ref is None:
+                    continue  # Skip validation for unsupported parameters
 
-        # Enforce fixed parameters for o1 and o3 models
-        if is_o1_model or is_o3_model:
-            model_name = "o1" if is_o1_model else "o3"
-            if "temperature" in kwargs:
-                raise OpenAIClientError(
-                    f"{model_name} models have fixed parameters that cannot be modified. "
-                    "Temperature adjustment is not supported."
-                )
-            if "top_p" in kwargs:
-                raise OpenAIClientError(
-                    f"{model_name} models have fixed parameters that cannot be modified. "
-                    "Top-p adjustment is not supported."
-                )
-            if "frequency_penalty" in kwargs:
-                raise OpenAIClientError(
-                    f"{model_name} models have fixed parameters that cannot be modified. "
-                    "Frequency penalty adjustment is not supported."
-                )
-            if "presence_penalty" in kwargs:
-                raise OpenAIClientError(
-                    f"{model_name} models have fixed parameters that cannot be modified. "
-                    "Presence penalty adjustment is not supported."
-                )
-            # Set fixed values for o1 and o3 models
-            kwargs["temperature"] = 1.0
-            kwargs["top_p"] = 1.0
-            kwargs["frequency_penalty"] = 0.0
-            kwargs["presence_penalty"] = 0.0
+                constraint = registry.get_parameter_constraint(param_ref.ref)
 
-        # Check if streaming is requested
-        stream = kwargs.get(
-            "stream", True
-        )  # Default to True since our functions use streaming
-        if stream:
-            if model == "o1-2024-12-17":
-                raise OpenAIClientError(
-                    "o1-2024-12-17 does not support streaming. Setting stream=True will "
-                    "result in a 400 error with message: 'Unsupported value: 'stream' "
-                    "does not support true with this model. Supported values are: false'. "
-                    "Use o1-preview, o1-mini, or a different model if you need streaming "
-                    "support."
-                )
-            elif model == "o3" or (
-                is_o3_model
-                and model is not None
-                and not ("mini" in model.lower())
-            ):
-                raise OpenAIClientError(
-                    "The main o3 model does not support streaming. Setting stream=True "
-                    "will result in a 400 error. Use o3-mini or o3-mini-high if you "
-                    "need streaming support."
-                )
+                # Convert string values based on constraint type
+                if isinstance(value, str):
+                    if isinstance(constraint, NumericConstraint):
+                        try:
+                            value = float(value)
+                            kwargs[param_name] = value
+                        except ValueError:
+                            raise OpenAIClientError(
+                                f"Invalid {param_name} value: {value}"
+                            )
 
-        if not (is_o1_model or is_o3_model):
-            # Regular parameter validation for other models
-            if not 0 <= temperature <= 2:
-                raise OpenAIClientError("Temperature must be between 0 and 2")
-
-            # Get top_p with proper type casting
-            top_p_val = kwargs.get("top_p", 1.0)
-            top_p = float(
-                top_p_val if isinstance(top_p_val, (int, float, str)) else 1.0
-            )
-            if not 0 <= top_p <= 1:
-                raise OpenAIClientError("Top-p must be between 0 and 1")
-
-            # Get frequency and presence penalties with proper type casting
-            for param in ["frequency_penalty", "presence_penalty"]:
-                val = kwargs.get(param, 0.0)
-                value = float(
-                    val if isinstance(val, (int, float, str)) else 0.0
-                )
-                if not -2 <= value <= 2:
-                    raise OpenAIClientError(
-                        f"{param} must be between -2 and 2"
-                    )
+                capabilities.validate_parameter(param_name, value)
 
         return func(*args, **kwargs)
 
@@ -458,11 +401,13 @@ def _create_request_params(
     model: str,
     messages: List[ChatCompletionMessageParam],
     schema: dict[str, Any],
-    temperature: float,
-    max_tokens: Optional[int],
-    top_p: float,
-    frequency_penalty: float,
-    presence_penalty: float,
+    temperature: Optional[float],
+    max_output_tokens: Optional[int],
+    max_completion_tokens: Optional[int],
+    reasoning_effort: Optional[str],
+    top_p: Optional[float],
+    frequency_penalty: Optional[float],
+    presence_penalty: Optional[float],
     stream: bool,
     timeout: Optional[float] = None,
 ) -> dict[str, Any]:
@@ -480,14 +425,24 @@ def _create_request_params(
                 },
             },
         ),
-        "temperature": temperature,
-        "max_completion_tokens": max_tokens,
-        "top_p": top_p,
-        "frequency_penalty": frequency_penalty,
-        "presence_penalty": presence_penalty,
         "stream": stream,
     }
 
+    # Only add optional parameters if they are specified and supported by the model
+    if temperature is not None:
+        params["temperature"] = temperature
+    if top_p is not None:
+        params["top_p"] = top_p
+    if frequency_penalty is not None:
+        params["frequency_penalty"] = frequency_penalty
+    if presence_penalty is not None:
+        params["presence_penalty"] = presence_penalty
+    if max_output_tokens is not None:
+        params["max_output_tokens"] = max_output_tokens
+    if max_completion_tokens is not None:
+        params["max_completion_tokens"] = max_completion_tokens
+    if reasoning_effort is not None:
+        params["reasoning_effort"] = reasoning_effort
     if timeout is not None:
         params["timeout"] = timeout
 
@@ -648,7 +603,9 @@ def _log_request_start(
     on_log: Optional[LogCallback],
     model: str,
     temperature: float,
-    max_tokens: Optional[int],
+    max_output_tokens: Optional[int],
+    max_completion_tokens: Optional[int],
+    reasoning_effort: Optional[str],
     top_p: float,
     frequency_penalty: float,
     presence_penalty: float,
@@ -663,7 +620,9 @@ def _log_request_start(
         {
             "model": model,
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_output_tokens": max_output_tokens,
+            "max_completion_tokens": max_completion_tokens,
+            "reasoning_effort": reasoning_effort,
             "top_p": top_p,
             "frequency_penalty": frequency_penalty,
             "presence_penalty": presence_penalty,
@@ -680,26 +639,52 @@ def _prepare_request(
     output_schema: Type[BaseModel],
     system_prompt: str,
     user_prompt: str,
-    temperature: float,
-    max_tokens: Optional[int],
-    top_p: float,
-    frequency_penalty: float,
-    presence_penalty: float,
+    temperature: Optional[float],
+    max_output_tokens: Optional[int],
+    max_completion_tokens: Optional[int],
+    reasoning_effort: Optional[str],
+    top_p: Optional[float],
+    frequency_penalty: Optional[float],
+    presence_penalty: Optional[float],
     stream: bool,
     timeout: Optional[float] = None,
 ) -> dict[str, Any]:
     """Prepare common request parameters and validate inputs."""
     _validate_request(model, client, expected_type)
-    _validate_token_limits(model, max_tokens)
+    _validate_token_limits(model, max_output_tokens)
     messages = _create_chat_messages(system_prompt, user_prompt)
     schema = _get_schema(output_schema)
+
+    # Get model capabilities to check supported parameters
+    registry = ModelRegistry.get_instance()
+    capabilities = registry.get_capabilities(model)
+
+    # Validate parameters against model capabilities
+    if temperature is not None:
+        capabilities.validate_parameter("temperature", temperature)
+    if top_p is not None:
+        capabilities.validate_parameter("top_p", top_p)
+    if frequency_penalty is not None:
+        capabilities.validate_parameter("frequency_penalty", frequency_penalty)
+    if presence_penalty is not None:
+        capabilities.validate_parameter("presence_penalty", presence_penalty)
+    if max_output_tokens is not None:
+        capabilities.validate_parameter("max_output_tokens", max_output_tokens)
+    if max_completion_tokens is not None:
+        capabilities.validate_parameter(
+            "max_completion_tokens", max_completion_tokens
+        )
+    if reasoning_effort is not None:
+        capabilities.validate_parameter("reasoning_effort", reasoning_effort)
 
     return _create_request_params(
         model=model,
         messages=messages,
         schema=schema,
         temperature=temperature,
-        max_tokens=max_tokens,
+        max_output_tokens=max_output_tokens,
+        max_completion_tokens=max_completion_tokens,
+        reasoning_effort=reasoning_effort,
         top_p=top_p,
         frequency_penalty=frequency_penalty,
         presence_penalty=presence_penalty,
@@ -842,7 +827,7 @@ def _process_stream_chunk(
         _log(
             on_log,
             logging.DEBUG,
-            "Processing chunk content",
+            "Processing content",
             {"content": delta.content},
         )
         try:
@@ -851,8 +836,15 @@ def _process_stream_chunk(
             _log(
                 on_log,
                 logging.DEBUG,
-                "Buffer status after write",
-                {"size_bytes": buffer.size, "content": buffer.getvalue()},
+                "Buffer state after write",
+                {
+                    "buffer_size": buffer.size,
+                    "buffer_content": buffer.getvalue(),
+                    "starts_with_brace": buffer.getvalue()
+                    .strip()
+                    .startswith("{"),
+                    "ends_with_brace": buffer.getvalue().strip().endswith("}"),
+                },
             )
 
             # Only try to parse if we have a complete JSON object
@@ -864,7 +856,7 @@ def _process_stream_chunk(
                     _log(
                         on_log,
                         logging.DEBUG,
-                        "Attempting to parse JSON",
+                        "Attempting to parse complete JSON object",
                         {"content": current_content},
                     )
                     model_instance = output_schema.model_validate_json(
@@ -984,11 +976,13 @@ def openai_structured_call(
     output_schema: Type[BaseModel],
     user_prompt: str,
     system_prompt: str,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_tokens: Optional[int] = None,
-    top_p: float = 1.0,
-    frequency_penalty: float = 0.0,
-    presence_penalty: float = 0.0,
+    temperature: Optional[float] = None,
+    max_output_tokens: Optional[int] = None,
+    max_completion_tokens: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
+    top_p: Optional[float] = None,
+    frequency_penalty: Optional[float] = None,
+    presence_penalty: Optional[float] = None,
     on_log: Optional[LogCallback] = None,
     timeout: Optional[float] = DEFAULT_TIMEOUT,
 ) -> BaseModel:
@@ -1001,7 +995,9 @@ def openai_structured_call(
         user_prompt: User's request to process
         system_prompt: System instructions for the model
         temperature: Sampling temperature (0-2)
-        max_tokens: Maximum tokens in response
+        max_output_tokens: Maximum tokens in response
+        max_completion_tokens: Maximum tokens to generate
+        reasoning_effort: Optional reasoning effort
         top_p: Top-p sampling parameter (0-1)
         frequency_penalty: Frequency penalty (-2 to 2)
         presence_penalty: Presence penalty (-2 to 2)
@@ -1022,7 +1018,9 @@ def openai_structured_call(
             on_log,
             model,
             temperature,
-            max_tokens,
+            max_output_tokens,
+            max_completion_tokens,
+            reasoning_effort,
             top_p,
             frequency_penalty,
             presence_penalty,
@@ -1038,7 +1036,9 @@ def openai_structured_call(
             system_prompt,
             user_prompt,
             temperature,
-            max_tokens,
+            max_output_tokens,
+            max_completion_tokens,
+            reasoning_effort,
             top_p,
             frequency_penalty,
             presence_penalty,
@@ -1075,11 +1075,13 @@ async def async_openai_structured_call(
     output_schema: Type[BaseModel],
     user_prompt: str,
     system_prompt: str,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_tokens: Optional[int] = None,
-    top_p: float = 1.0,
-    frequency_penalty: float = 0.0,
-    presence_penalty: float = 0.0,
+    temperature: Optional[float] = None,
+    max_output_tokens: Optional[int] = None,
+    max_completion_tokens: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
+    top_p: Optional[float] = None,
+    frequency_penalty: Optional[float] = None,
+    presence_penalty: Optional[float] = None,
     on_log: Optional[LogCallback] = None,
     timeout: Optional[float] = DEFAULT_TIMEOUT,
 ) -> BaseModel:
@@ -1095,7 +1097,9 @@ async def async_openai_structured_call(
         user_prompt: User's request to process
         system_prompt: System instructions for the model
         temperature: Sampling temperature (0-2)
-        max_tokens: Maximum tokens in response
+        max_output_tokens: Maximum tokens in response
+        max_completion_tokens: Maximum tokens to generate
+        reasoning_effort: Optional reasoning effort
         top_p: Top-p sampling parameter (0-1)
         frequency_penalty: Frequency penalty (-2 to 2)
         presence_penalty: Presence penalty (-2 to 2)
@@ -1116,7 +1120,9 @@ async def async_openai_structured_call(
             on_log,
             model,
             temperature,
-            max_tokens,
+            max_output_tokens,
+            max_completion_tokens,
+            reasoning_effort,
             top_p,
             frequency_penalty,
             presence_penalty,
@@ -1132,7 +1138,9 @@ async def async_openai_structured_call(
             system_prompt,
             user_prompt,
             temperature,
-            max_tokens,
+            max_output_tokens,
+            max_completion_tokens,
+            reasoning_effort,
             top_p,
             frequency_penalty,
             presence_penalty,
@@ -1167,13 +1175,15 @@ async def async_openai_structured_stream(
     client: AsyncOpenAI,
     model: str,
     output_schema: Type[BaseModel],
-    system_prompt: str,
     user_prompt: str,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_tokens: Optional[int] = None,
-    top_p: float = 1.0,
-    frequency_penalty: float = 0.0,
-    presence_penalty: float = 0.0,
+    system_prompt: str,
+    temperature: Optional[float] = None,
+    max_output_tokens: Optional[int] = None,
+    max_completion_tokens: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
+    top_p: Optional[float] = None,
+    frequency_penalty: Optional[float] = None,
+    presence_penalty: Optional[float] = None,
     on_log: Optional[LogCallback] = None,
     stream_config: Optional[StreamConfig] = None,
     timeout: Optional[float] = None,
@@ -1188,10 +1198,12 @@ async def async_openai_structured_stream(
         client: AsyncOpenAI client instance
         model: Model name (e.g., "gpt-4o-2024-08-06")
         output_schema: Pydantic model class defining the expected output structure
-        system_prompt: System message to guide the model's behavior
         user_prompt: User message containing the actual request
+        system_prompt: System message to guide the model's behavior
         temperature: Controls randomness (0.0-2.0, default: 0.7)
-        max_tokens: Maximum tokens to generate (optional)
+        max_output_tokens: Maximum tokens to generate (optional)
+        max_completion_tokens: Maximum tokens to generate (optional)
+        reasoning_effort: Optional reasoning effort
         top_p: Nucleus sampling parameter (optional)
         frequency_penalty: Frequency penalty parameter (optional)
         presence_penalty: Presence penalty parameter (optional)
@@ -1264,7 +1276,9 @@ async def async_openai_structured_stream(
             on_log,
             model,
             temperature,
-            max_tokens,
+            max_output_tokens,
+            max_completion_tokens,
+            reasoning_effort,
             top_p,
             frequency_penalty,
             presence_penalty,
@@ -1280,7 +1294,9 @@ async def async_openai_structured_stream(
             system_prompt,
             user_prompt,
             temperature,
-            max_tokens,
+            max_output_tokens,
+            max_completion_tokens,
+            reasoning_effort,
             top_p,
             frequency_penalty,
             presence_penalty,
@@ -1336,7 +1352,7 @@ async def async_openai_structured_stream(
             _log(
                 on_log,
                 logging.DEBUG,
-                "Processing chunk content",
+                "Processing content",
                 {"content": delta.content},
             )
 
@@ -1424,13 +1440,15 @@ def openai_structured_stream(
     client: OpenAI,
     model: str,
     output_schema: Type[BaseModel],
-    system_prompt: str,
     user_prompt: str,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_tokens: Optional[int] = None,
-    top_p: float = 1.0,
-    frequency_penalty: float = 0.0,
-    presence_penalty: float = 0.0,
+    system_prompt: str,
+    temperature: Optional[float] = None,
+    max_output_tokens: Optional[int] = None,
+    max_completion_tokens: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
+    top_p: Optional[float] = None,
+    frequency_penalty: Optional[float] = None,
+    presence_penalty: Optional[float] = None,
     on_log: Optional[LogCallback] = None,
     stream_config: Optional[StreamConfig] = None,
     timeout: Optional[float] = None,
@@ -1445,10 +1463,12 @@ def openai_structured_stream(
         client: OpenAI client instance
         model: Model name (e.g., "gpt-4o-2024-08-06")
         output_schema: Pydantic model class defining the expected output structure
-        system_prompt: System message to guide the model's behavior
         user_prompt: User message containing the actual request
+        system_prompt: System message to guide the model's behavior
         temperature: Controls randomness (0.0-2.0, default: 0.7)
-        max_tokens: Maximum tokens to generate (optional)
+        max_output_tokens: Maximum tokens to generate (optional)
+        max_completion_tokens: Maximum tokens to generate (optional)
+        reasoning_effort: Optional reasoning effort
         top_p: Nucleus sampling parameter (optional)
         frequency_penalty: Frequency penalty parameter (optional)
         presence_penalty: Presence penalty parameter (optional)
@@ -1517,7 +1537,9 @@ def openai_structured_stream(
             on_log,
             model,
             temperature,
-            max_tokens,
+            max_output_tokens,
+            max_completion_tokens,
+            reasoning_effort,
             top_p,
             frequency_penalty,
             presence_penalty,
@@ -1533,7 +1555,9 @@ def openai_structured_stream(
             system_prompt,
             user_prompt,
             temperature,
-            max_tokens,
+            max_output_tokens,
+            max_completion_tokens,
+            reasoning_effort,
             top_p,
             frequency_penalty,
             presence_penalty,
@@ -1555,15 +1579,46 @@ def openai_structured_stream(
             _log(
                 on_log,
                 logging.DEBUG,
-                "Processing chunk",
-                {"chunk": str(chunk)},
+                "Received stream chunk",
+                {
+                    "id": getattr(chunk, "id", None),
+                    "model": getattr(chunk, "model", None),
+                    "object": getattr(chunk, "object", None),
+                },
             )
-            if not hasattr(chunk, "choices") or not chunk.choices:
-                _log(on_log, logging.DEBUG, "Skipping chunk without choices")
+
+            if not hasattr(chunk, "choices"):
+                _log(
+                    on_log,
+                    logging.DEBUG,
+                    "Chunk missing choices attribute",
+                    {"chunk": str(chunk)},
+                )
                 continue
 
+            if not chunk.choices:
+                _log(
+                    on_log,
+                    logging.DEBUG,
+                    "Chunk has empty choices",
+                    {"chunk": str(chunk)},
+                )
+                continue
+
+            choice = chunk.choices[0]
+            _log(
+                on_log,
+                logging.DEBUG,
+                "Processing choice",
+                {
+                    "index": getattr(choice, "index", None),
+                    "finish_reason": getattr(choice, "finish_reason", None),
+                    "has_delta": hasattr(choice, "delta"),
+                },
+            )
+
             try:
-                delta = chunk.choices[0].delta
+                delta = choice.delta
                 if not hasattr(delta, "content") or delta.content is None:
                     _log(
                         on_log, logging.DEBUG, "Skipping chunk without content"

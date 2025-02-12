@@ -344,3 +344,15 @@ class TokenLimitError(OpenAIClientError):
         super().__init__(message)
         self.requested_tokens = requested_tokens
         self.model_limit = model_limit
+
+
+class TokenParameterError(OpenAIClientError):
+    """Raised when both max_output_tokens and max_completion_tokens are provided."""
+
+    def __init__(self, model: str):
+        super().__init__(
+            f"Cannot specify both max_output_tokens and max_completion_tokens for model {model}. "
+            "Choose one based on your needs:\n"
+            "- max_output_tokens: Controls visible output size for all models\n"
+            "- max_completion_tokens: Same limit but for o1/o3 includes reasoning tokens"
+        )
