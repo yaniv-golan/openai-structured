@@ -1,0 +1,56 @@
+# Default test models configuration
+version: "1.0.0"
+
+dated_models:
+  test-model-2024-01-01:
+    context_window: 4096
+    max_output_tokens: 2048
+    supports_structured: true
+    supports_streaming: true
+    supported_parameters:
+      - ref: "numeric_constraints.temperature"
+      - ref: "numeric_constraints.top_p"
+      - ref: "numeric_constraints.max_completion_tokens"
+    description: "Basic test model"
+    min_version:
+      year: 2024
+      month: 1
+      day: 1
+
+  gpt-4o-2024-08-06:
+    context_window: 128000
+    max_output_tokens: 16384
+    supports_structured: true
+    supports_streaming: true
+    supported_parameters:
+      - ref: "numeric_constraints.temperature"
+      - ref: "numeric_constraints.top_p"
+      - ref: "numeric_constraints.frequency_penalty"
+      - ref: "numeric_constraints.presence_penalty"
+      - ref: "numeric_constraints.max_completion_tokens"
+    description: "Test GPT-4 model with full capabilities"
+    min_version:
+      year: 2024
+      month: 8
+      day: 6
+
+  o1-2024-12-17:
+    context_window: 200000
+    max_output_tokens: 100000
+    supports_structured: true
+    supports_streaming: true
+    supported_parameters:
+      - ref: "numeric_constraints.max_completion_tokens"
+      - ref: "enum_constraints.reasoning_effort"
+    description: "Test O1 model with enum parameters"
+    min_version:
+      year: 2024
+      month: 12
+      day: 17
+
+aliases:
+  test-model: "test-model-2024-01-01"
+  gpt-4o: "gpt-4o-2024-08-06"
+  o1: "o1-2024-12-17"
+  test-o1: "o1-2024-12-17"
+  test-gpt4o: "gpt-4o-2024-08-06"

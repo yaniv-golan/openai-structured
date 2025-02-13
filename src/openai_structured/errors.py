@@ -1,4 +1,5 @@
 # src/openai_structured/errors.py
+import re
 from typing import Any, Optional
 
 
@@ -125,6 +126,10 @@ class ModelNotSupportedError(OpenAIClientError):
     def __init__(self, message: str, model: Optional[str] = None):
         super().__init__(message)
         self.model = model
+        self.message = message
+
+    def __str__(self) -> str:
+        return self.message
 
 
 class ModelVersionError(OpenAIClientError):
@@ -149,7 +154,7 @@ class ModelVersionError(OpenAIClientError):
 
     def __init__(self, model: str, min_version: Any):
         super().__init__(
-            f"Model {model} requires minimum version {min_version}"
+            "Model " + model + " requires minimum version " + str(min_version)
         )
         self.model = model
         self.min_version = min_version
@@ -181,41 +186,32 @@ class InvalidVersionFormatError(ModelVersionError):
         super().__init__(model, None)
         self.model = model
         self.reason = reason
-        self.message = f"Invalid version format for model {model}: {reason}"
+        self.message = (
+            "Invalid version format for model " + model + ": " + reason
+        )
 
     def __str__(self) -> str:
         return self.message
 
 
 class InvalidDateError(ModelVersionError):
-    """Raised when a model version date is invalid.
+    """Raised when a model version has invalid date components.
 
-    This error occurs when the date components of a version string are invalid,
-    such as:
-    - Year before 2000
-    - Month not between 1-12
-    - Day not valid for the given month (e.g., February 30)
+    This error occurs when the date components in a model version string
+    are invalid, such as invalid month/day values or incorrect format.
 
     Examples:
         >>> try:
-        ...     ModelVersion.from_string("1999-12-31")  # Year too old
+        ...     registry.get_capabilities("gpt-4o-2024-13-01")  # Invalid month
         ... except InvalidDateError as e:
-        ...     print(f"Invalid date: {e}")  # "Invalid date: Year must be 2000 or later"
-
-        >>> try:
-        ...     ModelVersion.from_string("2024-02-30")  # Invalid February date
-        ... except InvalidDateError as e:
-        ...     print(f"Invalid date: {e}")  # "Invalid date: day is out of range for month"
+        ...     print(f"Invalid date: {e}")  # "Invalid date: Model gpt-4o-2024-13-01 has invalid version 2024-13-01"
     """
 
-    def __init__(self, model: str, date_str: str, reason: str):
-        super().__init__(model, None)
+    def __init__(self, model: str, version: str, message: str):
+        super().__init__(model, version)
         self.model = model
-        self.date_str = date_str
-        self.reason = reason
-        self.message = (
-            f"Invalid date in model {model} version {date_str}: {reason}"
-        )
+        self.version = version
+        self.message = message
 
     def __str__(self) -> str:
         return self.message
@@ -241,9 +237,17 @@ class VersionTooOldError(ModelVersionError):
         self.model = model
         self.min_version = min_version
         self.version = version
+        # Extract base model using regex pattern matching
+        version_match = re.match(r"^(.*)-\d{4}-\d{2}-\d{2}$", model)
+        base_model = (
+            version_match.group(1) if version_match else model.split("-")[0]
+        )
         self.message = (
-            f"Model {model} version {version} is too old "
-            f"(minimum supported version is {min_version})"
+            "Model '" + model + "' version " + version + " is too old.\n"
+            "Minimum supported version: " + min_version + "\n"
+            "Note: Use the alias '"
+            + base_model
+            + "' to always get the latest version"
         )
 
     def __str__(self) -> str:
@@ -314,7 +318,11 @@ class StreamParseError(StreamInterruptedError):
 
     def __init__(self, message: str, attempts: int, last_error: Exception):
         super().__init__(
-            f"{message} after {attempts} attempts. Last error: {last_error}"
+            message
+            + " after "
+            + str(attempts)
+            + " attempts. Last error: "
+            + str(last_error)
         )
         self.attempts = attempts
         self.last_error = last_error
@@ -347,12 +355,32 @@ class TokenLimitError(OpenAIClientError):
 
 
 class TokenParameterError(OpenAIClientError):
-    """Raised when both max_output_tokens and max_completion_tokens are provided."""
+    """Raised when both max_output_tokens and max_completion_tokens are used.
+
+    These parameters are mutually exclusive as they control the same functionality.
+    Only one should be used in a request.
+
+    Examples:
+        >>> try:
+        ...     client.complete(
+        ...         "gpt-4o",
+        ...         max_output_tokens=100,
+        ...         max_completion_tokens=100
+        ...     )
+        ... except TokenParameterError as e:
+        ...     print(f"Token error: {e}")  # "Token error: Cannot use both max_output_tokens and max_completion_tokens"
+    """
 
     def __init__(self, model: str):
-        super().__init__(
-            f"Cannot specify both max_output_tokens and max_completion_tokens for model {model}. "
-            "Choose one based on your needs:\n"
-            "- max_output_tokens: Controls visible output size for all models\n"
-            "- max_completion_tokens: Same limit but for o1/o3 includes reasoning tokens"
+        self.model = model
+        self.message = (
+            "Cannot specify both 'max_output_tokens' and 'max_completion_tokens' parameters.\n"
+            "These parameters are mutually exclusive as they control the same functionality.\n"
+            "Choose one:\n"
+            "- max_output_tokens (recommended)\n"
+            "- max_completion_tokens (legacy)"
         )
+        super().__init__(self.message)
+
+    def __str__(self) -> str:
+        return self.message

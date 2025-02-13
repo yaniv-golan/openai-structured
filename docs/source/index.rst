@@ -14,6 +14,7 @@ openai-structured is a Python library that provides a structured approach to int
    installation
    quickstart
    model_registry
+   testing
    examples
    api
    changelog

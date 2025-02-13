@@ -1,0 +1,37 @@
+version: "1.0.0"
+
+dated_models:
+  gpt-4o-2024-08-06:
+    context_window: 128000
+    max_output_tokens: 16384
+    supports_structured: true
+    supports_streaming: true
+    supported_parameters:
+      - ref: "numeric_constraints.temperature"
+      - ref: "numeric_constraints.top_p"
+      - ref: "numeric_constraints.frequency_penalty"
+      - ref: "numeric_constraints.presence_penalty"
+      - ref: "numeric_constraints.max_completion_tokens"
+    description: "Production GPT-4 model with structured output support"
+    min_version:
+      year: 2024
+      month: 8
+      day: 6
+
+  o1-2024-12-17:
+    context_window: 200000
+    max_output_tokens: 100000
+    supports_structured: true
+    supports_streaming: true
+    supported_parameters:
+      - ref: "numeric_constraints.max_completion_tokens"
+      - ref: "enum_constraints.reasoning_effort"
+    description: "Production O1 model optimized for structured output"
+    min_version:
+      year: 2024
+      month: 12
+      day: 17
+
+aliases:
+  gpt-4o: "gpt-4o-2024-08-06"
+  o1: "o1-2024-12-17"

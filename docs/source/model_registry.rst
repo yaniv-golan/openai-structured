@@ -93,10 +93,10 @@ Error Handling
 
 The registry provides specific error types for different validation scenarios:
 
-- ``ModelNotSupportedError``: Model not found in registry
-- ``InvalidDateError``: Invalid date format in model version
-- ``VersionTooOldError``: Model version older than minimum supported
-- ``TokenParameterError``: Invalid token-related parameter
+- ``ModelNotSupportedError``: Model not found in registry (includes available models and aliases)
+- ``InvalidDateError``: Invalid date format in model version (includes format guidance)
+- ``VersionTooOldError``: Model version older than minimum supported (includes latest alias suggestion)
+- ``TokenParameterError``: Invalid token-related parameter (includes parameter guidance)
 - ``OpenAIClientError``: Base class for all registry errors
 
 Example Usage
@@ -124,8 +124,11 @@ Parameter Validation
     try:
         # Validate parameters
         caps.validate_parameter("temperature", 0.7)
-        caps.validate_parameter("top_p", 0.9)
+        caps.validate_parameter("reasoning_effort", "medium")
     except OpenAIClientError as e:
+        # Error message examples:
+        # "Invalid value 'high' for parameter 'reasoning_effort'. Description: Controls the model's reasoning depth. Allowed values: low, medium, high"
+        # "Parameter 'temperature' must be between 0.0 and 2.0. Description: Controls randomness in the output"
         print(f"Parameter validation failed: {e}")
 
 Version Validation
@@ -135,10 +138,17 @@ Version Validation
 
     try:
         # Check version compatibility
-        caps = registry.get_capabilities("gpt-4o-2024-09-01")
+        caps = registry.get_capabilities("gpt-4o-2024-07-01")
     except VersionTooOldError as e:
+        # Error message example:
+        # "Model 'gpt-4o-2024-07-01' version 2024-07-01 is too old.
+        # Minimum supported version: 2024-08-06
+        # Note: Use the alias 'gpt-4o' to always get the latest version"
         print(f"Version too old: {e}")
     except InvalidDateError as e:
+        # Error message example:
+        # "Invalid date format in model version: Month must be between 1 and 12
+        # Use format: YYYY-MM-DD (e.g. 2024-08-06)"
         print(f"Invalid date format: {e}")
 
 Configuration

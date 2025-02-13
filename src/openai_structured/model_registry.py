@@ -163,8 +163,12 @@ class ModelCapabilities(BaseModel):
                 break
 
         if param_ref is None:
+            supported_params = [
+                ref.ref.split(".")[1] for ref in self.supported_parameters
+            ]
             raise OpenAIClientError(
-                f"Parameter '{param_name}' is not supported by this model"
+                f"Parameter '{param_name}' is not supported by model '{self.model_name}'.\n"
+                f"Supported parameters: {', '.join(sorted(supported_params))}"
             )
 
         # Get the constraint from the registry
@@ -176,17 +180,29 @@ class ModelCapabilities(BaseModel):
             # Validate numeric type
             if not isinstance(value, (int, float)):
                 raise OpenAIClientError(
-                    f"Parameter '{param_name}' must be a number, got {type(value)}"
+                    f"Parameter '{param_name}' must be a number, got {type(value).__name__}.\n"
+                    "Allowed types: "
+                    + (
+                        "float and integer"
+                        if constraint.allow_float and constraint.allow_int
+                        else (
+                            "float only"
+                            if constraint.allow_float
+                            else "integer only"
+                        )
+                    )
                 )
 
             # Validate integer/float requirements
             if isinstance(value, float) and not constraint.allow_float:
                 raise OpenAIClientError(
-                    f"Parameter '{param_name}' must be an integer"
+                    f"Parameter '{param_name}' must be an integer, got float {value}.\n"
+                    f"Description: {constraint.description}"
                 )
             if isinstance(value, int) and not constraint.allow_int:
                 raise OpenAIClientError(
-                    f"Parameter '{param_name}' must be a float"
+                    f"Parameter '{param_name}' must be a float, got integer {value}.\n"
+                    f"Description: {constraint.description}"
                 )
 
             # Use override max_value if specified
@@ -197,22 +213,25 @@ class ModelCapabilities(BaseModel):
             # Validate range
             if value < constraint.min_value or value > max_value:
                 raise OpenAIClientError(
-                    f"Parameter '{param_name}' must be between "
-                    f"{constraint.min_value} and {max_value}"
+                    f"Parameter '{param_name}' must be between {constraint.min_value} and {max_value}.\n"
+                    f"Description: {constraint.description}\n"
+                    f"Current value: {value}"
                 )
 
         elif isinstance(constraint, EnumConstraint):
             # Validate type
             if not isinstance(value, str):
                 raise OpenAIClientError(
-                    f"Parameter '{param_name}' must be a string, got {type(value)}"
+                    f"Parameter '{param_name}' must be a string, got {type(value).__name__}.\n"
+                    f"Description: {constraint.description}"
                 )
 
             # Validate allowed values
             if value not in constraint.allowed_values:
                 raise OpenAIClientError(
-                    f"Invalid value '{value}' for parameter '{param_name}'. "
-                    f"Must be one of: {', '.join(map(str, constraint.allowed_values))}"
+                    f"Invalid value '{value}' for parameter '{param_name}'.\n"
+                    f"Description: {constraint.description}\n"
+                    f"Allowed values: {', '.join(map(str, sorted(constraint.allowed_values)))}"
                 )
 
 
@@ -540,10 +559,29 @@ class ModelRegistry:
         version_match = re.match(r"^(.*)-(\d{4}-\d{2}-\d{2})$", model)
         if not version_match:
             # Not a dated model, alias, or properly formatted version - reject
-            raise ModelNotSupportedError(
-                f"Model {model} is not supported. Available models: "
-                f"{', '.join(sorted(m for m in self._capabilities.keys() if not m.endswith('-latest')))}"
+            available_models = sorted(
+                m
+                for m in self._capabilities.keys()
+                if not m.endswith("-latest")
             )
+            dated_models = [
+                m
+                for m in available_models
+                if re.match(r"^.*-\d{4}-\d{2}-\d{2}$", m)
+            ]
+            alias_models = [
+                m
+                for m in available_models
+                if not re.match(r"^.*-\d{4}-\d{2}-\d{2}$", m)
+            ]
+            error_msg = (
+                f"Model '{model}' is not supported.\n"
+                f"Available models:\n"
+                f"- Dated models: {', '.join(dated_models)}\n"
+                f"- Aliases: {', '.join(alias_models)}\n"
+                f"Note: For dated models, use format: base-YYYY-MM-DD (e.g. gpt-4o-2024-08-06)"
+            )
+            raise ModelNotSupportedError(error_msg)
 
         # Extract base model and version
         base_model, version_str = version_match.groups()
@@ -556,9 +594,15 @@ class ModelRegistry:
                 break
 
         if not base_caps:
+            available_bases = {
+                name.split("-")[0]
+                for name in self._capabilities.keys()
+                if not name.endswith("-latest")
+            }
             raise ModelNotSupportedError(
-                f"Base model {base_model} is not supported. Available models: "
-                f"{', '.join(sorted(m for m in self._capabilities.keys() if not m.endswith('-latest')))}"
+                f"Base model '{base_model}' is not supported.\n"
+                f"Available base models: {', '.join(sorted(available_bases))}\n"
+                f"Note: Base model names are case-sensitive"
             )
 
         # Validate version format and components
@@ -572,7 +616,14 @@ class ModelRegistry:
                 )
             return base_caps
         except ValueError as e:
-            raise InvalidDateError(model, version_str, str(e))
+            raise InvalidDateError(
+                model=model,
+                version=version_str,
+                message=(
+                    f"Invalid date format in model version: {str(e)}\n"
+                    f"Use format: YYYY-MM-DD (e.g. 2024-08-06)"
+                ),
+            )
 
     def get_parameter_constraint(
         self, ref: str

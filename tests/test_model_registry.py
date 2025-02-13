@@ -216,7 +216,7 @@ def test_parameter_validation(registry):
     o1.validate_parameter("reasoning_effort", "low")
 
     # Invalid parameters
-    with pytest.raises(OpenAIClientError, match="Must be one of"):
+    with pytest.raises(OpenAIClientError, match="Invalid value"):
         o1.validate_parameter("reasoning_effort", "invalid")
 
     # Test test-model parameters
@@ -575,7 +575,7 @@ def test_enum_parameter_validation():
     with pytest.raises(OpenAIClientError, match="must be a string"):
         caps.validate_parameter("reasoning_effort", 1)  # Wrong type
 
-    with pytest.raises(OpenAIClientError, match="Must be one of"):
+    with pytest.raises(OpenAIClientError, match="Invalid value"):
         caps.validate_parameter(
             "reasoning_effort", "invalid"
         )  # Not in allowed values

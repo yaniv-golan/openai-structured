@@ -41,6 +41,7 @@ from .errors import (
     StreamInterruptedError,
     StreamParseError,
     TokenLimitError,
+    TokenParameterError,
     VersionTooOldError,
 )
 from .model_registry import ModelCapabilities, ModelRegistry
@@ -82,4 +83,5 @@ __all__ = [
     "StreamParseError",
     "ConnectionTimeoutError",
     "TokenLimitError",
+    "TokenParameterError",
 ]

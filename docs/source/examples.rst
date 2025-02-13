@@ -523,4 +523,36 @@ Best Practices
    - Use appropriate types
    - Consider Optional fields
    - Add proper type hints
+
+Testing Examples
+-------------
+
+This section provides examples of testing code that uses the openai-structured library.
+
+Basic Parameter Validation
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Example of basic parameter validation testing:
+
+.. literalinclude:: ../examples/tests/test_basic_validation.py
+   :language: python
+   :linenos:
+
+Custom Model Testing
+~~~~~~~~~~~~~~~~~
+
+Example of testing with custom model configurations:
+
+.. literalinclude:: ../examples/tests/test_custom_model.py
+   :language: python
+   :linenos:
+
+Token Limit Testing
+~~~~~~~~~~~~~~~~
+
+Example of testing token limits and validation:
+
+.. literalinclude:: ../examples/tests/test_token_limits.py
+   :language: python
+   :linenos:
 ```

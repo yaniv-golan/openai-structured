@@ -370,6 +370,75 @@ Exceptions
         - o1: 100,000 output tokens
         - o3-mini: 100,000 output tokens
 
+.. exception:: TokenParameterError
+
+    Raised when both max_output_tokens and max_completion_tokens are used.
+    These parameters are mutually exclusive as they control the same functionality.
+    Only one should be used in a request.
+
+    Example::
+
+        try:
+            client.complete(
+                "gpt-4o",
+                max_output_tokens=100,
+                max_completion_tokens=100
+            )
+        except TokenParameterError as e:
+            print(f"Token error: {e}")
+            # Output:
+            # "Cannot specify both 'max_output_tokens' and 'max_completion_tokens' parameters.
+            # These parameters are mutually exclusive as they control the same functionality.
+            # Choose one:
+            # - max_output_tokens (recommended)
+            # - max_completion_tokens (legacy)"
+
+.. exception:: ModelNotSupportedError
+
+    Raised when a model is not supported by the client.
+
+    Example::
+
+        try:
+            registry.get_capabilities("unsupported-model")
+        except ModelNotSupportedError as e:
+            print(f"Model error: {e}")
+            # Output:
+            # "Model 'unsupported-model' is not supported.
+            # Available models:
+            # - Dated models: gpt-4o-2024-08-06, o1-2024-12-17
+            # - Aliases: gpt-4o, o1
+            # Note: For dated models, use format: base-YYYY-MM-DD (e.g. gpt-4o-2024-08-06)"
+
+.. exception:: VersionTooOldError
+
+    Raised when a model version is older than the minimum supported version.
+
+    Example::
+
+        try:
+            registry.get_capabilities("gpt-4o-2024-07-01")
+        except VersionTooOldError as e:
+            print(f"Version error: {e}")
+            # Output:
+            # "Model 'gpt-4o-2024-07-01' version 2024-07-01 is too old.
+            # Minimum supported version: 2024-08-06
+            # Note: Use the alias 'gpt-4o' to always get the latest version"
+
+.. exception:: InvalidDateError
+
+    Raised when a model version has invalid date components.
+
+    Example::
+
+        try:
+            registry.get_capabilities("gpt-4o-2024-13-01")
+        except InvalidDateError as e:
+            print(f"Date error: {e}")
+            # Output:
+            # "Invalid date format in model version: Month must be between 1 and 12
+            # Use format: YYYY-MM-DD (e.g. 2024-08-06)"
+
 .. exception:: OpenAIClientError
 
     Base exception for client-side errors. Used for various validation and parameter errors.
@@ -377,12 +446,13 @@ Exceptions
     Example::
 
         try:
-            result = await async_openai_structured_call(...)
+            capabilities.validate_parameter("reasoning_effort", "invalid")
         except OpenAIClientError as e:
-            if "unsupported parameter" in str(e):
-                print(f"Error: {e}")  # "Parameter 'temperature' is not supported for o1 models"
-            else:
-                print(f"Client error: {e}")
+            print(f"Parameter error: {e}")
+            # Output:
+            # "Invalid value 'invalid' for parameter 'reasoning_effort'.
+            # Description: Controls the model's reasoning depth.
+            # Allowed values: low, medium, high"
 
 Error Handling Examples
 ~~~~~~~~~~~~~~~~~~~~

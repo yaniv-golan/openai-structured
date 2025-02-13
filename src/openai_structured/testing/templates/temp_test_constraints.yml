@@ -1,0 +1,16 @@
+enum_constraints:
+  reasoning_effort:
+    allowed_values:
+    - low
+    - medium
+    - high
+    description: Controls the model's reasoning depth
+    type: enum
+numeric_constraints:
+  custom_param:
+    allow_float: true
+    allow_int: true
+    description: Custom parameter
+    max_value: 10.0
+    min_value: 0.0
+    type: numeric

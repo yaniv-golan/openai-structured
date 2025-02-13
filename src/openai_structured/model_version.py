@@ -153,7 +153,8 @@ class ModelVersion:
             raise InvalidDateError(
                 "version",  # Will be replaced by model name in registry
                 version_str,
-                str(e),
+                f"Invalid date format in model version: {str(e)}\n"
+                f"Use format: YYYY-MM-DD (e.g. 2024-08-06)",
             )
 
         return cls(year=year, month=month, day=day)
