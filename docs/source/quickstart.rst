@@ -8,11 +8,11 @@ Installation
 
 Using pip::
 
-    pip install openai-structured
+    pip install openai-structured>=2.0.0
 
 Using Poetry::
 
-    poetry add openai-structured
+    poetry add "openai-structured>=2.0.0"
 
 Basic Usage
 ----------
@@ -201,22 +201,22 @@ Production Models (Recommended)
     - 200K context window
     - 100K output tokens
     - Does not support streaming
-    - Fixed parameters (see note below)
+    - Limited parameter support (see note below)
 
 - **o3-mini-2025-01-31**
     - 200K context window
     - 100K output tokens
     - Supports streaming
-    - Fixed parameters (see note below)
+    - Limited parameter support (see note below)
 
 Development Aliases
 ~~~~~~~~~~~~~~~~~
 
 - **gpt-4o**: Latest GPT-4 structured model (supports streaming)
 - **gpt-4o-mini**: Latest mini variant (supports streaming)
-- **o1**: Latest optimized model (fixed parameters, no streaming)
-- **o3**: Latest optimized model (fixed parameters, no streaming)
-- **o3-mini**: Latest mini optimized model (fixed parameters, supports streaming)
+- **o1**: Latest optimized model (limited parameters, no streaming)
+- **o3**: Latest optimized model (limited parameters, no streaming)
+- **o3-mini**: Latest mini optimized model (limited parameters, supports streaming)
 
 .. note::
    Use dated versions in production for stability. Aliases automatically use the latest compatible version.
@@ -224,19 +224,17 @@ Development Aliases
 Important Notes
 ~~~~~~~~~~~~~
 
-1. o1 and o3 models have fixed parameters that cannot be modified:
-    - temperature: Fixed at 1.0
-    - top_p: Fixed at 1.0
-    - frequency_penalty: Fixed at 0.0
-    - presence_penalty: Fixed at 0.0
+1. o1 and o3 models only support the following parameters:
+    - max_completion_tokens
+    - reasoning_effort
+    Attempting to use other parameters (temperature, top_p, etc.) will raise an OpenAIClientError.
 
 2. Streaming Support:
     - o1-2024-12-17: Does not support streaming. Setting stream=True will result in a 400 error with message: "Unsupported value: 'stream' does not support true with this model. Supported values are: false"
     - o3: Does not support streaming. Setting stream=True will result in a 400 error
     - o3-mini and o3-mini-high: Support streaming
 
-Attempting to modify fixed parameters will raise an OpenAIClientError.
-Use other models if you need to adjust these parameters or require streaming support.
+Use other models if you need to adjust temperature, top_p, or other parameters not supported by o1/o3 models.
 
 Environment Variables
 ------------------

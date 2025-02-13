@@ -435,8 +435,12 @@ class ModelRegistry:
         capabilities = self.get_capabilities(model)
         return capabilities.max_output_tokens
 
-    def refresh_from_remote(self) -> bool:
+    def refresh_from_remote(self, url: Optional[str] = None) -> bool:
         """Refresh registry from remote source.
+
+        Args:
+            url: Optional custom URL to fetch configuration from.
+                If not provided, uses the default GitHub repository URL.
 
         Returns:
             bool: True if refresh was successful, False otherwise
@@ -444,18 +448,64 @@ class ModelRegistry:
         try:
             import requests
 
-            url = (
+            config_url = url or (
                 "https://raw.githubusercontent.com/yaniv-golan/"
                 "openai-structured/main/src/openai_structured/config/models.yml"
             )
-            response = requests.get(url)
+            _log(
+                _default_log_callback,
+                LogLevel.INFO,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Fetching model registry configuration",
+                    "url": config_url,
+                },
+            )
+            response = requests.get(config_url)
             if response.status_code == 200:
                 with open(self._config_path, "w") as f:
                     f.write(response.text)
                 self._load_capabilities()
+                _log(
+                    _default_log_callback,
+                    LogLevel.INFO,
+                    LogEvent.MODEL_REGISTRY,
+                    {"message": "Successfully updated model registry"},
+                )
                 return True
+            else:
+                _log(
+                    _default_log_callback,
+                    LogLevel.ERROR,
+                    LogEvent.MODEL_REGISTRY,
+                    {
+                        "message": "Failed to fetch configuration",
+                        "status_code": response.status_code,
+                        "response": response.text,
+                    },
+                )
+                return False
+        except ImportError as e:
+            _log(
+                _default_log_callback,
+                LogLevel.ERROR,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Failed to import requests module",
+                    "error": str(e),
+                },
+            )
             return False
-        except Exception:
+        except Exception as e:
+            _log(
+                _default_log_callback,
+                LogLevel.ERROR,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Failed to refresh model registry",
+                    "error": str(e),
+                },
+            )
             return False
 
     @classmethod

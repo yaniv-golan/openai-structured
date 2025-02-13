@@ -19,6 +19,8 @@ openai-structured is a Python library that provides a structured approach to int
 - **Type Safety**: Full type annotations ensure reliable and predictable behavior.
 - **Robust Error Handling**: Specific exception types for handling API and streaming errors.
 - **Multi-Model Support**: Compatible with various models that offer structured outputs.
+- **Enhanced Validation**: Comprehensive parameter validation with constraints.
+- **Live Testing**: Built-in support for live testing capabilities.
 
 ## Requirements
 
@@ -31,13 +33,16 @@ These will be installed automatically:
 
 - `openai>=1.12.0`: OpenAI Python SDK
 - `pydantic>=2.6.3`: Data validation
+- `jsonschema>=4.23.0`: JSON Schema validation
+- `aiohttp>=3.11.11`: Async HTTP client
+- `typing-extensions>=4.9.0`: Enhanced typing support
 
 ## Installation
 
 ### Using pip
 
 ```bash
-pip install openai-structured
+pip install "openai-structured>=2.0.0"
 ```
 
 ### Using Poetry (recommended for development)
@@ -62,7 +67,6 @@ The library supports models with [OpenAI Structured Outputs](https://platform.op
 - `gpt-4o-2024-08-06`: GPT-4 with OpenAI Structured Outputs
   - 128K context window
   - 16K output tokens
-  - Full JSON schema support
   - Supports streaming
 
 - `gpt-4o-mini-2024-07-18`: GPT-4 variant
@@ -74,39 +78,37 @@ The library supports models with [OpenAI Structured Outputs](https://platform.op
   - 200K context window
   - 100K output tokens
   - Does not support streaming (will return 400 error if attempted)
-  - Fixed parameters (see note below)
+  - Limited parameter support (see note below)
 
 - `o3-mini-2025-01-31`
   - 200K context window
   - 100K output tokens
   - Supports streaming
-  - Fixed parameters (see note below)
+  - Limited parameter support (see note below)
 
 ### Development Aliases
 
 - `gpt-4o`: Latest GPT-4 structured model (supports streaming)
 - `gpt-4o-mini`: Latest mini variant (supports streaming)
-- `o1`: Latest optimized model (fixed parameters, no streaming)
-- `o3`: Latest optimized model (fixed parameters, no streaming)
-- `o3-mini`: Latest mini optimized model (fixed parameters, supports streaming)
+- `o1`: Latest optimized model (limited parameters, no streaming)
+- `o3`: Latest optimized model (limited parameters, no streaming)
+- `o3-mini`: Latest mini optimized model (limited parameters, supports streaming)
 
 Note: Use dated versions in production for stability. Aliases automatically use the latest compatible version.
 
 > **Important Notes**:
 >
-> 1. o1 and o3 models have fixed parameters that cannot be modified:
->    - temperature: Fixed at 1.0
->    - top_p: Fixed at 1.0
->    - frequency_penalty: Fixed at 0.0
->    - presence_penalty: Fixed at 0.0
+> 1. o1 and o3 models only support the following parameters:
+>    - max_completion_tokens
+>    - reasoning_effort
+>    Attempting to use other parameters (temperature, top_p, etc.) will raise an OpenAIClientError.
 >
 > 2. Streaming Support:
 >    - o1-2024-12-17: Does not support streaming. Setting stream=True will result in a 400 error with message: "Unsupported value: 'stream' does not support true with this model. Supported values are: false"
 >    - o3: Does not support streaming. Setting stream=True will result in a 400 error
 >    - o3-mini and o3-mini-high: Support streaming
 >
-> Attempting to modify fixed parameters will raise an OpenAIClientError.
-> Use other models if you need to adjust these parameters or require streaming support.
+> Use other models if you need to adjust temperature, top_p, or other parameters not supported by o1/o3 models.
 
 ## Error Handling
 

@@ -17,17 +17,20 @@ The following packages will be automatically installed:
 
 - ``openai>=1.12.0``: OpenAI Python SDK
 - ``pydantic>=2.6.3``: Data validation using Python type annotations
+- ``jsonschema>=4.23.0``: JSON Schema validation
+- ``aiohttp>=3.11.11``: Async HTTP client
+- ``typing-extensions>=4.9.0``: Enhanced typing support
 
 Optional Dependencies
 ~~~~~~~~~~~~~~~~~
 
 For development and testing:
 
-- ``pytest``: For running tests
-- ``black``: For code formatting
-- ``flake8``: For linting
-- ``mypy``: For type checking
-- ``sphinx``: For building documentation
+- ``pytest>=8.3.4``: For running tests
+- ``black>=24.8.0``: For code formatting
+- ``flake8>=6.0``: For linting
+- ``mypy>=1.0``: For type checking
+- ``sphinx>=7.0``: For building documentation
 
 Installation Methods
 ------------------
@@ -39,13 +42,13 @@ The recommended way to install openai-structured:
 
 .. code-block:: bash
 
-   pip install openai-structured
+   pip install "openai-structured>=2.0.0"
 
 For development installation with all optional dependencies:
 
 .. code-block:: bash
 
-   pip install openai-structured[dev]
+   pip install "openai-structured[dev]>=2.0.0"
 
 From Source
 ~~~~~~~~~~

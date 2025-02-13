@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2025-02-20
+
+### Added
+
+- Enhanced model registry with comprehensive validation
+- Support for new model variants and aliases
+- Comprehensive parameter validation with constraints
+- Live testing capabilities
+- Improved type hints and documentation
+- New error types for better error handling
+- Enhanced streaming support with better buffer management
+
+### Changed
+
+- Complete refactor of model registry and validation system
+- Improved error handling and reporting
+- Enhanced type safety across the codebase
+- Updated model specifications and requirements
+- Improved test organization and coverage
+
+### Removed
+
+- Deprecated model versions and outdated validation methods
+- Legacy error handling patterns
+
 ## [1.3.0] - 2025-02-15
 
 ### Added

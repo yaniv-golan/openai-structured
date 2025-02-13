@@ -1,13 +1,29 @@
 .. Copyright (c) 2025 Yaniv Golan. All rights reserved.
 
-openai-structured
-===============
+.. openai-structured documentation master file
 
-A Python library for working with `OpenAI Structured Outputs <https://platform.openai.com/docs/guides/function-calling>`_, featuring streaming support and efficient buffer management.
+Welcome to openai-structured's documentation!
+=========================================
 
-.. note::
-   Looking for the CLI tool? It has been moved to a separate package called ``ostruct-cli``.
-   Visit https://github.com/yaniv-golan/ostruct for installation and usage instructions.
+openai-structured is a Python library that provides a structured approach to interfacing with OpenAI's Structured Outputs using Pydantic models.
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   installation
+   quickstart
+   model_registry
+   examples
+   api
+   changelog
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
 
 Version Compatibility
 ------------------
@@ -110,18 +126,6 @@ Using Poetry:
 
     poetry add openai-structured
 
-Documentation
------------
-
-.. toctree::
-   :maxdepth: 2
-
-   quickstart
-   api
-   examples
-   contributing
-   installation
-
 Supported Models
 --------------
 
@@ -142,13 +146,13 @@ Production Models (Recommended)
 * ``o1-2024-12-17``: Optimized for OpenAI Structured Outputs
     * 200K context window
     * 100K output tokens
-    * Fixed parameters (temperature=1.0, top_p=1.0, frequency_penalty=0.0, presence_penalty=0.0)
+    * Limited parameter support (only max_completion_tokens and reasoning_effort)
     * Minimum version: 2024-12-17
 
 * ``o3-mini-2025-01-31``: Mini variant optimized for OpenAI Structured Outputs
     * 200K context window
     * 100K output tokens
-    * Fixed parameters (temperature=1.0, top_p=1.0, frequency_penalty=0.0, presence_penalty=0.0)
+    * Limited parameter support (only max_completion_tokens and reasoning_effort)
     * Minimum version: 2025-01-31
 
 Development Aliases
@@ -164,18 +168,18 @@ Development Aliases
 
 * ``o1``: Latest model with OpenAI Structured Outputs
     * Maps to most recent compatible version
-    * Fixed parameters (cannot be modified)
+    * Limited parameter support (only max_completion_tokens and reasoning_effort)
     * Minimum version: 2024-12-17
 
 * ``o3-mini``: Latest mini variant with OpenAI Structured Outputs
     * Maps to most recent compatible version
-    * Fixed parameters (cannot be modified)
+    * Limited parameter support (only max_completion_tokens and reasoning_effort)
     * Minimum version: 2025-01-31
 
 .. note::
     Use dated versions in production for stability.
     Aliases automatically use the latest compatible version.
-    o1 and o3 models have fixed parameters that cannot be modified.
+    o1 and o3 models only support max_completion_tokens and reasoning_effort parameters.
     Actual output tokens may be slightly less due to invisible reasoning tokens.
 
 Contributing

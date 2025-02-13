@@ -379,8 +379,8 @@ Exceptions
         try:
             result = await async_openai_structured_call(...)
         except OpenAIClientError as e:
-            if "fixed parameters" in str(e):
-                print("Cannot modify fixed parameters for this model")
+            if "unsupported parameter" in str(e):
+                print(f"Error: {e}")  # "Parameter 'temperature' is not supported for o1 models"
             else:
                 print(f"Client error: {e}")
 
@@ -995,27 +995,12 @@ For async code, use pytest-asyncio and test both successful and error cases:
             assert isinstance(result, SimpleMessage)
 
 .. note::
-    o1 and o3 models have fixed parameters that cannot be modified:
+    o1 and o3 models only support a limited set of parameters:
 
-    - temperature: Fixed at 1.0
-    - top_p: Fixed at 1.0
-    - frequency_penalty: Fixed at 0.0
-    - presence_penalty: Fixed at 0.0
+    - max_completion_tokens
+    - reasoning_effort
 
-    Attempting to modify these parameters will raise an OpenAIClientError.
-
-    Example::
-
-        try:
-            result = await async_openai_structured_call(
-                client=client,
-                model="o1-2024-12-17",
-                temperature=0.5,  # This will raise an error
-                output_schema=MySchema,
-                user_prompt="..."
-            )
-        except OpenAIClientError as e:
-            print(f"Error: {e}")  # "o1 models have fixed parameters that cannot be modified"
+    Attempting to use other parameters (temperature, top_p, etc.) will raise an OpenAIClientError.
 
 Model Support
 ------------
@@ -1039,33 +1024,24 @@ Production Models
 - **o1-2024-12-17**
     - 200K context window
     - 100K output tokens
-    - Fixed parameters
+    - Limited parameter support
     - Does not support streaming
 
 - **o3-mini-2025-01-31**
     - 200K context window
     - 100K output tokens
-    - Fixed parameters
+    - Limited parameter support
     - Supports streaming
 
-Fixed Parameters
-~~~~~~~~~~~~~~
+Limited Parameter Support
+~~~~~~~~~~~~~~~~~~~~
 
-o1 and o3 models have fixed parameters that cannot be modified:
+o1 and o3 models only support the following parameters:
 
-.. code-block:: python
+- max_completion_tokens
+- reasoning_effort
 
-    # These parameters are fixed and cannot be changed
-    temperature = 1.0
-    top_p = 1.0
-    frequency_penalty = 0.0
-    presence_penalty = 0.0
-
-    # Attempting to modify them will raise an error
-    client.openai_structured_call(
-        model="o1-2024-12-17",
-        temperature=0.5  # This will raise OpenAIClientError
-    )
+Attempting to use other parameters (temperature, top_p, etc.) will raise an OpenAIClientError.
 
 Streaming Support
 ~~~~~~~~~~~~~~
@@ -1110,7 +1086,6 @@ Exceptions
 
    Base exception for client-side errors. Raised in several cases:
 
-   - When attempting to modify fixed parameters on o1/o3 models
-   - When attempting to use streaming with unsupported models
+   - When attempting to use unsupported parameters with o1/o3 models
    - When model version is not supported
    - When validation fails
