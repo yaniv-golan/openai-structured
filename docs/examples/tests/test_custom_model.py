@@ -2,11 +2,7 @@
 
 import pytest
 
-from openai_structured import (
-    ModelNotSupportedError,
-    OpenAIClientError,
-    VersionTooOldError,
-)
+from openai_structured import OpenAIClientError, VersionTooOldError
 from openai_structured.model_registry import ModelRegistry
 from openai_structured.testing import (
     create_enum_constraint,

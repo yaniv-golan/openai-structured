@@ -3,7 +3,6 @@
 import pytest
 
 from openai_structured import OpenAIClientError
-from openai_structured.testing import create_test_registry
 
 
 def test_basic_parameter_validation(test_registry):

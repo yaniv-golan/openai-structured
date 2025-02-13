@@ -1,6 +1,5 @@
 """Shared test fixtures for example tests."""
 
-import os
 from pathlib import Path
 
 import pytest
