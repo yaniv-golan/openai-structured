@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Any, Optional, Set, Type
 
 import pytest
 import yaml
@@ -24,7 +25,7 @@ from openai_structured.model_registry import (
 
 
 @pytest.fixture
-def registry(tmp_path, monkeypatch):
+def registry(tmp_path: Path, monkeypatch: Any) -> ModelRegistry:
     """Create a test registry with temporary config files."""
     # Store original env vars
     original_registry_path = os.environ.get("MODEL_REGISTRY_PATH")
@@ -161,7 +162,7 @@ def registry(tmp_path, monkeypatch):
         monkeypatch.delenv("PARAMETER_CONSTRAINTS_PATH", raising=False)
 
 
-def test_model_capabilities_validation(registry):
+def test_model_capabilities_validation(registry: ModelRegistry) -> None:
     """Test ModelCapabilities validation."""
     # Get capabilities for test model
     caps = registry.get_capabilities("test-model")
@@ -185,7 +186,7 @@ def test_model_capabilities_validation(registry):
     caps.validate_parameter("temperature", 0.5)
 
 
-def test_parameter_validation(registry):
+def test_parameter_validation(registry: ModelRegistry) -> None:
     """Test parameter validation for different models."""
     # Test gpt-4o parameters
     gpt4o = registry.get_capabilities("gpt-4o")
@@ -233,7 +234,7 @@ def test_parameter_validation(registry):
         test_model.validate_parameter("reasoning_effort", "low")
 
 
-def test_parameter_constraints():
+def test_parameter_constraints() -> None:
     """Test parameter constraint validation."""
     # Test numeric constraints
     numeric = NumericConstraint(
@@ -254,7 +255,7 @@ def test_parameter_constraints():
     assert "low" in enum.allowed_values
 
 
-def test_parameter_reference():
+def test_parameter_reference() -> None:
     """Test parameter reference validation."""
     ref = ParameterReference(
         ref="numeric_constraints.temperature",
@@ -264,7 +265,7 @@ def test_parameter_reference():
     assert ref.max_value == 1.5
 
 
-def test_fixed_parameter_set():
+def test_fixed_parameter_set() -> None:
     """Test fixed parameter set validation."""
     fixed = FixedParameterSet(
         temperature=1.0,
@@ -280,7 +281,7 @@ def test_fixed_parameter_set():
     assert fixed.description == "Test fixed parameters"
 
 
-def test_get_capabilities(registry):
+def test_get_capabilities(registry: ModelRegistry) -> None:
     """Test getting model capabilities."""
     # Test exact match (dated model)
     caps = registry.get_capabilities("gpt-4o-2024-08-06")
@@ -312,13 +313,13 @@ def test_get_capabilities(registry):
         registry.get_capabilities("gpt-4o-2024-07-01")
 
 
-def test_registry_singleton(registry):
+def test_registry_singleton(registry: ModelRegistry) -> None:
     """Test that ModelRegistry is a singleton."""
     registry2 = ModelRegistry()
     assert registry is registry2
 
 
-def test_registry_cleanup(registry):
+def test_registry_cleanup(registry: ModelRegistry) -> None:
     """Test that cleanup properly resets the registry."""
     # Store initial state
     initial_capabilities = registry._capabilities.copy()
@@ -347,7 +348,7 @@ def test_registry_cleanup(registry):
     ModelRegistry.cleanup()
 
 
-def test_supports_structured_output(registry):
+def test_supports_structured_output(registry: ModelRegistry) -> None:
     """Test checking structured output support."""
     assert registry.supports_structured_output("gpt-4o")
     assert registry.supports_structured_output("gpt-4o-2024-08-06")
@@ -357,25 +358,25 @@ def test_supports_structured_output(registry):
         registry.supports_structured_output("gpt-4o-2024-07-01")
 
 
-def test_supports_streaming(registry):
+def test_supports_streaming(registry: ModelRegistry) -> None:
     """Test checking streaming support."""
     assert registry.supports_streaming("gpt-4o")
     assert not registry.supports_streaming("test-model")
 
 
-def test_get_context_window(registry):
+def test_get_context_window(registry: ModelRegistry) -> None:
     """Test getting context window size."""
     assert registry.get_context_window("gpt-4o") == 128000
     assert registry.get_context_window("test-model") == 4096
 
 
-def test_get_max_output_tokens(registry):
+def test_get_max_output_tokens(registry: ModelRegistry) -> None:
     """Test getting maximum output tokens."""
     assert registry.get_max_output_tokens("gpt-4o") == 16384
     assert registry.get_max_output_tokens("test-model") == 2048
 
 
-def test_invalid_config(monkeypatch, tmp_path):
+def test_invalid_config(monkeypatch: Any, tmp_path: Path) -> None:
     """Test handling of invalid configuration."""
     # Create invalid config
     config_path = tmp_path / "invalid.yml"
@@ -392,7 +393,7 @@ def test_invalid_config(monkeypatch, tmp_path):
     assert registry.supports_structured_output("gpt-4o")
 
 
-def test_fallback_matches_models_yml():
+def test_fallback_matches_models_yml() -> None:
     """Test that fallback models match exactly with models.yml."""
     # Load models.yml
     config_path = (
@@ -462,13 +463,15 @@ def test_fallback_matches_models_yml():
         ("gpt-5", ModelNotSupportedError),  # Unknown model with no version
     ],
 )
-def test_invalid_version_formats(registry, model_name, expected_error):
+def test_invalid_version_formats(
+    registry: ModelRegistry, model_name: str, expected_error: Type[Exception]
+) -> None:
     """Test various invalid version formats and dates."""
     with pytest.raises(expected_error):
         registry.get_capabilities(model_name)
 
 
-def test_version_validation_with_capabilities(registry):
+def test_version_validation_with_capabilities(registry: ModelRegistry) -> None:
     """Test version validation in conjunction with capabilities."""
     # Test exact minimum version
     caps = registry.get_capabilities("gpt-4o-2024-08-06")
@@ -490,7 +493,7 @@ def test_version_validation_with_capabilities(registry):
     assert "2025-01-31" in str(exc_info.value)
 
 
-def test_version_comparison():
+def test_version_comparison() -> None:
     """Test version comparison logic."""
     v1 = ModelVersion.from_string("2024-08-06")
     v2 = ModelVersion.from_string("2024-08-07")
@@ -512,7 +515,7 @@ def test_version_comparison():
     assert None <= v1  # None is always less than or equal to a version
 
 
-def test_numeric_parameter_validation():
+def test_numeric_parameter_validation() -> None:
     """Test numeric parameter validation."""
     caps = ModelCapabilities(
         model_name="test-model",
@@ -553,7 +556,7 @@ def test_numeric_parameter_validation():
         )  # Float not allowed
 
 
-def test_enum_parameter_validation():
+def test_enum_parameter_validation() -> None:
     """Test enum parameter validation."""
     caps = ModelCapabilities(
         model_name="test-model",
@@ -581,7 +584,7 @@ def test_enum_parameter_validation():
         )  # Not in allowed values
 
 
-def test_legacy_constraint_conversion():
+def test_legacy_constraint_conversion() -> None:
     """Test conversion of legacy constraint formats."""
     # Create capabilities with legacy format
     caps = ModelCapabilities(
@@ -634,7 +637,9 @@ def test_legacy_constraint_conversion():
         ("gpt-4o-special", None),  # Invalid model with hyphen
     ],
 )
-def test_hyphen_handling(registry, model_name, expected_window):
+def test_hyphen_handling(
+    registry: ModelRegistry, model_name: str, expected_window: Optional[int]
+) -> None:
     """Test hyphenated model name handling."""
     if expected_window is None:
         with pytest.raises(ModelNotSupportedError):
@@ -644,7 +649,7 @@ def test_hyphen_handling(registry, model_name, expected_window):
 
 
 @pytest.mark.live
-def test_live_model_capabilities():
+def test_live_model_capabilities() -> None:
     """Test model capabilities with live OpenAI API."""
     registry = ModelRegistry()
 
@@ -666,13 +671,13 @@ def test_live_model_capabilities():
 
 
 @pytest.mark.live
-def test_live_parameter_validation():
+def test_live_parameter_validation() -> None:
     """Test parameter validation with live OpenAI API."""
     registry = ModelRegistry()
 
     # Test gpt-4o parameters
     gpt4o = registry.get_capabilities("gpt-4o")
-    used_params = set()
+    used_params: Set[str] = set()
 
     # Test numeric parameters
     gpt4o.validate_parameter("temperature", 0.7, used_params=used_params)
@@ -702,7 +707,7 @@ def test_live_parameter_validation():
 
 
 @pytest.mark.live
-def test_live_version_validation():
+def test_live_version_validation() -> None:
     """Test version validation with live OpenAI API."""
     registry = ModelRegistry()
 

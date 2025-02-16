@@ -12,7 +12,7 @@ from openai_structured.errors import (
 from openai_structured.testing import create_test_registry
 
 
-def test_unsupported_model_error():
+def test_unsupported_model_error() -> None:
     """Test error message for unsupported model."""
     registry = create_test_registry()
 
@@ -27,7 +27,7 @@ def test_unsupported_model_error():
     assert "Note: For dated models, use format: base-YYYY-MM-DD" in error_msg
 
 
-def test_unsupported_base_model_error():
+def test_unsupported_base_model_error() -> None:
     """Test error message for unsupported base model."""
     registry = create_test_registry()
 
@@ -40,7 +40,7 @@ def test_unsupported_base_model_error():
     assert "Note: Base model names are case-sensitive" in error_msg
 
 
-def test_version_too_old_error():
+def test_version_too_old_error() -> None:
     """Test error message for version too old."""
     registry = create_test_registry()
 
@@ -59,7 +59,7 @@ def test_version_too_old_error():
     )
 
 
-def test_invalid_date_error():
+def test_invalid_date_error() -> None:
     """Test error message for invalid date format."""
     registry = create_test_registry()
 
@@ -71,7 +71,7 @@ def test_invalid_date_error():
     assert "Use format: YYYY-MM-DD (e.g. 2024-08-06)" in error_msg
 
 
-def test_parameter_not_supported_error():
+def test_parameter_not_supported_error() -> None:
     """Test error message for unsupported parameter."""
     registry = create_test_registry()
     capabilities = registry.get_capabilities("test-model")
@@ -87,7 +87,7 @@ def test_parameter_not_supported_error():
     assert "Supported parameters:" in error_msg
 
 
-def test_numeric_parameter_type_error():
+def test_numeric_parameter_type_error() -> None:
     """Test error message for invalid numeric parameter type."""
     registry = create_test_registry()
     capabilities = registry.get_capabilities("test-model")
@@ -102,7 +102,7 @@ def test_numeric_parameter_type_error():
     assert "Allowed types:" in error_msg
 
 
-def test_numeric_parameter_range_error():
+def test_numeric_parameter_range_error() -> None:
     """Test error message for numeric parameter out of range."""
     registry = create_test_registry()
     capabilities = registry.get_capabilities("test-model")
@@ -116,7 +116,7 @@ def test_numeric_parameter_range_error():
     assert "Current value: 2.5" in error_msg
 
 
-def test_enum_parameter_error():
+def test_enum_parameter_error() -> None:
     """Test error message for invalid enum parameter value."""
     registry = create_test_registry()
     capabilities = registry.get_capabilities("test-o1")
@@ -132,7 +132,7 @@ def test_enum_parameter_error():
     assert "Allowed values:" in error_msg
 
 
-def test_token_parameter_error():
+def test_token_parameter_error() -> None:
     """Test error message for using both token parameters."""
     registry = create_test_registry()
     capabilities = registry.get_capabilities("test-model")

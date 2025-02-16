@@ -10,7 +10,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Mapping, Optional, Set, Union
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -30,7 +30,9 @@ from .model_version import ModelVersion
 logger = logging.getLogger(__name__)
 
 
-def _default_log_callback(level: int, event: str, data: Dict) -> None:
+def _default_log_callback(
+    level: int, event: str, data: Dict[str, Any]
+) -> None:
     """Default logging callback that uses the standard logging module."""
     logger.log(level, f"{event}: {data}")
 
@@ -238,9 +240,9 @@ class ModelCapabilities(BaseModel):
 class ModelRegistry:
     """Registry for model capabilities and validation."""
 
-    _instance = None
-    _config_path = None
-    _constraints_path = None
+    _instance: Optional["ModelRegistry"] = None
+    _config_path: Optional[str] = None
+    _constraints_path: Optional[str] = None
 
     def __new__(cls) -> "ModelRegistry":
         """Create or return the singleton instance."""
@@ -277,8 +279,10 @@ class ModelRegistry:
 
     def _load_constraints(self) -> None:
         """Load parameter constraints from YAML."""
+        if self._constraints_path is None:
+            raise ValueError("Constraints path not set")
         try:
-            with open(self._constraints_path) as f:
+            with open(self._constraints_path, "r") as f:
                 data = yaml.safe_load(f)
 
             # Load numeric constraints
@@ -772,9 +776,6 @@ class ModelRegistry:
         pass
 
     @property
-    def models(self) -> Dict[str, ModelCapabilities]:
-        """Get all registered models.
-
-        This property exists for backward compatibility with tests.
-        """
+    def models(self) -> Mapping[str, ModelCapabilities]:
+        """Get a read-only view of registered models."""
         return self._capabilities

@@ -93,7 +93,7 @@ class ModelVersion:
             >>> # Invalid format raises error
             >>> ModelVersion.parse_version_string("gpt-4o-2024")  # Raises InvalidVersionFormatError
         """
-        match: Optional[Match] = re.match(VERSION_PATTERN, model_name)
+        match: Optional[Match[str]] = re.match(VERSION_PATTERN, model_name)
         if not match:
             raise InvalidVersionFormatError(
                 model_name, "Version must be in format: <model>-YYYY-MM-DD"

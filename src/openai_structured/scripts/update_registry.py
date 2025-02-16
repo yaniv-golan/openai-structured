@@ -2,7 +2,7 @@
 """Command line utility for refreshing the model registry from remote source."""
 
 import sys
-from typing import Optional
+from typing import Optional, Union
 
 import click
 
@@ -13,7 +13,7 @@ from ..model_registry import ModelRegistry
 def refresh_registry(
     verbose: bool = False,
     force: bool = False,
-    url: str | None = None,
+    url: Union[str, None] = None,
     validate: bool = False,
 ) -> int:
     """Refresh the model registry from remote source.
