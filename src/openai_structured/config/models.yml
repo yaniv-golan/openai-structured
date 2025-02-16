@@ -1,4 +1,5 @@
 # Models supporting structured output
+# This file defines the capabilities and constraints for all supported models
 version: "1.0.0"
 
 # Primary section: dated model versions
