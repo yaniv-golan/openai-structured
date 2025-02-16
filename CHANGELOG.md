@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0] - 2025-02-20
 
+### Breaking Changes
+
+- Model Registry Architecture:
+  - Introduced singleton ModelRegistry for centralized model management
+  - Strict version validation for all model names
+  - Required model capabilities validation through registry
+  - Removed direct model support checks in favor of registry-based validation
+
+- Parameter Validation:
+  - Added mandatory parameter validation for all model parameters
+  - Parameters must now match model-specific constraints
+  - `max_output_tokens` and `max_completion_tokens` are now mutually exclusive
+  - Removed support for unvalidated parameters
+
+- Error Handling:
+  - Restructured error hierarchy with new specific error types
+  - Changed error message format to include more context
+  - Added new `TokenParameterError` for token parameter conflicts
+  - Some error types now include additional context (e.g., available models, parameter constraints)
+
 ### Added
 
 - Enhanced model registry with comprehensive validation
@@ -21,9 +41,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Complete refactor of model registry and validation system
 - Improved error handling and reporting
+  - Enhanced error messages with more descriptive information
+  - Added parameter type details and allowed values
+  - Included model version format examples
+  - Added categorized lists of available models
+  - Added suggestions for using aliases
 - Enhanced type safety across the codebase
 - Updated model specifications and requirements
-- Improved test organization and coverage
+- Improved documentation
+  - Added comprehensive error handling examples
+  - Enhanced exception documentation
+  - Added testing examples section
+  - Updated model registry documentation
+- Improved code organization
+  - Fixed linting issues and removed unused imports
+  - Enhanced import organization in test files
+  - Improved code readability and maintainability
 
 ### Removed
 
