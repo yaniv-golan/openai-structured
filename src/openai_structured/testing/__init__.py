@@ -7,7 +7,7 @@ utilities.
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import pytest
 import yaml
@@ -22,8 +22,8 @@ from ..model_registry import (
 
 
 def create_test_registry(
-    model_config: Optional[Dict] = None,
-    constraints_config: Optional[Dict] = None,
+    model_config: Optional[Dict[str, Any]] = None,
+    constraints_config: Optional[Dict[str, Any]] = None,
 ) -> ModelRegistry:
     """Create a test registry with custom configuration.
 
@@ -72,7 +72,7 @@ def get_test_capabilities(
     model_name: str = "test-model",
     context_window: Optional[int] = None,
     max_output_tokens: Optional[int] = None,
-    supported_parameters: Optional[List[Dict]] = None,
+    supported_parameters: Optional[List[Dict[str, Any]]] = None,
 ) -> ModelCapabilities:
     """Get pre-configured test capabilities.
 
@@ -171,7 +171,7 @@ def create_enum_constraint(
     )
 
 
-def _create_temp_config(template_path: Path, config: Dict) -> Path:
+def _create_temp_config(template_path: Path, config: Dict[str, Any]) -> Path:
     """Create a temporary configuration file.
 
     Args:
@@ -200,7 +200,7 @@ def _create_temp_config(template_path: Path, config: Dict) -> Path:
 
 
 @pytest.fixture
-def test_registry():
+def test_registry() -> Generator[ModelRegistry, None, None]:
     """Pytest fixture that provides a test registry.
 
     This fixture creates a fresh test registry for each test,

@@ -1,6 +1,6 @@
 """Tests for the model registry functionality."""
 
-from typing import Optional
+from typing import Optional, Set
 
 import pytest
 
@@ -15,6 +15,7 @@ from openai_structured.errors import (
     TokenLimitError,
     TokenParameterError,
 )
+from openai_structured.model_registry import ModelRegistry
 
 
 @pytest.mark.parametrize(
@@ -146,19 +147,21 @@ def test_default_token_limit(model_name: str, expected_limit: int) -> None:
     ],
 )
 def test_validate_token_limits(
-    model_name: Optional[str], max_tokens: Optional[int], should_raise: bool
+    model_name: Optional[str],
+    max_tokens: Optional[int],
+    should_raise: bool,
 ) -> None:
     """Test token limit validation for various models and token counts."""
     if should_raise:
         with pytest.raises(TokenLimitError) as exc_info:
-            _validate_token_limits(model_name, max_tokens)
+            _validate_token_limits(model_name or "", max_tokens)
         assert exc_info.value.requested_tokens == max_tokens
         assert exc_info.value.model_limit == get_default_token_limit(
-            model_name
+            model_name or ""
         )
     else:
         try:
-            _validate_token_limits(model_name, max_tokens)
+            _validate_token_limits(model_name or "", max_tokens)
         except TokenLimitError as e:
             pytest.fail(f"Unexpected TokenLimitError: {e}")
         except OpenAIClientError as e:
@@ -166,11 +169,11 @@ def test_validate_token_limits(
                 raise  # Re-raise if it's not a model support error
 
 
-def test_token_parameter_validation(registry):
+def test_token_parameter_validation(registry: ModelRegistry) -> None:
     """Test validation of token-related parameters."""
     # Test GPT-4 models
     gpt4o = registry.get_capabilities("gpt-4o")
-    used_params = set()
+    used_params: Set[str] = set()
 
     # Test max_output_tokens
     gpt4o.validate_parameter(
@@ -201,7 +204,7 @@ def test_token_parameter_validation(registry):
     assert "Cannot specify both" in str(exc_info.value)
 
 
-def test_parameter_validation_with_overrides(registry):
+def test_parameter_validation_with_overrides(registry: ModelRegistry) -> None:
     """Test parameter validation with max_value overrides."""
     gpt4o = registry.get_capabilities("gpt-4o")
 
@@ -226,7 +229,9 @@ def test_parameter_validation_with_overrides(registry):
     temp_ref.max_value = None
 
 
-def test_parameter_validation_with_dynamic_max(registry):
+def test_parameter_validation_with_dynamic_max(
+    registry: ModelRegistry,
+) -> None:
     """Test parameter validation with dynamic max values."""
     o1 = registry.get_capabilities("o1")
 

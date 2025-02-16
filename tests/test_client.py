@@ -13,7 +13,7 @@ from openai_structured.errors import OpenAIClientError
 
 
 @pytest.fixture
-def client():
+def client() -> OpenAI:
     """Create OpenAI client for testing."""
     return OpenAI()
 
@@ -26,7 +26,7 @@ class StreamTestMessage(BaseModel):
 
 
 @pytest.mark.live
-def test_live_structured_call(client):
+def test_live_structured_call(client: OpenAI) -> None:
     """Test structured output call with live OpenAI API."""
     # Test with gpt-4o
     result = openai_structured_call(
@@ -56,7 +56,7 @@ def test_live_structured_call(client):
 
 
 @pytest.mark.live
-def test_live_structured_stream_sync(client):
+def test_live_structured_stream_sync(client: OpenAI) -> None:
     """Test synchronous structured output streaming with live OpenAI API."""
     chunks = []
     for chunk in openai_structured_stream(
@@ -84,7 +84,7 @@ def test_live_structured_stream_sync(client):
 
 @pytest.mark.live
 @pytest.mark.asyncio
-async def test_live_structured_stream_async(client):
+async def test_live_structured_stream_async(client: OpenAI) -> None:
     """Test asynchronous structured output streaming with live OpenAI API."""
     async_client = AsyncOpenAI()
     chunks = []
@@ -107,7 +107,7 @@ async def test_live_structured_stream_async(client):
 
 
 @pytest.mark.live
-def test_live_parameter_errors(client):
+def test_live_parameter_errors(client: OpenAI) -> None:
     """Test parameter validation with live OpenAI API."""
     # Test invalid temperature
     with pytest.raises(OpenAIClientError):

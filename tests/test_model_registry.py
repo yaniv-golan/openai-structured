@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Optional, Set, Type
+from typing import Any, Dict, Generator, Optional, Set, Type, cast
 
 import pytest
 import yaml
@@ -25,7 +25,9 @@ from openai_structured.model_registry import (
 
 
 @pytest.fixture
-def registry(tmp_path: Path, monkeypatch: Any) -> ModelRegistry:
+def registry(
+    tmp_path: Path, monkeypatch: Any
+) -> Generator[ModelRegistry, None, None]:
     """Create a test registry with temporary config files."""
     # Store original env vars
     original_registry_path = os.environ.get("MODEL_REGISTRY_PATH")
@@ -413,11 +415,13 @@ def test_fallback_matches_models_yml() -> None:
     assert fallbacks["version"] == models_yml["version"]
 
     # Compare dated models
-    for model_name, yml_config in models_yml["dated_models"].items():
+    models_yml_dated = cast(Dict[str, Any], models_yml["dated_models"])
+    fallbacks_dated = cast(Dict[str, Any], fallbacks["dated_models"])
+    for model_name, yml_config in models_yml_dated.items():
         assert (
-            model_name in fallbacks["dated_models"]
+            model_name in fallbacks_dated
         ), f"Model {model_name} missing from fallbacks"
-        fallback = fallbacks["dated_models"][model_name]
+        fallback = fallbacks_dated[model_name]
 
         # Compare all fields
         assert fallback["context_window"] == yml_config["context_window"]

@@ -83,6 +83,7 @@ from .errors import (
     StreamParseError,
     TokenLimitError,
 )
+from .logging import LogCallback, LogLevel
 from .model_registry import ModelRegistry, ModelVersion, NumericConstraint
 
 # Define public API
@@ -115,7 +116,6 @@ logger = logging.getLogger(__name__)
 
 # Type variables and aliases
 ClientT = TypeVar("ClientT", bound=Union[OpenAI, AsyncOpenAI])
-LogCallback = Callable[[int, str, dict[str, Any]], None]
 P = ParamSpec("P")
 R = TypeVar("R")
 
@@ -195,13 +195,13 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
         # Get model name from kwargs or first positional argument
         model = kwargs.get("model")
         if model is None and len(args) > 0:
-            model = args[0]
+            model = str(args[0])  # Convert to str to ensure type safety
         if not model:
             raise OpenAIClientError("Model name is required")
 
         # Get model capabilities
         registry = ModelRegistry.get_instance()
-        capabilities = registry.get_capabilities(model)
+        capabilities = registry.get_capabilities(str(model))
 
         # Validate all parameters using the model's capabilities
         for param_name, value in kwargs.items():
@@ -538,16 +538,16 @@ def _redact_sensitive_data(data: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
-def _log(
+def _log_event(
     on_log: Optional[LogCallback],
-    level: int,
+    level: LogLevel,
     message: str,
     data: Optional[dict[str, Any]] = None,
 ) -> None:
     """Utility function for consistent logging with sensitive data redaction."""
     if on_log:
         safe_data = _redact_sensitive_data(data or {})
-        on_log(level, message, safe_data)
+        on_log(level.value, message, safe_data)
 
 
 def _handle_api_error(
@@ -556,9 +556,9 @@ def _handle_api_error(
     """Handle OpenAI API errors with enhanced logging."""
     if on_log:
         # First log basic error info
-        _log(
+        _log_event(
             on_log,
-            logging.ERROR,
+            LogLevel.ERROR,
             "OpenAI API error",
             {
                 "error": _redact_string(str(error)),
@@ -571,9 +571,7 @@ def _handle_api_error(
             error_data: dict[str, Any] = {
                 "error_type": error.__class__.__name__,
                 "error_message": _redact_string(str(error)),
-                "status_code": getattr(
-                    error, "e AsyncOpenAI or ensure y", None
-                ),
+                "status_code": getattr(error, "status_code", None),
                 "request_id": getattr(error, "request_id", None),
                 "should_retry": isinstance(
                     error,
@@ -581,7 +579,9 @@ def _handle_api_error(
                 ),
                 "retry_after": getattr(error, "retry_after", None),
             }
-            _log(on_log, logging.ERROR, "OpenAI API error details", error_data)
+            _log_event(
+                on_log, LogLevel.ERROR, "OpenAI API error details", error_data
+            )
 
     # Re-raise OpenAI errors and our own errors as is, wrap others in OpenAIClientError
     if isinstance(
@@ -610,12 +610,14 @@ def _log_request_start(
     max_completion_tokens: Optional[int] = None,
     reasoning_effort: Optional[str] = None,
     streaming: bool = False,
-    output_schema: Type[BaseModel] = None,
+    output_schema: Optional[Type[BaseModel]] = None,
 ) -> None:
     """Log the start of an API request."""
-    _log(
+    if output_schema is None:
+        return
+    _log_event(
         on_log,
-        logging.DEBUG,
+        LogLevel.DEBUG,
         "Starting OpenAI request",
         {
             "model": model,
@@ -657,7 +659,7 @@ def _prepare_request(
 
     # Get model capabilities to check supported parameters
     registry = ModelRegistry.get_instance()
-    capabilities = registry.get_capabilities(model)
+    capabilities = registry.get_capabilities(str(model))
 
     # Validate parameters against model capabilities
     if temperature is not None:
@@ -702,9 +704,9 @@ def _handle_stream_error(
         raise
 
     if isinstance(e, (StreamParseError, StreamInterruptedError)):
-        _log(
+        _log_event(
             on_log,
-            logging.ERROR,
+            LogLevel.ERROR,
             "Stream parsing failed",
             {"error": str(e)},
         )
@@ -719,9 +721,9 @@ def _handle_stream_error(
             ConnectionError,
         ),
     ):
-        _log(
+        _log_event(
             on_log,
-            logging.ERROR,
+            LogLevel.ERROR,
             "Stream interrupted",
             {"error": str(e), "error_type": type(e).__name__},
         )
@@ -746,9 +748,9 @@ def _process_stream_chunk(
 ) -> Optional[BaseModel]:
     """Process a single stream chunk with error handling."""
     try:
-        _log(
+        _log_event(
             on_log,
-            logging.DEBUG,
+            LogLevel.DEBUG,
             "Processing chunk",
             {
                 "id": getattr(chunk, "id", None),
@@ -760,17 +762,27 @@ def _process_stream_chunk(
         )
 
         if not hasattr(chunk, "choices"):
-            _log(on_log, logging.DEBUG, "Chunk missing 'choices' attribute")
+            _log_event(
+                on_log,
+                LogLevel.DEBUG,
+                "Chunk missing 'choices' attribute",
+                {"error": "No choices attribute"},
+            )
             return None
 
         if not chunk.choices:
-            _log(on_log, logging.DEBUG, "Chunk has no choices, skipping")
+            _log_event(
+                on_log,
+                LogLevel.DEBUG,
+                "Chunk has no choices, skipping",
+                {"error": "Empty choices"},
+            )
             return None
 
         choice = chunk.choices[0]
-        _log(
+        _log_event(
             on_log,
-            logging.DEBUG,
+            LogLevel.DEBUG,
             "First choice details",
             {
                 "index": getattr(choice, "index", None),
@@ -780,9 +792,9 @@ def _process_stream_chunk(
 
         try:
             delta = choice.delta
-            _log(
+            _log_event(
                 on_log,
-                logging.DEBUG,
+                LogLevel.DEBUG,
                 "Delta details",
                 {
                     "role": getattr(delta, "role", None),
@@ -792,9 +804,9 @@ def _process_stream_chunk(
                 },
             )
         except (KeyError, AttributeError) as e:
-            _log(
+            _log_event(
                 on_log,
-                logging.ERROR,
+                LogLevel.ERROR,
                 "Error accessing delta",
                 {
                     "error": str(e),
@@ -812,30 +824,26 @@ def _process_stream_chunk(
             return None
 
         if not hasattr(delta, "content") or delta.content is None:
-            _log(
+            _log_event(
                 on_log,
-                logging.DEBUG,
-                "Delta has no content",
-                {
-                    "role": getattr(delta, "role", None),
-                    "function_call": getattr(delta, "function_call", None),
-                    "tool_calls": getattr(delta, "tool_calls", None),
-                },
+                LogLevel.DEBUG,
+                "Skipping chunk without content",
+                {"error": "No content in delta"},
             )
             return None
 
-        _log(
+        _log_event(
             on_log,
-            logging.DEBUG,
+            LogLevel.DEBUG,
             "Processing content",
             {"content": delta.content},
         )
         try:
             # Write the content to the buffer
             buffer.write(delta.content)
-            _log(
+            _log_event(
                 on_log,
-                logging.DEBUG,
+                LogLevel.DEBUG,
                 "Buffer state after write",
                 {
                     "buffer_size": buffer.size,
@@ -853,27 +861,27 @@ def _process_stream_chunk(
                 "{"
             ) and current_content.strip().endswith("}"):
                 try:
-                    _log(
+                    _log_event(
                         on_log,
-                        logging.DEBUG,
+                        LogLevel.DEBUG,
                         "Attempting to parse complete JSON object",
                         {"content": current_content},
                     )
                     model_instance = output_schema.model_validate_json(
                         current_content
                     )
-                    _log(
+                    _log_event(
                         on_log,
-                        logging.DEBUG,
+                        LogLevel.DEBUG,
                         "Successfully parsed model",
                         {"model": str(model_instance)},
                     )
                     buffer.reset()
                     return model_instance
                 except ValidationError as e:
-                    _log(
+                    _log_event(
                         on_log,
-                        logging.ERROR,
+                        LogLevel.ERROR,
                         "Validation error during chunk processing",
                         {
                             "error": str(e),
@@ -886,17 +894,17 @@ def _process_stream_chunk(
                     )
                     # Attempt cleanup if buffer is getting large
                     if buffer.size > buffer.config.cleanup_threshold:
-                        _log(
+                        _log_event(
                             on_log,
-                            logging.DEBUG,
+                            LogLevel.DEBUG,
                             "Buffer exceeded cleanup threshold after validation error, cleaning up",
                             {"size_bytes": buffer.size},
                         )
                         buffer.cleanup()
                 except json.JSONDecodeError as e:
-                    _log(
+                    _log_event(
                         on_log,
-                        logging.ERROR,
+                        LogLevel.ERROR,
                         "JSON decode error during chunk processing",
                         {
                             "error": str(e),
@@ -910,9 +918,9 @@ def _process_stream_chunk(
                     )
                     # Attempt cleanup if buffer is getting large
                     if buffer.size > buffer.config.cleanup_threshold:
-                        _log(
+                        _log_event(
                             on_log,
-                            logging.DEBUG,
+                            LogLevel.DEBUG,
                             "Buffer exceeded cleanup threshold after decode error, cleaning up",
                             {"size_bytes": buffer.size},
                         )
@@ -920,18 +928,18 @@ def _process_stream_chunk(
 
             # Only attempt cleanup if buffer is getting large
             if buffer.size > buffer.config.cleanup_threshold:
-                _log(
+                _log_event(
                     on_log,
-                    logging.DEBUG,
+                    LogLevel.DEBUG,
                     "Buffer exceeded cleanup threshold, cleaning up",
                     {"size_bytes": buffer.size},
                 )
                 buffer.cleanup()
 
         except (BufferOverflowError, StreamParseError) as e:
-            _log(
+            _log_event(
                 on_log,
-                logging.ERROR,
+                LogLevel.ERROR,
                 "Critical stream buffer error",
                 {
                     "error": str(e),
@@ -947,9 +955,9 @@ def _process_stream_chunk(
             )
             raise
     except (KeyError, AttributeError) as e:
-        _log(
+        _log_event(
             on_log,
-            logging.ERROR,
+            LogLevel.ERROR,
             "Error processing chunk",
             {
                 "error": str(e),
@@ -1051,9 +1059,9 @@ def openai_structured_call(
         if not response.choices or not response.choices[0].message.content:
             raise EmptyResponseError("OpenAI API returned an empty response.")
 
-        _log(
+        _log_event(
             on_log,
-            logging.DEBUG,
+            LogLevel.DEBUG,
             "Request completed",
             {"response_id": response.id},
         )
@@ -1153,9 +1161,9 @@ async def async_openai_structured_call(
         if not response.choices or not response.choices[0].message.content:
             raise EmptyResponseError("OpenAI API returned an empty response.")
 
-        _log(
+        _log_event(
             on_log,
-            logging.DEBUG,
+            LogLevel.DEBUG,
             "Request completed",
             {"response_id": response.id},
         )
@@ -1308,22 +1316,29 @@ async def async_openai_structured_stream(
             config=stream_config or StreamConfig(), schema=output_schema
         )
 
-        _log(on_log, logging.DEBUG, "Creating streaming completion")
+        _log_event(
+            on_log,
+            LogLevel.DEBUG,
+            "Creating streaming completion",
+            {"status": "starting"},
+        )
         stream = await client.chat.completions.create(**params)
-        _log(on_log, logging.DEBUG, "Stream created")
+        _log_event(
+            on_log, LogLevel.DEBUG, "Stream created", {"status": "ready"}
+        )
 
         async for chunk in stream:
-            _log(
+            _log_event(
                 on_log,
-                logging.DEBUG,
+                LogLevel.DEBUG,
                 "Received chunk from API",
                 {"chunk": str(chunk)},
             )
 
             if not hasattr(chunk, "choices") or not chunk.choices:
-                _log(
+                _log_event(
                     on_log,
-                    logging.DEBUG,
+                    LogLevel.DEBUG,
                     "Skipping chunk without choices",
                     {"chunk": str(chunk)},
                 )
@@ -1331,9 +1346,9 @@ async def async_openai_structured_stream(
 
             choice = chunk.choices[0]
             if not hasattr(choice, "delta"):
-                _log(
+                _log_event(
                     on_log,
-                    logging.DEBUG,
+                    LogLevel.DEBUG,
                     "Skipping chunk without delta",
                     {"choice": str(choice)},
                 )
@@ -1341,17 +1356,17 @@ async def async_openai_structured_stream(
 
             delta = choice.delta
             if not hasattr(delta, "content") or delta.content is None:
-                _log(
+                _log_event(
                     on_log,
-                    logging.DEBUG,
+                    LogLevel.DEBUG,
                     "Skipping chunk with no content",
-                    {"delta": str(delta)},
+                    {"error": "No content in delta"},
                 )
                 continue
 
-            _log(
+            _log_event(
                 on_log,
-                logging.DEBUG,
+                LogLevel.DEBUG,
                 "Processing content",
                 {"content": delta.content},
             )
@@ -1365,18 +1380,18 @@ async def async_openai_structured_stream(
                 )
 
                 if result is not None:
-                    _log(
+                    _log_event(
                         on_log,
-                        logging.DEBUG,
+                        LogLevel.DEBUG,
                         "Yielding parsed result",
                         {"result": str(result)},
                     )
                     yield result
 
             except (KeyError, AttributeError) as e:
-                _log(
+                _log_event(
                     on_log,
-                    logging.ERROR,
+                    LogLevel.ERROR,
                     "Error processing chunk in async_openai_structured_stream function",
                     {
                         "error": str(e),
@@ -1386,7 +1401,12 @@ async def async_openai_structured_stream(
                 continue
 
         if buffer is not None:
-            _log(on_log, logging.DEBUG, "Closing stream buffer")
+            _log_event(
+                on_log,
+                LogLevel.DEBUG,
+                "Closing stream buffer",
+                {"status": "closing"},
+            )
             buffer.close()
 
     except Exception as e:
@@ -1399,9 +1419,9 @@ async def async_openai_structured_stream(
             try:
                 await stream.close()
             except Exception as e:
-                _log(
+                _log_event(
                     on_log,
-                    logging.WARNING,
+                    LogLevel.WARNING,
                     "Error closing stream",
                     {"error": str(e)},
                 )
@@ -1569,16 +1589,23 @@ def openai_structured_stream(
             config=stream_config or StreamConfig(), schema=output_schema
         )
 
-        _log(on_log, logging.DEBUG, "Creating streaming completion")
+        _log_event(
+            on_log,
+            LogLevel.DEBUG,
+            "Creating streaming completion",
+            {"status": "starting"},
+        )
 
         stream = client.chat.completions.create(**params)
 
-        _log(on_log, logging.DEBUG, "Stream created")
+        _log_event(
+            on_log, LogLevel.DEBUG, "Stream created", {"status": "ready"}
+        )
 
         for chunk in stream:
-            _log(
+            _log_event(
                 on_log,
-                logging.DEBUG,
+                LogLevel.DEBUG,
                 "Received stream chunk",
                 {
                     "id": getattr(chunk, "id", None),
@@ -1588,27 +1615,27 @@ def openai_structured_stream(
             )
 
             if not hasattr(chunk, "choices"):
-                _log(
+                _log_event(
                     on_log,
-                    logging.DEBUG,
+                    LogLevel.DEBUG,
                     "Chunk missing choices attribute",
                     {"chunk": str(chunk)},
                 )
                 continue
 
             if not chunk.choices:
-                _log(
+                _log_event(
                     on_log,
-                    logging.DEBUG,
+                    LogLevel.DEBUG,
                     "Chunk has empty choices",
                     {"chunk": str(chunk)},
                 )
                 continue
 
             choice = chunk.choices[0]
-            _log(
+            _log_event(
                 on_log,
-                logging.DEBUG,
+                LogLevel.DEBUG,
                 "Processing choice",
                 {
                     "index": getattr(choice, "index", None),
@@ -1620,31 +1647,34 @@ def openai_structured_stream(
             try:
                 delta = choice.delta
                 if not hasattr(delta, "content") or delta.content is None:
-                    _log(
-                        on_log, logging.DEBUG, "Skipping chunk without content"
+                    _log_event(
+                        on_log,
+                        LogLevel.DEBUG,
+                        "Skipping chunk without content",
+                        {"error": "No content in delta"},
                     )
                     continue
 
-                _log(
+                _log_event(
                     on_log,
-                    logging.DEBUG,
+                    LogLevel.DEBUG,
                     "Processing content",
                     {"content": delta.content},
                 )
                 result = buffer.process_stream_chunk(delta.content)
                 if result is not None:
-                    _log(
+                    _log_event(
                         on_log,
-                        logging.DEBUG,
+                        LogLevel.DEBUG,
                         "Got result from chunk",
                         {"result": str(result)},
                     )
                     yield result
 
             except (KeyError, AttributeError) as e:
-                _log(
+                _log_event(
                     on_log,
-                    logging.ERROR,
+                    LogLevel.ERROR,
                     f"Error processing chunk in openai_structured_stream function: {str(e)}",
                     {
                         "error": str(e),
@@ -1658,7 +1688,9 @@ def openai_structured_stream(
             buffer.close()
 
     except Exception as e:
-        _log(on_log, logging.ERROR, "Error in stream", {"error": str(e)})
+        _log_event(
+            on_log, LogLevel.ERROR, "Error in stream", {"error": str(e)}
+        )
         _handle_stream_error(e, on_log)
     finally:
         if buffer:
@@ -1667,9 +1699,9 @@ def openai_structured_stream(
             try:
                 stream.close()
             except Exception as e:
-                _log(
+                _log_event(
                     on_log,
-                    logging.WARNING,
+                    LogLevel.WARNING,
                     "Error closing stream",
                     {"error": str(e)},
                 )

@@ -10,7 +10,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union, cast
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -25,6 +25,16 @@ from .errors import (
 )
 from .logging import LogEvent, LogLevel, _log
 from .model_version import ModelVersion
+
+__all__ = [
+    "ModelRegistry",
+    "ModelCapabilities",
+    "NumericConstraint",
+    "EnumConstraint",
+    "ParameterReference",
+    "FixedParameterSet",
+    "ModelVersion",
+]
 
 # Create module logger
 logger = logging.getLogger(__name__)
@@ -273,14 +283,57 @@ class ModelRegistry:
                 ),
             )
 
+            if not self._config_path or not self._constraints_path:
+                raise ValueError("Registry paths not set")
+
             self._load_constraints()
             self._load_capabilities()
             self._initialized = True
 
+    def _load_config(self) -> Optional[Dict[str, Any]]:
+        """Load model configuration from file.
+
+        Returns:
+            Optional[Dict[str, Any]]: The loaded configuration data, or None if loading failed
+        """
+        if not self._config_path:
+            raise ValueError("Config path not set")
+
+        try:
+            with open(self._config_path, "r") as f:
+                data = yaml.safe_load(f)
+                if not isinstance(data, dict):
+                    return None
+                return data
+        except FileNotFoundError:
+            _log(
+                _default_log_callback,
+                LogLevel.WARNING,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Model registry config file not found, using defaults",
+                    "path": self._config_path,
+                },
+            )
+            return None
+        except Exception as e:
+            _log(
+                _default_log_callback,
+                LogLevel.WARNING,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Failed to load model registry config, using fallbacks",
+                    "error": str(e),
+                    "path": self._config_path,
+                },
+            )
+            return None
+
     def _load_constraints(self) -> None:
-        """Load parameter constraints from YAML."""
-        if self._constraints_path is None:
+        """Load parameter constraints from file."""
+        if not self._constraints_path:
             raise ValueError("Constraints path not set")
+
         try:
             with open(self._constraints_path, "r") as f:
                 data = yaml.safe_load(f)
@@ -325,11 +378,13 @@ class ModelRegistry:
     def _load_capabilities(self) -> None:
         """Load model capabilities from YAML."""
         try:
-            with open(self._config_path) as f:
-                data = yaml.safe_load(f)
+            data = self._load_config()
+            if not data:
+                # Load fallback models if no data was loaded
+                data = self._fallback_models
 
             # Load dated models
-            dated_models = data.get("dated_models", {})
+            dated_models = cast(Dict[str, Any], data.get("dated_models", {}))
             for model, config in dated_models.items():
                 try:
                     # Convert min_version dict to ModelVersion instance if present
@@ -351,7 +406,7 @@ class ModelRegistry:
                     )
 
             # Load aliases
-            aliases = data.get("aliases", {})
+            aliases = cast(Dict[str, str], data.get("aliases", {}))
             for alias, target in aliases.items():
                 if target in self._capabilities:
                     # Copy capabilities from target and add this alias
@@ -378,8 +433,7 @@ class ModelRegistry:
                             "message": f"Alias target {target} not found for alias {alias}"
                         },
                     )
-
-        except (FileNotFoundError, yaml.YAMLError) as e:
+        except Exception as e:
             _log(
                 _default_log_callback,
                 LogLevel.WARNING,
@@ -391,10 +445,10 @@ class ModelRegistry:
                 },
             )
             # Load fallback models
-            fallbacks = self._fallback_models
-
+            data = self._fallback_models
             # Load dated models from fallbacks
-            for model, config in fallbacks.get("dated_models", {}).items():
+            dated_models = cast(Dict[str, Any], data.get("dated_models", {}))
+            for model, config in dated_models.items():
                 try:
                     if "min_version" in config:
                         config["min_version"] = ModelVersion(
@@ -414,7 +468,8 @@ class ModelRegistry:
                     )
 
             # Load aliases from fallbacks
-            for alias, target in fallbacks.get("aliases", {}).items():
+            aliases = cast(Dict[str, str], data.get("aliases", {}))
+            for alias, target in aliases.items():
                 if target in self._capabilities:
                     # Copy capabilities from target and add this alias
                     caps = self._capabilities[target]
@@ -485,7 +540,7 @@ class ModelRegistry:
                 },
             )
             response = requests.get(config_url)
-            if response.status_code == 200:
+            if response.status_code == 200 and self._config_path is not None:
                 with open(self._config_path, "w") as f:
                     f.write(response.text)
                 self._load_capabilities()
@@ -776,6 +831,6 @@ class ModelRegistry:
         pass
 
     @property
-    def models(self) -> Mapping[str, ModelCapabilities]:
+    def models(self) -> Dict[str, ModelCapabilities]:
         """Get a read-only view of registered models."""
-        return self._capabilities
+        return dict(self._capabilities)
