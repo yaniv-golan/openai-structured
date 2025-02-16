@@ -15,7 +15,7 @@ from openai_structured.testing import (
 )
 
 
-def test_create_test_registry():
+def test_create_test_registry() -> None:
     """Test creating a test registry."""
     # Test with default configuration
     registry = create_test_registry()
@@ -46,7 +46,7 @@ def test_create_test_registry():
     )
 
 
-def test_create_test_registry_with_custom_config():
+def test_create_test_registry_with_custom_config() -> None:
     """Test creating a test registry with custom configuration."""
     # Create custom model config
     model_config = {
@@ -96,7 +96,7 @@ def test_create_test_registry_with_custom_config():
     assert capabilities.supports_structured
 
 
-def test_get_test_capabilities():
+def test_get_test_capabilities() -> None:
     """Test getting test capabilities."""
     # Test with default values
     capabilities = get_test_capabilities()
@@ -122,7 +122,7 @@ def test_get_test_capabilities():
     assert len(custom_caps.supported_parameters) == 2
 
 
-def test_create_numeric_constraint():
+def test_create_numeric_constraint() -> None:
     """Test creating numeric constraints."""
     # Test basic constraint
     constraint = create_numeric_constraint(0.0, 2.0)
@@ -147,7 +147,7 @@ def test_create_numeric_constraint():
     assert custom.allow_float
 
 
-def test_create_enum_constraint():
+def test_create_enum_constraint() -> None:
     """Test creating enum constraints."""
     # Test basic constraint
     values = ["low", "medium", "high"]
@@ -164,7 +164,7 @@ def test_create_enum_constraint():
     assert custom.description == "Custom enum constraint"
 
 
-def test_parameter_validation():
+def test_parameter_validation() -> None:
     """Test parameter validation with test utilities."""
     registry = create_test_registry()
     capabilities = registry.get_capabilities("test-gpt4o")
@@ -181,7 +181,7 @@ def test_parameter_validation():
         capabilities.validate_parameter("invalid_param", 1.0)
 
 
-def test_version_validation():
+def test_version_validation() -> None:
     """Test version validation with test utilities."""
     registry = create_test_registry()
 
