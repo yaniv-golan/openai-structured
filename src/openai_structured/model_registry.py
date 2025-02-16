@@ -662,101 +662,69 @@ class ModelRegistry:
     _fallback_models = {
         "version": "1.0.0",
         "dated_models": {
-            "gpt-4o-2024-08-06": {
-                "context_window": 128000,
-                "max_output_tokens": 16384,
-                "supports_structured": True,
-                "supports_streaming": True,
+            'gpt-4o-2024-08-06': {
+                'context_window': 128000,
+                'max_output_tokens': 16384,
+                'supports_structured': True,
+                'supports_streaming': True,
                 "supported_parameters": [
-                    {
-                        "ref": "numeric_constraints.temperature",
-                        "max_value": None,
-                    },
-                    {"ref": "numeric_constraints.top_p", "max_value": None},
-                    {
-                        "ref": "numeric_constraints.frequency_penalty",
-                        "max_value": None,
-                    },
-                    {
-                        "ref": "numeric_constraints.presence_penalty",
-                        "max_value": None,
-                    },
-                    {
-                        "ref": "numeric_constraints.max_completion_tokens",
-                        "max_value": None,
-                    },
+                    {'ref': 'numeric_constraints.temperature', 'max_value': None},
+                    {'ref': 'numeric_constraints.top_p', 'max_value': None},
+                    {'ref': 'numeric_constraints.frequency_penalty', 'max_value': None},
+                    {'ref': 'numeric_constraints.presence_penalty', 'max_value': None},
+                    {'ref': 'numeric_constraints.max_completion_tokens', 'max_value': None},
                 ],
-                "description": "Initial release with 16k output support",
+                'description': 'Initial release with 16k output support',
+                'min_version': ModelVersion(2024, 8, 6),
             },
-            "gpt-4o-mini-2024-07-18": {
-                "context_window": 128000,
-                "max_output_tokens": 16384,
-                "supports_structured": True,
-                "supports_streaming": True,
+            'gpt-4o-mini-2024-07-18': {
+                'context_window': 128000,
+                'max_output_tokens': 16384,
+                'supports_structured': True,
+                'supports_streaming': True,
                 "supported_parameters": [
-                    {
-                        "ref": "numeric_constraints.temperature",
-                        "max_value": None,
-                    },
-                    {"ref": "numeric_constraints.top_p", "max_value": None},
-                    {
-                        "ref": "numeric_constraints.frequency_penalty",
-                        "max_value": None,
-                    },
-                    {
-                        "ref": "numeric_constraints.presence_penalty",
-                        "max_value": None,
-                    },
-                    {
-                        "ref": "numeric_constraints.max_completion_tokens",
-                        "max_value": None,
-                    },
+                    {'ref': 'numeric_constraints.temperature', 'max_value': None},
+                    {'ref': 'numeric_constraints.top_p', 'max_value': None},
+                    {'ref': 'numeric_constraints.frequency_penalty', 'max_value': None},
+                    {'ref': 'numeric_constraints.presence_penalty', 'max_value': None},
+                    {'ref': 'numeric_constraints.max_completion_tokens', 'max_value': None},
                 ],
-                "description": "First release of mini variant",
+                'description': 'First release of mini variant',
+                'min_version': ModelVersion(2024, 7, 18),
             },
-            "o1-2024-12-17": {
-                "context_window": 200000,
-                "max_output_tokens": 100000,
-                "supports_structured": True,
-                "supports_streaming": True,
+            'o1-2024-12-17': {
+                'context_window': 200000,
+                'max_output_tokens': 100000,
+                'supports_structured': True,
+                'supports_streaming': True,
                 "supported_parameters": [
-                    {
-                        "ref": "numeric_constraints.max_completion_tokens",
-                        "max_value": None,
-                    },
-                    {
-                        "ref": "enum_constraints.reasoning_effort",
-                        "max_value": None,
-                    },
+                    {'ref': 'numeric_constraints.max_completion_tokens', 'max_value': None},
+                    {'ref': 'enum_constraints.reasoning_effort', 'max_value': None},
                 ],
-                "description": "Initial preview release",
+                'description': 'Initial preview release',
+                'min_version': ModelVersion(2024, 12, 17),
             },
-            "o3-mini-2025-01-31": {
-                "context_window": 200000,
-                "max_output_tokens": 100000,
-                "supports_structured": True,
-                "supports_streaming": True,
+            'o3-mini-2025-01-31': {
+                'context_window': 200000,
+                'max_output_tokens': 100000,
+                'supports_structured': True,
+                'supports_streaming': True,
                 "supported_parameters": [
-                    {
-                        "ref": "numeric_constraints.max_completion_tokens",
-                        "max_value": None,
-                    },
-                    {
-                        "ref": "enum_constraints.reasoning_effort",
-                        "max_value": None,
-                    },
+                    {'ref': 'numeric_constraints.max_completion_tokens', 'max_value': None},
+                    {'ref': 'enum_constraints.reasoning_effort', 'max_value': None},
                 ],
-                "description": "First o3-series model",
+                'description': 'First o3-series model',
+                'min_version': ModelVersion(2025, 1, 31),
             },
         },
         "aliases": {
-            "gpt-4o": "gpt-4o-2024-08-06",
-            "gpt-4o-mini": "gpt-4o-mini-2024-07-18",
-            "o1": "o1-2024-12-17",
-            "o3-mini": "o3-mini-2025-01-31",
+            'gpt-4o': 'gpt-4o-2024-08-06',
+            'gpt-4o-mini': 'gpt-4o-mini-2024-07-18',
+            'o1': 'o1-2024-12-17',
+            'o3-mini': 'o3-mini-2025-01-31',
         },
     }
-    # AUTO-GENERATED FALLBACK END
+# AUTO-GENERATED FALLBACK END
 
     @classmethod
     def cleanup(cls) -> None:
