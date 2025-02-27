@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2025-02-28
+
+### Added
+
+- Added support for GPT-4.5 Preview model:
+  - New dated model `gpt-4.5-preview-2025-02-27` with 128K context window and 16K output tokens
+  - New alias `gpt-4.5-preview` pointing to the dated model
+  - Full parameter validation and constraint support
+
+### Fixed
+
+- Improved `update_fallbacks.py` script to properly handle ModelVersion as dictionaries
+- Updated fallback models with the latest configuration
+
 ## [2.0.0] - 2025-02-20
 
 ### Breaking Changes
