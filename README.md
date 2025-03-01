@@ -97,24 +97,22 @@ The library supports models with [OpenAI Structured Outputs](https://platform.op
 - `gpt-4o-mini`: Latest mini variant (supports streaming)
 - `gpt-4.5-preview`: Latest GPT-4.5 preview model (supports streaming)
 - `o1`: Latest optimized model (limited parameters, no streaming)
-- `o3`: Latest optimized model (limited parameters, no streaming)
 - `o3-mini`: Latest mini optimized model (limited parameters, supports streaming)
 
 Note: Use dated versions in production for stability. Aliases automatically use the latest compatible version.
 
 > **Important Notes**:
 >
-> 1. o1 and o3 models only support the following parameters:
+> 1. o1 and o3-mini models only support the following parameters:
 >    - max_completion_tokens
 >    - reasoning_effort
 >    Attempting to use other parameters (temperature, top_p, etc.) will raise an OpenAIClientError.
 >
 > 2. Streaming Support:
 >    - o1-2024-12-17: Does not support streaming. Setting stream=True will result in a 400 error with message: "Unsupported value: 'stream' does not support true with this model. Supported values are: false"
->    - o3: Does not support streaming. Setting stream=True will result in a 400 error
->    - o3-mini and o3-mini-high: Support streaming
+>    - o3-mini: Supports streaming
 >
-> Use other models if you need to adjust temperature, top_p, or other parameters not supported by o1/o3 models.
+> Use other models if you need to adjust temperature, top_p, or other parameters not supported by o1/o3-mini models.
 
 ## Error Handling
 
