@@ -273,6 +273,28 @@ The ``openai-structured-refresh`` command (implemented in ``scripts/update_regis
     # Check for updates without downloading
     openai-structured-refresh --check
 
+Cache Metadata
+~~~~~~~~~~~~~~~~~~~
+
+The registry uses cache metadata files to optimize network requests:
+
+- Metadata is stored in ``.yml.meta`` files alongside the registry files
+- Contains HTTP caching headers like ``ETag`` and ``Last-Modified``
+- Enables conditional requests that only download when content has changed
+- Reduces bandwidth usage and improves performance
+- Automatically managed by the registry
+
+.. code-block:: python
+
+    # The metadata is automatically used when checking for updates
+    result = registry.check_for_updates()
+
+    # It's also used when refreshing from remote
+    result = registry.refresh_from_remote()
+
+    # The metadata file path is derived from the registry file
+    # For example: models.yml -> models.yml.meta
+
 Update Fallback Models
 ~~~~~~~~~~~~~~~~~~~
 
