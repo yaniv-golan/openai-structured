@@ -74,6 +74,11 @@ The library supports models with [OpenAI Structured Outputs](https://platform.op
   - 16K output tokens
   - Supports streaming
 
+- `gpt-4.5-preview-2025-02-27`: GPT-4.5 preview variant
+  - 128K context window
+  - 16K output tokens
+  - Supports streaming
+
 - `o1-2024-12-17`
   - 200K context window
   - 100K output tokens
@@ -90,6 +95,7 @@ The library supports models with [OpenAI Structured Outputs](https://platform.op
 
 - `gpt-4o`: Latest GPT-4 structured model (supports streaming)
 - `gpt-4o-mini`: Latest mini variant (supports streaming)
+- `gpt-4.5-preview`: Latest GPT-4.5 preview model (supports streaming)
 - `o1`: Latest optimized model (limited parameters, no streaming)
 - `o3`: Latest optimized model (limited parameters, no streaming)
 - `o3-mini`: Latest mini optimized model (limited parameters, supports streaming)
