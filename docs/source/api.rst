@@ -199,8 +199,8 @@ Classes
         reset() -> None
             Reset the buffer state while preserving configuration.
 
-        close() -> None
-            Close the buffer and clean up resources.
+        close() -> Optional[BaseModel]
+            Close the buffer, attempt to extract a final response, and clean up resources.
 
     Example::
 
