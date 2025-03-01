@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added detailed status information in verbose mode
 - Updated error handling with more specific status codes and messages
 
+### Fixed
+
+- Improved streaming response handling to prevent content loss
+  - Modified `StreamBuffer.close()` to extract final responses before closing
+  - Updated stream functions to properly handle and yield final content
+  - Made streaming tests more resilient to API response variations
+
 ## [2.0.1] - 2025-02-28
 
 ### Added
