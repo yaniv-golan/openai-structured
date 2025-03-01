@@ -1401,20 +1401,24 @@ async def async_openai_structured_stream(
                 continue
 
         if buffer is not None:
-            _log_event(
-                on_log,
-                LogLevel.DEBUG,
-                "Closing stream buffer",
-                {"status": "closing"},
-            )
-            buffer.close()
+            final_chunk = buffer.close()
+            if final_chunk is not None:
+                _log_event(
+                    on_log,
+                    LogLevel.DEBUG,
+                    "Got final result from buffer close",
+                    {"result": str(final_chunk)},
+                )
+                yield final_chunk
 
     except Exception as e:
         _handle_stream_error(e, on_log)
 
     finally:
         if buffer:
-            buffer.close()
+            # Already closed in normal flow, only close here if exception occurred
+            if not buffer._closed:
+                buffer.close()
         if stream and hasattr(stream, "close"):
             try:
                 await stream.close()
@@ -1685,7 +1689,15 @@ def openai_structured_stream(
                 continue
 
         if buffer is not None:
-            buffer.close()
+            final_chunk = buffer.close()
+            if final_chunk is not None:
+                _log_event(
+                    on_log,
+                    LogLevel.DEBUG,
+                    "Got final result from buffer close",
+                    {"result": str(final_chunk)},
+                )
+                yield final_chunk
 
     except Exception as e:
         _log_event(
@@ -1694,7 +1706,9 @@ def openai_structured_stream(
         _handle_stream_error(e, on_log)
     finally:
         if buffer:
-            buffer.close()
+            # Already closed in normal flow, only close here if exception occurred
+            if not buffer._closed:
+                buffer.close()
         if stream and hasattr(stream, "close"):
             try:
                 stream.close()

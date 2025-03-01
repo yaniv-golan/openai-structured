@@ -134,10 +134,13 @@ class StreamBuffer:
         self._reset_buffer()
         self._parse_errors = []
 
-    def close(self) -> None:
+    def close(self) -> Optional[BaseModel]:
         """Close and cleanup buffer."""
+        # Attempt to extract a final response before setting closed state
+        result = self.extract_response()
         self._closed = True
         self._reset_buffer()
+        return result
 
     def _should_cleanup(self) -> bool:
         return (
