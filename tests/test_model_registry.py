@@ -792,7 +792,8 @@ def test_refresh_from_remote_not_modified(registry: ModelRegistry) -> None:
         assert len(calls) == 1
         args, kwargs = calls[0]
         assert "headers" in kwargs
-        if os.path.exists(registry._config_path):
+        config_path = registry._config_path
+        if config_path is not None and os.path.exists(config_path):
             assert "If-Modified-Since" in kwargs["headers"]
 
 
@@ -922,7 +923,8 @@ def test_check_for_updates_no_update(registry: ModelRegistry) -> None:
         assert "headers" in kwargs
         assert "Range" in kwargs["headers"]
         assert kwargs["headers"]["Range"] == "bytes=0-0"
-        if os.path.exists(registry._config_path):
+        config_path = registry._config_path
+        if config_path is not None and os.path.exists(config_path):
             assert "If-Modified-Since" in kwargs["headers"]
 
 

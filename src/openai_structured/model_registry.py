@@ -584,12 +584,30 @@ class ModelRegistry:
     def _load_cache_metadata(self) -> Dict[str, str]:
         """Load cache metadata from file."""
         metadata_path = self._get_cache_metadata_path()
-        if not metadata_path or not os.path.exists(metadata_path):
-            return {}
-
         try:
-            with open(metadata_path, "r") as f:
+            if metadata_path is None or not os.path.exists(metadata_path):
+                return {}
+
+            with open(metadata_path, "r", encoding="utf-8") as f:
                 metadata = json.load(f)
+
+            # Ensure we're returning the expected type
+            if not isinstance(metadata, dict):
+                _log(
+                    _default_log_callback,
+                    LogLevel.WARNING,
+                    LogEvent.MODEL_REGISTRY,
+                    {
+                        "message": "Cache metadata is not a dictionary",
+                        "path": metadata_path,
+                    },
+                )
+                return {}
+
+            # Convert all values to strings to match the return type
+            string_metadata: Dict[str, str] = {
+                k: str(v) for k, v in metadata.items()
+            }
 
             _log(
                 _default_log_callback,
@@ -598,10 +616,10 @@ class ModelRegistry:
                 {
                     "message": "Loaded cache metadata",
                     "path": metadata_path,
-                    "metadata": metadata,
+                    "metadata": string_metadata,
                 },
             )
-            return metadata
+            return string_metadata
         except (OSError, IOError, json.JSONDecodeError) as e:
             _log(
                 _default_log_callback,
@@ -616,7 +634,7 @@ class ModelRegistry:
 
     def _get_conditional_headers(self, force: bool = False) -> Dict[str, str]:
         """Get headers for conditional requests."""
-        headers = {}
+        headers: Dict[str, str] = {}
 
         if force:
             return headers
