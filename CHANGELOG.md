@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2025-03-05
+
+### Added
+
+- Enhanced registry update mechanism with HTTP caching
+  - Added `RegistryUpdateStatus` enum and `RegistryUpdateResult` dataclass for detailed status reporting
+  - Added `check_for_updates` method to check for available updates without downloading
+  - Added `--check` option to `openai-structured-refresh` command
+  - Added cache metadata tracking via `.yml.meta` files for ETag and Last-Modified headers
+
+### Changed
+
+- Improved HTTP request efficiency with conditional requests
+  - Added support for ETag and If-Modified-Since headers
+  - Reduced bandwidth usage by avoiding unnecessary downloads
+- Enhanced verbose output in CLI
+  - Added local registry file path to output
+  - Improved token size display with human-readable K format
+  - Added detailed status information in verbose mode
+- Updated error handling with more specific status codes and messages
+
 ## [2.0.1] - 2025-02-28
 
 ### Added
