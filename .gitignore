@@ -84,3 +84,4 @@ version_comparison.md
 .cursor/rules/cursor-rules-location.mdc
 .cursor/rules/terminal-commands.mdc
 .cursor/rules/openai-structured-output.mdc
+src/openai_structured/config/models.yml.meta

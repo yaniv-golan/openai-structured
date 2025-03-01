@@ -192,13 +192,8 @@ The registry can be updated from the official repository using the command line 
     # Validate current configuration without updating
     openai-structured-refresh --validate
 
-Command Options
-^^^^^^^^^^^^^
-
--v, --verbose      Show detailed information about available models
--f, --force        Skip confirmation prompt
---url TEXT         Custom config URL for fetching model configurations
---validate         Validate current configuration without updating
+    # Check for updates without downloading
+    openai-structured-refresh --check
 
 The refresh command will:
 
@@ -226,11 +221,30 @@ You can also update the registry programmatically:
 
 .. code-block:: python
 
-    from openai_structured import ModelRegistry
+    from openai_structured import ModelRegistry, RegistryUpdateStatus
 
     registry = ModelRegistry.get_instance()
-    if registry.refresh_from_remote():
-        print("Registry updated successfully")
+
+    # Check if an update is available (without downloading)
+    check_result = registry.check_for_updates()
+    if check_result.success and check_result.status == RegistryUpdateStatus.UPDATE_AVAILABLE:
+        print("A registry update is available!")
+        # Optionally ask the user if they want to update
+        user_consents = ask_user_for_consent()  # Your implementation
+        if user_consents:
+            update_result = registry.refresh_from_remote()
+            if update_result.success:
+                print("Registry updated successfully")
+
+    # Or directly update without checking first
+    result = registry.refresh_from_remote()
+    if result.success:
+        if result.status == RegistryUpdateStatus.UPDATED:
+            print("Registry updated successfully")
+        elif result.status == RegistryUpdateStatus.ALREADY_CURRENT:
+            print("Registry is already up to date")
+    else:
+        print(f"Failed to update registry: {result.message}")
 
 Command Line Utilities
 -------------------
@@ -256,13 +270,8 @@ The ``openai-structured-refresh`` command (implemented in ``scripts/update_regis
     # Validate current configuration without updating
     openai-structured-refresh --validate
 
-Command Options
-^^^^^^^^^^^^^
-
--v, --verbose      Show detailed information about available models
--f, --force        Skip confirmation prompt
---url TEXT         Custom config URL for fetching model configurations
---validate         Validate current configuration without updating
+    # Check for updates without downloading
+    openai-structured-refresh --check
 
 Update Fallback Models
 ~~~~~~~~~~~~~~~~~~~

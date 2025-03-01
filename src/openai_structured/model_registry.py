@@ -6,9 +6,13 @@ both model aliases and dated versions, with version validation and fallback
 support.
 """
 
+import json
 import logging
 import os
 import re
+import time
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union, cast
 
@@ -34,6 +38,8 @@ __all__ = [
     "ParameterReference",
     "FixedParameterSet",
     "ModelVersion",
+    "RegistryUpdateStatus",
+    "RegistryUpdateResult",
 ]
 
 # Create module logger
@@ -245,6 +251,30 @@ class ModelCapabilities(BaseModel):
                     f"Description: {constraint.description}\n"
                     f"Allowed values: {', '.join(map(str, sorted(constraint.allowed_values)))}"
                 )
+
+
+class RegistryUpdateStatus(Enum):
+    """Status of a registry update operation."""
+
+    UPDATED = "updated"
+    ALREADY_CURRENT = "already_current"
+    NOT_FOUND = "not_found"
+    NETWORK_ERROR = "network_error"
+    PERMISSION_ERROR = "permission_error"
+    IMPORT_ERROR = "import_error"
+    UNKNOWN_ERROR = "unknown_error"
+    UPDATE_AVAILABLE = "update_available"
+
+
+@dataclass
+class RegistryUpdateResult:
+    """Result of a registry update operation."""
+
+    success: bool
+    status: RegistryUpdateStatus
+    message: str
+    url: Optional[str] = None
+    error: Optional[Exception] = None
 
 
 class ModelRegistry:
@@ -513,45 +543,326 @@ class ModelRegistry:
         capabilities = self.get_capabilities(model)
         return capabilities.max_output_tokens
 
-    def refresh_from_remote(self, url: Optional[str] = None) -> bool:
-        """Refresh registry from remote source.
+    def _get_cache_metadata_path(self) -> Optional[str]:
+        """Get the path to the cache metadata file for the registry."""
+        if not self._config_path:
+            return None
+
+        return f"{self._config_path}.meta"
+
+    def _save_cache_metadata(self, metadata: Dict[str, str]) -> None:
+        """Save cache metadata to a file."""
+        metadata_path = self._get_cache_metadata_path()
+        if not metadata_path:
+            return
+
+        try:
+            with open(metadata_path, "w") as f:
+                json.dump(metadata, f)
+
+            _log(
+                _default_log_callback,
+                LogLevel.DEBUG,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Saved cache metadata",
+                    "path": metadata_path,
+                    "metadata": metadata,
+                },
+            )
+        except (OSError, IOError) as e:
+            _log(
+                _default_log_callback,
+                LogLevel.WARNING,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Could not save cache metadata",
+                    "error": str(e),
+                },
+            )
+
+    def _load_cache_metadata(self) -> Dict[str, str]:
+        """Load cache metadata from file."""
+        metadata_path = self._get_cache_metadata_path()
+        if not metadata_path or not os.path.exists(metadata_path):
+            return {}
+
+        try:
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+
+            _log(
+                _default_log_callback,
+                LogLevel.DEBUG,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Loaded cache metadata",
+                    "path": metadata_path,
+                    "metadata": metadata,
+                },
+            )
+            return metadata
+        except (OSError, IOError, json.JSONDecodeError) as e:
+            _log(
+                _default_log_callback,
+                LogLevel.WARNING,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Could not load cache metadata",
+                    "error": str(e),
+                },
+            )
+            return {}
+
+    def _get_conditional_headers(self, force: bool = False) -> Dict[str, str]:
+        """Get headers for conditional requests."""
+        headers = {}
+
+        if force:
+            return headers
+
+        # Try to load from metadata file first (for ETag)
+        metadata = self._load_cache_metadata()
+        if "etag" in metadata:
+            headers["If-None-Match"] = metadata["etag"]
+
+        # Add If-Modified-Since as a fallback
+        if self._config_path and os.path.exists(self._config_path):
+            try:
+                file_mtime = os.path.getmtime(self._config_path)
+                last_modified = time.strftime(
+                    "%a, %d %b %Y %H:%M:%S GMT", time.gmtime(file_mtime)
+                )
+                headers["If-Modified-Since"] = last_modified
+
+                # Debug log the file modification time
+                _log(
+                    _default_log_callback,
+                    LogLevel.DEBUG,
+                    LogEvent.MODEL_REGISTRY,
+                    {
+                        "message": "Local file mtime information",
+                        "file_path": self._config_path,
+                        "file_mtime_timestamp": file_mtime,
+                        "file_mtime_human": last_modified,
+                    },
+                )
+            except (OSError, ValueError) as e:
+                # If we can't get file time, just continue without the header
+                _log(
+                    _default_log_callback,
+                    LogLevel.WARNING,
+                    LogEvent.MODEL_REGISTRY,
+                    {
+                        "message": "Could not get file modification time",
+                        "error": str(e),
+                    },
+                )
+
+        return headers
+
+    def refresh_from_remote(
+        self, url: Optional[str] = None, force: bool = False
+    ) -> RegistryUpdateResult:
+        """Refresh registry from remote source using conditional requests.
 
         Args:
             url: Optional custom URL to fetch configuration from.
                 If not provided, uses the default GitHub repository URL.
+            force: If True, bypasses the conditional check and forces an update.
 
         Returns:
-            bool: True if refresh was successful, False otherwise
+            RegistryUpdateResult with status and details
         """
         try:
             import requests
-
-            config_url = url or (
-                "https://raw.githubusercontent.com/yaniv-golan/"
-                "openai-structured/main/src/openai_structured/config/models.yml"
+        except ImportError as e:
+            return RegistryUpdateResult(
+                success=False,
+                status=RegistryUpdateStatus.IMPORT_ERROR,
+                message="Could not import requests module",
+                error=e,
             )
+
+        # Set up the URL and headers
+        config_url = url or (
+            "https://raw.githubusercontent.com/yaniv-golan/"
+            "openai-structured/main/src/openai_structured/config/models.yml"
+        )
+
+        headers = self._get_conditional_headers(force)
+
+        _log(
+            _default_log_callback,
+            LogLevel.INFO,
+            LogEvent.MODEL_REGISTRY,
+            {
+                "message": "Fetching model registry configuration",
+                "url": config_url,
+                "conditional": bool(
+                    headers
+                ),  # True if any conditional headers are present
+                "headers": headers,
+            },
+        )
+
+        try:
+            # Make the request
+            response = requests.get(config_url, headers=headers)
+
+            # Log response headers
             _log(
                 _default_log_callback,
-                LogLevel.INFO,
+                LogLevel.DEBUG,
                 LogEvent.MODEL_REGISTRY,
                 {
-                    "message": "Fetching model registry configuration",
-                    "url": config_url,
+                    "message": "Received response from server",
+                    "status_code": response.status_code,
+                    "response_headers": dict(response.headers),
                 },
             )
-            response = requests.get(config_url)
-            if response.status_code == 200 and self._config_path is not None:
-                with open(self._config_path, "w") as f:
-                    f.write(response.text)
-                self._load_capabilities()
+
+            # Handle different response statuses
+            if response.status_code == 304:  # Not Modified
                 _log(
                     _default_log_callback,
                     LogLevel.INFO,
                     LogEvent.MODEL_REGISTRY,
-                    {"message": "Successfully updated model registry"},
+                    {
+                        "message": "Registry is already up to date (not modified)"
+                    },
                 )
-                return True
-            else:
+                return RegistryUpdateResult(
+                    success=True,
+                    status=RegistryUpdateStatus.ALREADY_CURRENT,
+                    message="Registry is already up to date",
+                    url=config_url,
+                )
+
+            elif response.status_code == 200:  # OK
+                if self._config_path is None:
+                    return RegistryUpdateResult(
+                        success=False,
+                        status=RegistryUpdateStatus.UNKNOWN_ERROR,
+                        message="Config path not set",
+                        url=config_url,
+                    )
+
+                try:
+                    # Ensure directory exists
+                    os.makedirs(
+                        os.path.dirname(self._config_path), exist_ok=True
+                    )
+
+                    # Write content
+                    with open(self._config_path, "w") as f:
+                        f.write(response.text)
+
+                    # Save ETag and Last-Modified
+                    metadata = {}
+                    if "ETag" in response.headers:
+                        metadata["etag"] = response.headers["ETag"]
+                    if "Last-Modified" in response.headers:
+                        metadata["last_modified"] = response.headers[
+                            "Last-Modified"
+                        ]
+
+                    # Save the metadata
+                    self._save_cache_metadata(metadata)
+
+                    # Also update file mtime if Last-Modified header exists
+                    if "Last-Modified" in response.headers:
+                        try:
+                            last_modified_str = response.headers[
+                                "Last-Modified"
+                            ]
+                            last_modified_time = time.strptime(
+                                last_modified_str, "%a, %d %b %Y %H:%M:%S GMT"
+                            )
+                            last_modified_timestamp = time.mktime(
+                                last_modified_time
+                            )
+                            os.utime(
+                                self._config_path,
+                                (
+                                    last_modified_timestamp,
+                                    last_modified_timestamp,
+                                ),
+                            )
+
+                            _log(
+                                _default_log_callback,
+                                LogLevel.DEBUG,
+                                LogEvent.MODEL_REGISTRY,
+                                {
+                                    "message": "Updated file modification time from server header",
+                                    "last_modified_from_server": last_modified_str,
+                                    "timestamp_applied": last_modified_timestamp,
+                                },
+                            )
+                        except (ValueError, OSError) as e:
+                            _log(
+                                _default_log_callback,
+                                LogLevel.WARNING,
+                                LogEvent.MODEL_REGISTRY,
+                                {
+                                    "message": "Could not update file modification time from response header",
+                                    "error": str(e),
+                                },
+                            )
+
+                    # Reload capabilities
+                    self._load_capabilities()
+
+                    _log(
+                        _default_log_callback,
+                        LogLevel.INFO,
+                        LogEvent.MODEL_REGISTRY,
+                        {"message": "Successfully updated model registry"},
+                    )
+
+                    return RegistryUpdateResult(
+                        success=True,
+                        status=RegistryUpdateStatus.UPDATED,
+                        message="Registry updated successfully",
+                        url=config_url,
+                    )
+                except (OSError, IOError) as e:
+                    _log(
+                        _default_log_callback,
+                        LogLevel.ERROR,
+                        LogEvent.MODEL_REGISTRY,
+                        {
+                            "message": f"Could not write to {self._config_path}",
+                            "error": str(e),
+                        },
+                    )
+                    return RegistryUpdateResult(
+                        success=False,
+                        status=RegistryUpdateStatus.PERMISSION_ERROR,
+                        message=f"Could not write to {self._config_path}",
+                        error=e,
+                        url=config_url,
+                    )
+
+            elif response.status_code == 404:  # Not Found
+                _log(
+                    _default_log_callback,
+                    LogLevel.ERROR,
+                    LogEvent.MODEL_REGISTRY,
+                    {
+                        "message": "Registry not found",
+                        "status_code": response.status_code,
+                    },
+                )
+                return RegistryUpdateResult(
+                    success=False,
+                    status=RegistryUpdateStatus.NOT_FOUND,
+                    message=f"Registry not found at {config_url}",
+                    url=config_url,
+                )
+
+            else:  # Other error codes
                 _log(
                     _default_log_callback,
                     LogLevel.ERROR,
@@ -562,18 +873,31 @@ class ModelRegistry:
                         "response": response.text,
                     },
                 )
-                return False
-        except ImportError as e:
+                return RegistryUpdateResult(
+                    success=False,
+                    status=RegistryUpdateStatus.NETWORK_ERROR,
+                    message=f"HTTP error {response.status_code}: {response.text}",
+                    url=config_url,
+                )
+
+        except requests.RequestException as e:
             _log(
                 _default_log_callback,
                 LogLevel.ERROR,
                 LogEvent.MODEL_REGISTRY,
                 {
-                    "message": "Failed to import requests module",
+                    "message": "Network error when refreshing model registry",
                     "error": str(e),
                 },
             )
-            return False
+            return RegistryUpdateResult(
+                success=False,
+                status=RegistryUpdateStatus.NETWORK_ERROR,
+                message=f"Network error: {str(e)}",
+                error=e,
+                url=config_url,
+            )
+
         except Exception as e:
             _log(
                 _default_log_callback,
@@ -584,7 +908,13 @@ class ModelRegistry:
                     "error": str(e),
                 },
             )
-            return False
+            return RegistryUpdateResult(
+                success=False,
+                status=RegistryUpdateStatus.UNKNOWN_ERROR,
+                message=f"Unexpected error: {str(e)}",
+                error=e,
+                url=config_url,
+            )
 
     @classmethod
     def get_instance(cls) -> "ModelRegistry":
@@ -886,3 +1216,187 @@ class ModelRegistry:
     def models(self) -> Dict[str, ModelCapabilities]:
         """Get a read-only view of registered models."""
         return dict(self._capabilities)
+
+    def check_for_updates(
+        self, url: Optional[str] = None
+    ) -> RegistryUpdateResult:
+        """Check if an updated registry is available without downloading it.
+
+        This method performs a lightweight request to check if a newer version of the
+        registry is available. This allows applications to notify users about available
+        updates without automatically downloading them.
+
+        Args:
+            url: Optional custom URL to check for updates.
+                If not provided, uses the default GitHub repository URL.
+
+        Returns:
+            RegistryUpdateResult with status indicating if an update is available
+        """
+        try:
+            import requests
+        except ImportError as e:
+            return RegistryUpdateResult(
+                success=False,
+                status=RegistryUpdateStatus.IMPORT_ERROR,
+                message="Could not import requests module",
+                error=e,
+            )
+
+        # Set up the URL and headers
+        config_url = url or (
+            "https://raw.githubusercontent.com/yaniv-golan/"
+            "openai-structured/main/src/openai_structured/config/models.yml"
+        )
+
+        # Get conditional headers
+        headers = self._get_conditional_headers()
+
+        # Add Range header to request only the first byte
+        # This makes the request lightweight while still using GET
+        # which has more consistent behavior with refresh_from_remote
+        headers["Range"] = "bytes=0-0"
+
+        _log(
+            _default_log_callback,
+            LogLevel.INFO,
+            LogEvent.MODEL_REGISTRY,
+            {
+                "message": "Checking for registry updates",
+                "url": config_url,
+                "conditional": bool(headers),
+                "headers": headers,
+            },
+        )
+
+        try:
+            # Use GET with Range instead of HEAD to ensure consistent behavior
+            # with refresh_from_remote
+            response = requests.get(config_url, headers=headers)
+
+            # Log response headers
+            _log(
+                _default_log_callback,
+                LogLevel.DEBUG,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Received check response from server",
+                    "status_code": response.status_code,
+                    "response_headers": dict(response.headers),
+                },
+            )
+
+            # Handle different response statuses
+            if response.status_code == 304:  # Not Modified
+                _log(
+                    _default_log_callback,
+                    LogLevel.INFO,
+                    LogEvent.MODEL_REGISTRY,
+                    {
+                        "message": "Registry is already up to date (not modified)"
+                    },
+                )
+                return RegistryUpdateResult(
+                    success=True,
+                    status=RegistryUpdateStatus.ALREADY_CURRENT,
+                    message="Registry is already up to date",
+                    url=config_url,
+                )
+
+            elif response.status_code in (200, 206):  # OK or Partial Content
+                # A 200/206 response means the resource has been modified or is available
+
+                # Update the metadata for next time, without modifying the file
+                metadata = {}
+                if "ETag" in response.headers:
+                    metadata["etag"] = response.headers["ETag"]
+                if "Last-Modified" in response.headers:
+                    metadata["last_modified"] = response.headers[
+                        "Last-Modified"
+                    ]
+
+                # Save the metadata for future checks
+                self._save_cache_metadata(metadata)
+
+                _log(
+                    _default_log_callback,
+                    LogLevel.INFO,
+                    LogEvent.MODEL_REGISTRY,
+                    {"message": "Registry update is available"},
+                )
+                return RegistryUpdateResult(
+                    success=True,
+                    status=RegistryUpdateStatus.UPDATE_AVAILABLE,
+                    message="Registry update is available",
+                    url=config_url,
+                )
+
+            elif response.status_code == 404:  # Not Found
+                _log(
+                    _default_log_callback,
+                    LogLevel.ERROR,
+                    LogEvent.MODEL_REGISTRY,
+                    {
+                        "message": "Registry not found",
+                        "status_code": response.status_code,
+                    },
+                )
+                return RegistryUpdateResult(
+                    success=False,
+                    status=RegistryUpdateStatus.NOT_FOUND,
+                    message=f"Registry not found at {config_url}",
+                    url=config_url,
+                )
+
+            else:  # Other error codes
+                _log(
+                    _default_log_callback,
+                    LogLevel.ERROR,
+                    LogEvent.MODEL_REGISTRY,
+                    {
+                        "message": "Failed to check for updates",
+                        "status_code": response.status_code,
+                    },
+                )
+                return RegistryUpdateResult(
+                    success=False,
+                    status=RegistryUpdateStatus.NETWORK_ERROR,
+                    message=f"HTTP error {response.status_code}",
+                    url=config_url,
+                )
+
+        except requests.RequestException as e:
+            _log(
+                _default_log_callback,
+                LogLevel.ERROR,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Network error when checking for updates",
+                    "error": str(e),
+                },
+            )
+            return RegistryUpdateResult(
+                success=False,
+                status=RegistryUpdateStatus.NETWORK_ERROR,
+                message=f"Network error: {str(e)}",
+                error=e,
+                url=config_url,
+            )
+
+        except Exception as e:
+            _log(
+                _default_log_callback,
+                LogLevel.ERROR,
+                LogEvent.MODEL_REGISTRY,
+                {
+                    "message": "Failed to check for updates",
+                    "error": str(e),
+                },
+            )
+            return RegistryUpdateResult(
+                success=False,
+                status=RegistryUpdateStatus.UNKNOWN_ERROR,
+                message=f"Unexpected error: {str(e)}",
+                error=e,
+                url=config_url,
+            )

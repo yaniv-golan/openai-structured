@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 from typing import Any, Dict, Generator, Optional, Set, Type, cast
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 import yaml
@@ -21,6 +22,7 @@ from openai_structured.model_registry import (
     ModelVersion,
     NumericConstraint,
     ParameterReference,
+    RegistryUpdateStatus,
 )
 
 
@@ -732,3 +734,240 @@ def test_live_version_validation() -> None:
         registry.get_capabilities("gpt-4o-2024-13-01")  # Invalid month
     with pytest.raises(ModelNotSupportedError):
         registry.get_capabilities("unsupported-model")
+
+
+def test_refresh_from_remote_updated(registry: ModelRegistry) -> None:
+    """Test refresh_from_remote when there are updates."""
+    with patch("requests.get") as mock_get:
+        # Create a mock response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = yaml.dump(
+            {
+                "version": 1,
+                "dated_models": {
+                    "test-model-2024-01-01": {
+                        "context_window": 8000,
+                        "max_output_tokens": 2000,
+                        "supports_structured": True,
+                        "supports_streaming": True,
+                    }
+                },
+                "aliases": {
+                    "test-model": "test-model-2024-01-01",
+                },
+            }
+        )
+        mock_get.return_value = mock_response
+
+        # Call the method
+        result = registry.refresh_from_remote()
+
+        # Verify results
+        assert result.success
+        assert result.status == RegistryUpdateStatus.UPDATED
+        assert "Registry updated successfully" in result.message
+        assert mock_get.called
+
+
+def test_refresh_from_remote_not_modified(registry: ModelRegistry) -> None:
+    """Test refresh_from_remote when content hasn't changed (304 Not Modified)."""
+    with patch("requests.get") as mock_get:
+        # Create a mock response for 304 Not Modified
+        mock_response = MagicMock()
+        mock_response.status_code = 304
+        mock_get.return_value = mock_response
+
+        # Call the method
+        result = registry.refresh_from_remote()
+
+        # Verify results
+        assert result.success
+        assert result.status == RegistryUpdateStatus.ALREADY_CURRENT
+        assert "already up to date" in result.message
+        assert mock_get.called
+
+        # Check that If-Modified-Since header was sent (this assumes the file exists)
+        calls = mock_get.call_args_list
+        assert len(calls) == 1
+        args, kwargs = calls[0]
+        assert "headers" in kwargs
+        if os.path.exists(registry._config_path):
+            assert "If-Modified-Since" in kwargs["headers"]
+
+
+def test_refresh_from_remote_force(registry: ModelRegistry) -> None:
+    """Test refresh_from_remote with force=True."""
+    # Mock a proper YAML response that matches the structure expected by the registry
+    yaml_content = """
+models:
+  test-model:
+    context_window: 4096
+    max_output_tokens: 2048
+    supports_structured: true
+    supports_streaming: true
+    supported_parameters: []
+    description: "Test model"
+aliases:
+  test-alias: test-model
+"""
+
+    with patch("requests.get") as mock_get:
+        # Create a mock response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = yaml_content
+        # Add some headers that would be included in the metadata
+        mock_response.headers = {
+            "ETag": '"abc123"',
+            "Last-Modified": "Wed, 01 Jan 2024 00:00:00 GMT",
+        }
+        mock_get.return_value = mock_response
+
+        # Mock json.dump to avoid character-by-character writing
+        with patch("json.dump") as mock_json_dump:
+            # Also mock the file write operation for the YAML content
+            with patch("builtins.open", mock_open()) as mock_file:
+                # Additional mock for _load_capabilities to prevent parsing errors
+                with patch.object(registry, "_load_capabilities"):
+                    # Call the method with force=True
+                    result = registry.refresh_from_remote(force=True)
+
+                    # Verify results
+                    assert result.success
+                    assert result.status == RegistryUpdateStatus.UPDATED
+
+                    # Check that If-Modified-Since header was not sent even if the file exists
+                    calls = mock_get.call_args_list
+                    assert len(calls) == 1
+                    args, kwargs = calls[0]
+                    assert "headers" in kwargs
+                    # Force should result in empty headers
+                    assert not kwargs["headers"]
+
+                    # Verify the YAML content was written
+                    mock_file().write.assert_called_with(yaml_content)
+
+                    # Verify json.dump was called (for metadata)
+                    assert mock_json_dump.called
+
+                    # If we want to be more specific, we can check the metadata
+                    # Get the first positional arg (metadata dict)
+                    metadata = mock_json_dump.call_args[0][0]
+                    assert "etag" in metadata
+                    assert "last_modified" in metadata
+
+
+def test_refresh_from_remote_error_cases(registry: ModelRegistry) -> None:
+    """Test refresh_from_remote error handling."""
+
+    # Test 404 Not Found
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        result = registry.refresh_from_remote()
+        assert not result.success
+        assert result.status == RegistryUpdateStatus.NOT_FOUND
+
+    # Test network error
+    with patch("requests.get") as mock_get:
+        mock_get.side_effect = Exception("Network error")
+
+        result = registry.refresh_from_remote()
+        assert not result.success
+        assert result.status == RegistryUpdateStatus.UNKNOWN_ERROR
+        assert "Unexpected error" in result.message
+
+
+def test_refresh_from_remote_import_error() -> None:
+    """Test refresh_from_remote when requests module is not available."""
+    # Use patch.dict to modify sys.modules
+    with patch.dict("sys.modules", {"requests": None}):
+        # Need a fresh instance that will try to import requests
+        ModelRegistry.cleanup()
+        registry = ModelRegistry()
+
+        # Call the method which should handle the ImportError
+        result = registry.refresh_from_remote()
+
+        # Check results
+        assert not result.success
+        assert result.status == RegistryUpdateStatus.IMPORT_ERROR
+        assert "Could not import requests module" in result.message
+
+
+def test_check_for_updates_no_update(registry: ModelRegistry) -> None:
+    """Test check_for_updates when no update is available."""
+    with patch("requests.get") as mock_get:
+        # Create a mock response for 304 Not Modified
+        mock_response = MagicMock()
+        mock_response.status_code = 304
+        mock_get.return_value = mock_response
+
+        # Call the method
+        result = registry.check_for_updates()
+
+        # Verify results
+        assert result.success
+        assert result.status == RegistryUpdateStatus.ALREADY_CURRENT
+        assert "already up to date" in result.message
+        assert mock_get.called
+
+        # Check that If-Modified-Since header was sent if the file exists
+        calls = mock_get.call_args_list
+        assert len(calls) == 1
+        args, kwargs = calls[0]
+        assert "headers" in kwargs
+        assert "Range" in kwargs["headers"]
+        assert kwargs["headers"]["Range"] == "bytes=0-0"
+        if os.path.exists(registry._config_path):
+            assert "If-Modified-Since" in kwargs["headers"]
+
+
+def test_check_for_updates_available(registry: ModelRegistry) -> None:
+    """Test check_for_updates when an update is available."""
+    with patch("requests.get") as mock_get:
+        # Create a mock response for 200 OK (update available)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+
+        # Call the method
+        result = registry.check_for_updates()
+
+        # Verify results
+        assert result.success
+        assert result.status == RegistryUpdateStatus.UPDATE_AVAILABLE
+        assert "update is available" in result.message
+        assert mock_get.called
+
+        # Test with 206 Partial Content as well
+        mock_response.status_code = 206
+        result = registry.check_for_updates()
+        assert result.success
+        assert result.status == RegistryUpdateStatus.UPDATE_AVAILABLE
+
+
+def test_check_for_updates_error_cases(registry: ModelRegistry) -> None:
+    """Test check_for_updates error handling."""
+
+    # Test 404 Not Found
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        result = registry.check_for_updates()
+        assert not result.success
+        assert result.status == RegistryUpdateStatus.NOT_FOUND
+
+    # Test network error
+    with patch("requests.get") as mock_get:
+        mock_get.side_effect = Exception("Network error")
+
+        result = registry.check_for_updates()
+        assert not result.success
+        assert result.status == RegistryUpdateStatus.UNKNOWN_ERROR
+        assert "Unexpected error" in result.message
