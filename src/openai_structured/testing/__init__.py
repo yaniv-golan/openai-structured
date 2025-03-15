@@ -69,17 +69,21 @@ def create_test_registry(
 
 
 def get_test_capabilities(
-    model_name: str = "test-model",
+    openai_model_name: str = "test-model",
     context_window: Optional[int] = None,
     max_output_tokens: Optional[int] = None,
+    supports_structured: bool = True,
+    supports_streaming: bool = True,
     supported_parameters: Optional[List[Dict[str, Any]]] = None,
 ) -> ModelCapabilities:
     """Get pre-configured test capabilities.
 
     Args:
-        model_name: Name of the model (default: "test-model")
+        openai_model_name: Name of the model (default: "test-model")
         context_window: Optional context window size
         max_output_tokens: Optional maximum output tokens
+        supports_structured: Whether model supports structured output
+        supports_streaming: Whether model supports streaming responses
         supported_parameters: Optional list of supported parameters
 
     Returns:
@@ -87,7 +91,7 @@ def get_test_capabilities(
 
     Example:
         >>> capabilities = get_test_capabilities(
-        ...     model_name="my-model",
+        ...     openai_model_name="my-model",
         ...     context_window=8192,
         ...     supported_parameters=[
         ...         {"ref": "numeric_constraints.temperature"}
@@ -107,11 +111,11 @@ def get_test_capabilities(
     ]
 
     return ModelCapabilities(
-        model_name=model_name,
+        openai_model_name=openai_model_name,
         context_window=context_window,
         max_output_tokens=max_output_tokens,
-        supports_structured=True,
-        supports_streaming=True,
+        supports_structured=supports_structured,
+        supports_streaming=supports_streaming,
         supported_parameters=param_refs,
     )
 

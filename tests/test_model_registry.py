@@ -524,7 +524,7 @@ def test_version_comparison() -> None:
 def test_numeric_parameter_validation() -> None:
     """Test numeric parameter validation."""
     caps = ModelCapabilities(
-        model_name="test-model",
+        openai_model_name="test-model",
         context_window=4096,
         max_output_tokens=2048,
         supported_parameters=[
@@ -565,7 +565,7 @@ def test_numeric_parameter_validation() -> None:
 def test_enum_parameter_validation() -> None:
     """Test enum parameter validation."""
     caps = ModelCapabilities(
-        model_name="test-model",
+        openai_model_name="test-model",
         context_window=4096,
         max_output_tokens=2048,
         supported_parameters=[
@@ -594,7 +594,7 @@ def test_legacy_constraint_conversion() -> None:
     """Test conversion of legacy constraint formats."""
     # Create capabilities with legacy format
     caps = ModelCapabilities(
-        model_name="test-model",
+        openai_model_name="test-model",
         context_window=4096,
         max_output_tokens=2048,
         supported_parameters=[

@@ -4,8 +4,8 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "openai-structured"
-version = "2.1.0"
-description = "Structured output for OpenAI API"
+version = "3.0.0"
+description = "Enhanced OpenAI client with JSON validation and streaming support"
 authors = ["Yaniv Golan <yaniv@golan.name>"]
 readme = "README.md"
 packages = [{include = "openai_structured", from = "src"}]

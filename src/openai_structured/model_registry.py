@@ -97,7 +97,7 @@ class ParameterReference(BaseModel):
 class ModelCapabilities(BaseModel):
     """Model capabilities and constraints."""
 
-    model_name: str = Field(
+    openai_model_name: str = Field(
         ...,
         description="The model name used to create this capabilities instance",
     )
@@ -153,7 +153,7 @@ class ModelCapabilities(BaseModel):
                 else "max_output_tokens"
             )
             if used_params is not None and other_param in used_params:
-                raise TokenParameterError(model=self.model_name)
+                raise TokenParameterError(model=self.openai_model_name)
 
             # Add to used parameters
             if used_params is not None:
@@ -185,7 +185,7 @@ class ModelCapabilities(BaseModel):
                 ref.ref.split(".")[1] for ref in self.supported_parameters
             ]
             raise OpenAIClientError(
-                f"Parameter '{param_name}' is not supported by model '{self.model_name}'.\n"
+                f"Parameter '{param_name}' is not supported by model '{self.openai_model_name}'.\n"
                 f"Supported parameters: {', '.join(sorted(supported_params))}"
             )
 
@@ -422,7 +422,9 @@ class ModelRegistry:
                         config["min_version"] = ModelVersion(
                             **config["min_version"]
                         )
-                    config["model_name"] = model  # Add model name from key
+                    config["openai_model_name"] = (
+                        model  # Add model name from key
+                    )
                     self._capabilities[model] = ModelCapabilities(**config)
                 except ValidationError as e:
                     _log(
@@ -444,7 +446,7 @@ class ModelRegistry:
                     caps.aliases.add(alias)
                     # Create new capabilities instance for alias with its own name
                     alias_caps = ModelCapabilities(
-                        model_name=alias,
+                        openai_model_name=alias,
                         context_window=caps.context_window,
                         max_output_tokens=caps.max_output_tokens,
                         supports_structured=caps.supports_structured,
@@ -484,7 +486,9 @@ class ModelRegistry:
                         config["min_version"] = ModelVersion(
                             **config["min_version"]
                         )
-                    config["model_name"] = model  # Add model name from key
+                    config["openai_model_name"] = (
+                        model  # Add model name from key
+                    )
                     self._capabilities[model] = ModelCapabilities(**config)
                 except ValidationError as e:
                     _log(
@@ -506,7 +510,7 @@ class ModelRegistry:
                     caps.aliases.add(alias)
                     # Create new capabilities instance for alias with its own name
                     alias_caps = ModelCapabilities(
-                        model_name=alias,
+                        openai_model_name=alias,
                         context_window=caps.context_window,
                         max_output_tokens=caps.max_output_tokens,
                         supports_structured=caps.supports_structured,

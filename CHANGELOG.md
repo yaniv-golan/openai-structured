@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2025-03-10
+
+### Breaking Changes
+
+- Renamed `model_name` field to `openai_model_name` in `ModelCapabilities` class
+  - Any code referencing the `model_name` property will need to be updated
+  - All constructor calls using the `model_name` parameter must be changed to use `openai_model_name`
+
+### Fixed
+
+- Resolved an issue where using field names starting with "model_" in Pydantic models would trigger protected namespace warnings
+
 ## [2.1.0] - 2025-03-05
 
 ### Added

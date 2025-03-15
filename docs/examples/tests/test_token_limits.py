@@ -84,7 +84,7 @@ def test_token_parameter_conflicts(test_registry):
     """Test token parameter conflict handling."""
     # Get test capabilities with both token parameters
     capabilities = get_test_capabilities(
-        model_name="test-model",
+        openai_model_name="test-model",
         max_output_tokens=4096,
         supported_parameters=[
             {"ref": "numeric_constraints.max_output_tokens"},
@@ -113,7 +113,7 @@ def test_token_parameter_types(test_registry):
     """Test token parameter type validation."""
     # Get test capabilities with token parameter
     capabilities = get_test_capabilities(
-        model_name="test-model",
+        openai_model_name="test-model",
         max_output_tokens=4096,
         supported_parameters=[
             {"ref": "numeric_constraints.max_output_tokens"},

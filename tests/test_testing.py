@@ -100,26 +100,25 @@ def test_get_test_capabilities() -> None:
     """Test getting test capabilities."""
     # Test with default values
     capabilities = get_test_capabilities()
-    assert capabilities.model_name == "test-model"
     assert capabilities.context_window == 4096
     assert capabilities.max_output_tokens == 2048
-    assert capabilities.supports_structured
-    assert capabilities.supports_streaming
+    assert capabilities.supports_structured is True
+    assert capabilities.supports_streaming is True
+    assert capabilities.openai_model_name == "test-model"
 
     # Test with custom values
     custom_caps = get_test_capabilities(
-        model_name="custom-model",
         context_window=8192,
-        max_output_tokens=4096,
-        supported_parameters=[
-            {"ref": "numeric_constraints.temperature"},
-            {"ref": "numeric_constraints.top_p"},
-        ],
+        max_output_tokens=2048,
+        openai_model_name="custom-model",
+        supports_structured=False,
+        supports_streaming=False,
     )
-    assert custom_caps.model_name == "custom-model"
     assert custom_caps.context_window == 8192
-    assert custom_caps.max_output_tokens == 4096
-    assert len(custom_caps.supported_parameters) == 2
+    assert custom_caps.max_output_tokens == 2048
+    assert custom_caps.supports_structured is False
+    assert custom_caps.supports_streaming is False
+    assert custom_caps.openai_model_name == "custom-model"
 
 
 def test_create_numeric_constraint() -> None:
