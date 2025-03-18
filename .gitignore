@@ -86,3 +86,4 @@ version_comparison.md
 .cursor/rules/openai-structured-output.mdc
 src/openai_structured/config/models.yml.meta
 .history/
+CLAUDE.md
