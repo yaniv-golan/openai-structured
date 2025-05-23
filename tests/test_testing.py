@@ -1,12 +1,12 @@
 """Tests for the testing utilities."""
 
 import pytest
-
-from openai_structured.errors import (
+from openai_model_registry.errors import (
     ModelNotSupportedError,
-    OpenAIClientError,
     VersionTooOldError,
 )
+
+from openai_structured.errors import OpenAIClientError
 from openai_structured.testing import (
     create_enum_constraint,
     create_numeric_constraint,
@@ -125,7 +125,6 @@ def test_create_numeric_constraint() -> None:
     """Test creating numeric constraints."""
     # Test basic constraint
     constraint = create_numeric_constraint(0.0, 2.0)
-    assert constraint.type == "numeric"
     assert constraint.min_value == 0.0
     assert constraint.max_value == 2.0
     assert constraint.allow_int
@@ -151,7 +150,6 @@ def test_create_enum_constraint() -> None:
     # Test basic constraint
     values = ["low", "medium", "high"]
     constraint = create_enum_constraint(values)
-    assert constraint.type == "enum"
     assert constraint.allowed_values == values
 
     # Test with description

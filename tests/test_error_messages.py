@@ -1,14 +1,13 @@
 """Tests for improved error messages."""
 
 import pytest
-
-from openai_structured.errors import (
+from openai_model_registry.errors import (
     InvalidDateError,
     ModelNotSupportedError,
-    OpenAIClientError,
-    TokenParameterError,
     VersionTooOldError,
 )
+
+from openai_structured.errors import OpenAIClientError, TokenParameterError
 from openai_structured.testing import create_test_registry
 
 

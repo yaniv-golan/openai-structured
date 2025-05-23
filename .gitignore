@@ -87,3 +87,4 @@ version_comparison.md
 src/openai_structured/config/models.yml.meta
 .history/
 CLAUDE.md
+repomix-output.txt

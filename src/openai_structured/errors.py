@@ -1,6 +1,5 @@
 # src/openai_structured/errors.py
-import re
-from typing import Any, Optional
+from typing import Optional
 
 
 class OpenAIClientError(Exception):
@@ -68,25 +67,25 @@ class DirectoryNotFoundError(PathError):
 
 
 class PathSecurityError(PathError):
-    """Raised when a path is outside the allowed directory."""
+    """Raised when there's a security concern with a path."""
 
     pass
 
 
 class TaskTemplateError(CLIError):
-    """Base class for task template errors."""
+    """Base class for task template-related errors."""
 
     pass
 
 
 class TaskTemplateVariableError(TaskTemplateError):
-    """Raised when a template uses undefined variables."""
+    """Raised when there's an issue with a task template variable."""
 
     pass
 
 
 class TaskTemplateSyntaxError(TaskTemplateError):
-    """Raised when a template has invalid syntax."""
+    """Raised when there's a syntax error in a task template."""
 
     pass
 
@@ -109,153 +108,8 @@ class SchemaFileError(SchemaError):
     pass
 
 
-class ModelNotSupportedError(OpenAIClientError):
-    """Raised when a model is not supported by the client.
-
-    This error indicates that the requested model is not in the registry of
-    supported models. This is different from version-related errors, which
-    indicate that the model exists but the specific version is invalid.
-
-    Examples:
-        >>> try:
-        ...     registry.get_capabilities("unsupported-model")
-        ... except ModelNotSupportedError as e:
-        ...     print(f"Model {e.model} is not supported")
-    """
-
-    def __init__(self, message: str, model: Optional[str] = None):
-        super().__init__(message)
-        self.model = model
-        self.message = message
-
-    def __str__(self) -> str:
-        return self.message
-
-
-class ModelVersionError(OpenAIClientError):
-    """Base class for version-related errors.
-
-    This class serves as the base for all errors related to model versions.
-    It inherits directly from OpenAIClientError (not ModelNotSupportedError)
-    because version errors are distinct from model support errors:
-
-    1. ModelNotSupportedError means the model itself is not supported
-    2. ModelVersionError means the model exists but there's a version-specific issue:
-       - InvalidVersionFormatError: The version string format is wrong
-       - InvalidDateError: The date components are invalid
-       - VersionTooOldError: The version is older than the minimum supported
-
-    Examples:
-        >>> try:
-        ...     registry.get_capabilities("gpt-4o-2024-07-01")
-        ... except ModelVersionError as e:
-        ...     print(f"Version error for model {e.model}: {e}")
-    """
-
-    def __init__(self, model: str, min_version: Any):
-        super().__init__(
-            "Model " + model + " requires minimum version " + str(min_version)
-        )
-        self.model = model
-        self.min_version = min_version
-
-
-class InvalidVersionFormatError(ModelVersionError):
-    """Raised when a model version string is not in the correct format.
-
-    The version string must be in the format: <model>-YYYY-MM-DD
-    where:
-    - <model> is the base model name (e.g., "gpt-4o")
-    - YYYY is a four-digit year (2000 or later)
-    - MM is a two-digit month (01-12)
-    - DD is a two-digit day (01-31)
-
-    Examples:
-        >>> try:
-        ...     ModelVersion.parse_version_string("gpt-4o-2024")  # Missing month/day
-        ... except InvalidVersionFormatError as e:
-        ...     print(f"Invalid format: {e}")  # "Invalid format: Version must be in format: <model>-YYYY-MM-DD"
-
-        >>> try:
-        ...     ModelVersion.parse_version_string("gpt-4o-2024-13-01")  # Invalid month
-        ... except InvalidVersionFormatError as e:
-        ...     print(f"Invalid format: {e}")  # "Invalid format: Month must be between 1 and 12"
-    """
-
-    def __init__(self, model: str, reason: str):
-        super().__init__(model, None)
-        self.model = model
-        self.reason = reason
-        self.message = (
-            "Invalid version format for model " + model + ": " + reason
-        )
-
-    def __str__(self) -> str:
-        return self.message
-
-
-class InvalidDateError(ModelVersionError):
-    """Raised when a model version has invalid date components.
-
-    This error occurs when the date components in a model version string
-    are invalid, such as invalid month/day values or incorrect format.
-
-    Examples:
-        >>> try:
-        ...     registry.get_capabilities("gpt-4o-2024-13-01")  # Invalid month
-        ... except InvalidDateError as e:
-        ...     print(f"Invalid date: {e}")  # "Invalid date: Model gpt-4o-2024-13-01 has invalid version 2024-13-01"
-    """
-
-    def __init__(self, model: str, version: str, message: str):
-        super().__init__(model, version)
-        self.model = model
-        self.version = version
-        self.message = message
-
-    def __str__(self) -> str:
-        return self.message
-
-
-class VersionTooOldError(ModelVersionError):
-    """Raised when a model version is older than the minimum supported version.
-
-    Each model in the registry can specify a minimum supported version. This error
-    occurs when trying to use a version that is older than the minimum.
-
-    Examples:
-        >>> try:
-        ...     # If gpt-4o requires version 2024-08-06 or later
-        ...     registry.get_capabilities("gpt-4o-2024-07-01")
-        ... except VersionTooOldError as e:
-        ...     print(f"Version too old: {e}")  # "Version too old: Model gpt-4o version 2024-07-01 is too old"
-        ...     # "(minimum supported version is 2024-08-06)"
-    """
-
-    def __init__(self, model: str, version: str, min_version: str):
-        super().__init__(model, min_version)
-        self.model = model
-        self.min_version = min_version
-        self.version = version
-        # Extract base model using regex pattern matching
-        version_match = re.match(r"^(.*)-\d{4}-\d{2}-\d{2}$", model)
-        base_model = (
-            version_match.group(1) if version_match else model.split("-")[0]
-        )
-        self.message = (
-            "Model '" + model + "' version " + version + " is too old.\n"
-            "Minimum supported version: " + min_version + "\n"
-            "Note: Use the alias '"
-            + base_model
-            + "' to always get the latest version"
-        )
-
-    def __str__(self) -> str:
-        return self.message
-
-
 class APIResponseError(OpenAIClientError):
-    """Raised for errors in the API response."""
+    """Base class for API response-related errors."""
 
     def __init__(
         self,
@@ -264,6 +118,7 @@ class APIResponseError(OpenAIClientError):
         content: Optional[str] = None,
     ):
         super().__init__(message)
+        self.message = message
         self.response_id = response_id
         self.content = content
 

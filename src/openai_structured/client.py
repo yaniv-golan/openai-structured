@@ -63,8 +63,18 @@ from openai import (
     OpenAIError,
     RateLimitError,
 )
-from openai.types.chat import ChatCompletionMessageParam
-from openai.types.chat.completion_create_params import ResponseFormat
+from openai.types import ResponseFormatJSONSchema
+from openai.types.chat.chat_completion_message_param import (
+    ChatCompletionMessageParam,
+)
+
+# Import from openai-model-registry for model validation
+from openai_model_registry import ModelRegistry, ModelVersion
+from openai_model_registry.constraints import NumericConstraint
+from openai_model_registry.errors import (
+    ModelNotSupportedError,
+    ModelRegistryError,
+)
 from pydantic import BaseModel, ValidationError
 from typing_extensions import ParamSpec
 
@@ -73,10 +83,8 @@ from .buffer import StreamBuffer, StreamConfig
 from .errors import (
     BufferOverflowError,
     EmptyResponseError,
-    InvalidDateError,
     InvalidResponseFormatError,
     JSONParseError,
-    ModelNotSupportedError,
     OpenAIClientError,
     StreamBufferError,
     StreamInterruptedError,
@@ -84,7 +92,6 @@ from .errors import (
     TokenLimitError,
 )
 from .logging import LogCallback, LogLevel
-from .model_registry import ModelRegistry, ModelVersion, NumericConstraint
 
 # Define public API
 __all__ = [
@@ -236,7 +243,12 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
                                 f"Invalid {param_name} value: {value}"
                             )
 
-                capabilities.validate_parameter(param_name, value)
+                try:
+                    capabilities.validate_parameter(param_name, value)
+                except ModelRegistryError as e:
+                    raise OpenAIClientError(
+                        f"Model registry error: {e}"
+                    ) from e
 
         return func(*args, **kwargs)
 
@@ -244,67 +256,20 @@ def validate_parameters(func: Callable[P, R]) -> Callable[P, R]:
 
 
 def supports_structured_output(model_name: str) -> bool:
-    """Check if a model supports structured output.
-
-    This function validates whether a given model name supports structured output,
-    handling both aliases and dated versions. For dated versions, it ensures they meet
-    minimum version requirements.
-
-    The function supports two types of model names:
-    1. Aliases (e.g., "gpt-4o"): These are automatically resolved to the latest
-       compatible version by OpenAI. We validate that the alias is supported.
-
-    2. Dated versions (e.g., "gpt-4o-2024-08-06"): These specify an exact version.
-       We validate that:
-       a) The base model (e.g., "gpt-4o") is supported
-       b) The date meets or exceeds our minimum version requirement
-
-    If using a dated version newer than our minimum (e.g., "gpt-4o-2024-09-01"),
-    it will be accepted as long as the base model is supported and the date is
-    greater than or equal to our minimum version.
+    """Check if the model supports structured output.
 
     Args:
-        model_name: The model name to validate. Can be either:
-                   - an alias (e.g., "gpt-4o")
-                   - dated version (e.g., "gpt-4o-2024-08-06")
-                   - newer version (e.g., "gpt-4o-2024-09-01")
+        model_name: Name of the model to check
 
     Returns:
         bool: True if the model supports structured output
-
-    Examples:
-        >>> supports_structured_output("gpt-4o")  # Alias
-        True
-        >>> supports_structured_output("gpt-4o-2024-08-06")  # Minimum version
-        True
-        >>> supports_structured_output("gpt-4o-2024-09-01")  # Newer version
-        True
-        >>> supports_structured_output("gpt-3.5-turbo")  # Unsupported model
-        False
-        >>> supports_structured_output("gpt-4o-2024-07-01")  # Too old
-        False
     """
-    # Check for exact matches (aliases)
-    if model_name in OPENAI_API_SUPPORTED_MODELS:
-        return True
-
-    # Try to parse as a dated version
-    match = MODEL_VERSION_PATTERN.match(model_name)
-    if not match:
+    try:
+        registry = ModelRegistry.get_instance()
+        capabilities = registry.get_capabilities(model_name)
+        return capabilities.supports_structured
+    except Exception:
         return False
-
-    base_model, version_str = match.groups()
-
-    # Check if the base model has a minimum version requirement
-    if base_model in OPENAI_API_SUPPORTED_MODELS:
-        try:
-            version = ModelVersion.from_string(version_str)
-            min_version = OPENAI_API_SUPPORTED_MODELS[base_model]
-            return version >= min_version
-        except (ValueError, InvalidDateError):
-            return False
-
-    return False
 
 
 def _validate_client_type(client: Any, expected_type: str = "sync") -> None:
@@ -416,7 +381,7 @@ def _create_request_params(
         "model": model,
         "messages": messages,
         "response_format": cast(
-            ResponseFormat,
+            ResponseFormatJSONSchema,
             {
                 "type": "json_schema",
                 "json_schema": {
@@ -1744,65 +1709,92 @@ def _get_base_model(model: str) -> str:
     return model
 
 
-def get_context_window_limit(model: str) -> int:
-    """Get the total context window limit for a given model.
+def get_context_window_limit(model_name: str) -> int:
+    """Get the context window size for a model.
 
     Args:
-        model: The model name (e.g., 'gpt-4o', 'o1', 'o1-mini', 'o3-mini')
+        model_name: Name of the model to check
 
     Returns:
-        The total context window limit for the model in tokens
-
-    Example:
-        >>> get_context_window_limit("o1")
-        200_000
-        >>> get_context_window_limit("gpt-4o-2024-08-06")
-        128_000
-    """
-    base_model = _get_base_model(model)
-    for prefix, limit in MODEL_CONTEXT_WINDOWS.items():
-        if base_model.startswith(prefix):
-            return limit
-    return 8_192  # Default fallback
-
-
-def get_default_token_limit(model: str) -> int:
-    """Get the default maximum output token limit for a given model.
-
-    Args:
-        model: The model name (e.g., 'gpt-4o', 'o1', 'o1-mini', 'o3-mini')
-
-    Returns:
-        The default maximum number of output tokens for the model
-
-    Example:
-        >>> get_default_token_limit("o1")
-        100_000
-        >>> get_default_token_limit("gpt-4o")
-        16_384
-    """
-    base_model = _get_base_model(model)
-    for prefix, limit in MODEL_OUTPUT_LIMITS.items():
-        if base_model.startswith(prefix):
-            return limit
-    return 4_096  # Default fallback
-
-
-def _validate_token_limits(model: str, max_tokens: Optional[int]) -> None:
-    """Validate token limits for a model.
-
-    Args:
-        model: The model name
-        max_tokens: The requested maximum number of tokens
+        int: Maximum context window size in tokens
 
     Raises:
-        TokenLimitError: If the requested tokens exceed the model's limit
+        ModelNotSupportedError: If the model is not supported
     """
-    if max_tokens is not None:
-        default_limit = get_default_token_limit(model)
-        if max_tokens > default_limit:
+    try:
+        registry = ModelRegistry.get_instance()
+        capabilities = registry.get_capabilities(model_name)
+        return capabilities.context_window
+    except ModelNotSupportedError:
+        # Default fallback value
+        return 8_192
+    except Exception as e:
+        logger.warning(f"Error getting context window for {model_name}: {e}")
+        return 8_192
+
+
+def get_default_token_limit(model_name: str) -> int:
+    """Get the default token limit for a model's output.
+
+    Args:
+        model_name: Name of the model to check
+
+    Returns:
+        int: Default max token limit for the model
+
+    Raises:
+        ModelNotSupportedError: If the model is not supported
+    """
+    try:
+        registry = ModelRegistry.get_instance()
+        capabilities = registry.get_capabilities(model_name)
+        return capabilities.max_output_tokens
+    except ModelNotSupportedError:
+        # Default fallback value
+        return 4_096
+    except Exception as e:
+        logger.warning(f"Error getting token limit for {model_name}: {e}")
+        return 4_096
+
+
+def _validate_token_limits(
+    model: str, max_completion_tokens: Optional[int] = None
+) -> None:
+    """Validate token limit parameters for a model.
+
+    Args:
+        model: Model name
+        max_completion_tokens: Maximum number of tokens for completion
+
+    Raises:
+        TokenLimitError: If token limits are invalid
+        ModelNotSupportedError: If the model is not supported
+    """
+    if max_completion_tokens is None:
+        return
+
+    try:
+        registry = ModelRegistry.get_instance()
+        capabilities = registry.get_capabilities(model)
+
+        # Convert to our own token limit error for API consistency
+        if max_completion_tokens > capabilities.max_output_tokens:
             raise TokenLimitError(
-                f"Requested {max_tokens} tokens exceeds model limit of {default_limit}",
-                requested_tokens=max_tokens,
+                f"Invalid max_completion_tokens: {max_completion_tokens}. "
+                f"Model {model} has a maximum of {capabilities.max_output_tokens} tokens.",
+                requested_tokens=max_completion_tokens,
+                model_limit=capabilities.max_output_tokens,
+            )
+    except ModelNotSupportedError:
+        # For unsupported models, use more conservative defaults
+        default_limit = get_default_token_limit(model)
+        if max_completion_tokens > default_limit:
+            raise TokenLimitError(
+                f"Invalid max_completion_tokens: {max_completion_tokens}. "
+                f"Using default limit of {default_limit} tokens for unknown model {model}.",
+                requested_tokens=max_completion_tokens,
                 model_limit=default_limit,
             )
+    except Exception as e:
+        logger.warning(f"Error validating token limits for {model}: {e}")
+        # If we can't validate, pass through (better than blocking legitimate requests)

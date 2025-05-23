@@ -2,8 +2,7 @@
 
 import pytest
 from dotenv import load_dotenv
-
-from openai_structured.model_registry import ModelRegistry
+from openai_model_registry import ModelRegistry
 
 pytest_plugins = ["pytest_asyncio"]
 

@@ -14,6 +14,16 @@ try:
 except Exception:
     __version__ = "unknown"
 
+# Import types from openai-model-registry library
+from openai_model_registry import ModelVersion
+from openai_model_registry.errors import (
+    InvalidDateError,
+    ModelFormatError,
+    ModelNotSupportedError,
+    ModelVersionError,
+    VersionTooOldError,
+)
+
 from .client import (
     StreamConfig,
     async_openai_structured_call,
@@ -30,22 +40,15 @@ from .errors import (
     ClosedBufferError,
     ConnectionTimeoutError,
     EmptyResponseError,
-    InvalidDateError,
     InvalidResponseFormatError,
-    InvalidVersionFormatError,
     JSONParseError,
-    ModelNotSupportedError,
-    ModelVersionError,
     OpenAIClientError,
     StreamBufferError,
     StreamInterruptedError,
     StreamParseError,
     TokenLimitError,
     TokenParameterError,
-    VersionTooOldError,
 )
-from .model_registry import ModelCapabilities, ModelRegistry
-from .model_version import ModelVersion
 
 __all__ = [
     # Main functions
@@ -61,15 +64,11 @@ __all__ = [
     "StreamConfig",
     # Type hints
     "ModelVersion",
-    # Model registry
-    "ModelRegistry",
-    "ModelCapabilities",
-    "get_registry",
     # Exceptions
     "OpenAIClientError",
     "ModelNotSupportedError",
     "ModelVersionError",
-    "InvalidVersionFormatError",
+    "ModelFormatError",
     "InvalidDateError",
     "VersionTooOldError",
     "APIResponseError",
