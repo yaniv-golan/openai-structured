@@ -13,7 +13,9 @@ include = ["src/openai_structured/py.typed"]
 
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
-openai = "^1.82.0"
+# Pinned to 1.81.0 due to packaging bug in 1.82.0 (missing fine_tuning.alpha module)
+# TODO: Update to latest once 1.82.1+ is released with fix
+openai = "1.81.0"
 pydantic = { version = "^2.6.3", extras = ["mypy"] }
 jsonschema = "^4.23.0"
 aiohttp = "^3.11.11"
